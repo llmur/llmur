@@ -1,4 +1,4 @@
 pub mod openai;
 
-// TODO: #[cfg_attr(feature = "azure")]
+#[cfg(feature = "azure")]
 pub mod azure;
