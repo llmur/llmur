@@ -2,6 +2,11 @@
 name = "llmur"
 version = "0.0.1"
 edition = "2021"
+authors     = ["Andre Machado"]
+description = "arge Language Model Unified Request"
+license     = "MIT"
+readme      = "README.md"
+repository  = "https://github.com/llmur/llmur"
 
 [dependencies]
 # -------- Mandatory --------
@@ -12,17 +17,11 @@ serde_json = { version = "1.0.118" }
 # -- Json
 serde = { version = "1.0.203", features = ["derive"], optional = true }
 
-
-
 [features]
 serde = ["dep:serde"]
 transformer = []
 azure = []
-
 full = ["serde", "transformer", "azure"]
-
-[profile.test]
-default = ["serde"]
 
 [dev-dependencies]
 llmur = { path = ".", default-features = false, features = ["full"] }
