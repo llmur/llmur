@@ -1,0 +1,28 @@
+[package]
+name = "llmur"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# -------- Mandatory --------
+# -- Json
+serde_json = { version = "1.0.118" }
+
+# -------- Optional --------
+# -- Json
+serde = { version = "1.0.203", features = ["derive"], optional = true }
+
+
+
+[features]
+serde = ["dep:serde"]
+transformer = []
+azure = []
+
+full = ["serde", "transformer", "azure"]
+
+[profile.test]
+default = ["serde"]
+
+[dev-dependencies]
+llmur = { path = ".", default-features = false, features = ["full"] }
