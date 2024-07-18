@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ChatCompletionRequest {
 	///minItems: 1
@@ -137,7 +137,7 @@ pub enum ChatCompletionStop {
 // endregion: --- ChatCompletionStop
 
 // region:    --- ChatCompletionMessage
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(tag = "role"))]
 pub enum ChatCompletionMessage {
 	#[cfg_attr(feature = "serde", serde(alias = "system"))]
@@ -163,14 +163,14 @@ pub enum ChatCompletionMessage {
 }
 
 // region:    --- Chat Completion Message Content
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(untagged))]
 pub enum UserMessageContent {
 	TextContent(String),
 	ArrayContentParts(Vec<UserMessageContentPart>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(tag = "type"))]
 pub enum UserMessageContentPart {
 	#[cfg_attr(feature = "serde", serde(alias = "text"))]
@@ -179,7 +179,7 @@ pub enum UserMessageContentPart {
 	ImageContentPart { image_url: String },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AssistantToolCall {
 	pub id: String,
@@ -188,21 +188,21 @@ pub struct AssistantToolCall {
 	pub function: AssistantToolCallFunction,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AssistantToolCallType {
 	#[cfg_attr(feature = "serde", serde(rename = "function"))]
 	FunctionType,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AssistantToolCallFunction {
 	pub name: String,
 	pub arguments: String,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AssistantMessageContext {
 	#[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
@@ -211,7 +211,7 @@ pub struct AssistantMessageContext {
 	pub citations: Option<Vec<AssistantContextCitation>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AssistantContextCitation {
 	pub content: String,
