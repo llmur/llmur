@@ -123,19 +123,19 @@ pub enum ChatCompletionStop {
 #[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(tag = "role"))]
 pub enum ChatCompletionMessage {
-	#[cfg_attr(feature = "serde", serde(alias = "system"))]
+	#[cfg_attr(feature = "serde", serde(rename = "system", alias = "system"))]
 	SystemMessage {
 		content: String,
 		#[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
 		name: Option<String>,
 	},
-	#[cfg_attr(feature = "serde", serde(alias = "user"))]
+	#[cfg_attr(feature = "serde", serde(rename = "user", alias = "user"))]
 	UserMessage {
 		#[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
 		name: Option<String>,
 		content: UserMessageContent,
 	},
-	#[cfg_attr(feature = "serde", serde(alias = "assistant"))]
+	#[cfg_attr(feature = "serde", serde(rename = "assistant", alias = "assistant"))]
 	AssistantMessage {
 		//TODO Confirm if content is optional
 		#[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
@@ -146,7 +146,7 @@ pub enum ChatCompletionMessage {
 		tool_calls: Option<Vec<AssistantToolCall>>,
 		// TODO: Decide if should implement deprecated parameters (function_call)
 	},
-	#[cfg_attr(feature = "serde", serde(alias = "tool"))]
+	#[cfg_attr(feature = "serde", serde(rename = "tool", alias = "tool"))]
 	ToolMessage { content: String, tool_call_id: String },
 	// TODO: Decide if should implement deprecated parameters (FunctionMessage)
 }
@@ -162,9 +162,9 @@ pub enum UserMessageContent {
 #[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(tag = "type"))]
 pub enum UserMessageContentPart {
-	#[cfg_attr(feature = "serde", serde(alias = "text"))]
+	#[cfg_attr(feature = "serde", serde(rename = "text", alias = "text"))]
 	TextContentPart { text: String },
-	#[cfg_attr(feature = "serde", serde(alias = "image_url"))]
+	#[cfg_attr(feature = "serde", serde(rename = "image_url", alias = "image_url"))]
 	ImageContentPart { image_url: ImageUrlContentPart },
 }
 
@@ -172,7 +172,7 @@ pub enum UserMessageContentPart {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ImageUrlContentPart {
 	pub url: String,
-	#[cfg_attr(feature = "serde", serde(alias = "tool"))]
+	#[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
 	pub detail: Option<String>,
 }
 
@@ -206,7 +206,7 @@ pub struct AssistantToolCallFunction {
 #[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(tag = "type"))]
 pub enum ChatCompletionTool {
-	#[cfg_attr(feature = "serde", serde(alias = "function"))]
+	#[cfg_attr(feature = "serde", serde(rename = "function", alias = "function"))]
 	FunctionTool { function: ChatCompletionToolFunction },
 }
 
@@ -214,9 +214,9 @@ pub enum ChatCompletionTool {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ChatCompletionToolFunction {
 	pub name: String,
-	#[cfg_attr(feature = "serde", serde(alias = "tool"))]
+	#[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
 	pub description: Option<String>,
-	#[cfg_attr(feature = "serde", serde(alias = "tool"))]
+	#[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
 	pub parameters: Option<serde_json::Value>,
 }
 
@@ -230,7 +230,7 @@ pub enum ChatCompletionToolChoice {
 #[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(tag = "type"))]
 pub enum ChatCompletionToolChoiceObject {
-	#[cfg_attr(feature = "serde", serde(alias = "function"))]
+	#[cfg_attr(feature = "serde", serde(rename = "function", alias = "function"))]
 	FunctionTool { function: ChatCompletionToolChoiceFunction },
 }
 
@@ -570,6 +570,54 @@ mod tests {
 		.to_string();
 
 		let _: ChatCompletionRequest = serde_json::from_str(&fx_request).unwrap();
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_serializing_01_ok() -> Result<()> {
+		// -- Setup & Fixtures
+		let fx_object = ChatCompletionRequest {
+			model: "my-model".to_string(),
+			messages: vec![ChatCompletionMessage::UserMessage {
+				name: None,
+				content: UserMessageContent::TextContent("Hello!".to_string()),
+			}],
+			n: None,
+			frequency_penalty: None,
+			temperature: None,
+			logprobs: None,
+			top_logprobs: None,
+			max_tokens: None,
+			presence_penalty: None,
+			top_p: None,
+			stream: None,
+			stop: None,
+			user: None,
+			seed: None,
+			response_format: None,
+			logit_bias: None,
+			tools: None,
+			tool_choice: None,
+		};
+		let expected_request = json!({
+		  "model": "my-model",
+		  "messages": [
+			{
+			  "role": "user",
+			  "content": "Hello!"
+			}
+		  ]
+		});
+
+		let _data = serde_json::to_value(fx_object);
+
+		assert!(_data.is_ok());
+
+		assert_eq!(
+			_data.unwrap()["messages"].to_string(),
+			expected_request["messages"].to_string()
+		);
 
 		Ok(())
 	}

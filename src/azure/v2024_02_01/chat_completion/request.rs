@@ -140,11 +140,11 @@ pub enum ChatCompletionStop {
 #[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(tag = "role"))]
 pub enum ChatCompletionMessage {
-	#[cfg_attr(feature = "serde", serde(alias = "system"))]
+	#[cfg_attr(feature = "serde", serde(rename = "system", alias = "system"))]
 	SystemMessage { content: String },
-	#[cfg_attr(feature = "serde", serde(alias = "user"))]
+	#[cfg_attr(feature = "serde", serde(rename = "user", alias = "user"))]
 	UserMessage { content: UserMessageContent },
-	#[cfg_attr(feature = "serde", serde(alias = "assistant"))]
+	#[cfg_attr(feature = "serde", serde(rename = "assistant", alias = "assistant"))]
 	AssistantMessage {
 		#[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
 		content: Option<String>,
@@ -153,7 +153,7 @@ pub enum ChatCompletionMessage {
 		#[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
 		context: Option<AssistantMessageContext>,
 	},
-	#[cfg_attr(feature = "serde", serde(alias = "tool"))]
+	#[cfg_attr(feature = "serde", serde(rename = "tool", alias = "tool"))]
 	ToolMessage {
 		// name: String,
 		content: String,
@@ -173,9 +173,9 @@ pub enum UserMessageContent {
 #[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(tag = "type"))]
 pub enum UserMessageContentPart {
-	#[cfg_attr(feature = "serde", serde(alias = "text"))]
+	#[cfg_attr(feature = "serde", serde(rename = "text", alias = "text"))]
 	TextContentPart { text: String },
-	#[cfg_attr(feature = "serde", serde(alias = "image_url"))]
+	#[cfg_attr(feature = "serde", serde(rename = "image_url", alias = "image_url"))]
 	ImageContentPart { image_url: String },
 }
 
@@ -191,7 +191,7 @@ pub struct AssistantToolCall {
 #[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AssistantToolCallType {
-	#[cfg_attr(feature = "serde", serde(rename = "function"))]
+	#[cfg_attr(feature = "serde", serde(rename = "function", alias = "function"))]
 	FunctionType,
 }
 
@@ -231,7 +231,7 @@ pub struct AssistantContextCitation {
 #[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(tag = "type"))]
 pub enum ChatCompletionTool {
-	#[cfg_attr(feature = "serde", serde(alias = "function"))]
+	#[cfg_attr(feature = "serde", serde(rename = "function", alias = "function"))]
 	FunctionTool { function: ChatCompletionToolFunction },
 }
 
@@ -239,9 +239,9 @@ pub enum ChatCompletionTool {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ChatCompletionToolFunction {
 	pub name: String,
-	#[cfg_attr(feature = "serde", serde(alias = "tool"))]
+	#[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
 	pub description: Option<String>,
-	#[cfg_attr(feature = "serde", serde(alias = "tool"))]
+	#[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
 	pub parameters: Option<serde_json::Value>,
 }
 
@@ -255,7 +255,7 @@ pub enum ChatCompletionToolChoice {
 #[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(tag = "type"))]
 pub enum ChatCompletionToolChoiceObject {
-	#[cfg_attr(feature = "serde", serde(alias = "function"))]
+	#[cfg_attr(feature = "serde", serde(rename = "function", alias = "function"))]
 	FunctionTool { function: ChatCompletionToolChoiceFunction },
 }
 
@@ -272,10 +272,10 @@ pub struct ChatCompletionToolChoiceFunction {
 #[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(tag = "type"))]
 pub enum AzureChatExtensionConfiguration {
-	#[cfg_attr(feature = "serde", serde(alias = "azure_cosmos_db"))]
+	#[cfg_attr(feature = "serde", serde(rename = "azure_cosmos_db", alias = "azure_cosmos_db"))]
 	AzureCosmosDB { parameters: serde_json::Value },
 
-	#[cfg_attr(feature = "serde", serde(alias = "azure_search"))]
+	#[cfg_attr(feature = "serde", serde(rename = "azure_search", alias = "azure_search"))]
 	AzureSearch { parameters: serde_json::Value },
 }
 // endregion: --- Data Sources
