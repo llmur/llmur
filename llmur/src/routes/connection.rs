@@ -1,0 +1,201 @@
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+use axum::{Extension, Json, Router};
+use axum::extract::{Path, State};
+use axum::routing::{delete, get, post};
+use serde::{Deserialize, Serialize};
+use crate::data::connection::{AzureOpenAiApiVersion, Connection, ConnectionId, ConnectionInfo};
+use crate::{impl_from_vec_result, LLMurState};
+use crate::data::user::ApplicationRole;
+use crate::errors::{DataAccessError, LLMurError};
+use crate::routes::middlewares::user_context_load_mw::{AuthorizationManager, UserContext, UserContextExtractionResult};
+use crate::routes::StatusResponse;
+
+// region:    --- Routes
+pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
+    Router::new()
+        .route("/", post(create_connection))
+        .route("/{id}", get(get_connection))
+        .route("/{id}", delete(delete_connection))
+        .with_state(state.clone())
+}
+
+pub(crate) async fn create_connection(
+    Extension(ctx): Extension<UserContextExtractionResult>,
+    State(state): State<Arc<LLMurState>>,
+    Json(payload): Json<CreateConnectionPayload>,
+) -> Result<Json<GetConnectionResult>, LLMurError> {
+    let connections = state.data;
+    let method: Pin<Box<dyn Future<Output = Result<Connection, DataAccessError>> + Send>> = match &payload {
+        CreateConnectionPayload::AzureOpenAi { deployment_name, api_endpoint, api_key, api_version } => {
+            Box::pin(connections.create_azure_openai_connection(
+                deployment_name,
+                api_endpoint,
+                api_key,
+                api_version,
+                &state.application_secret,
+            ))
+        },
+        CreateConnectionPayload::OpenAi { model, api_endpoint, api_key } => {
+            Box::pin(connections.create_openai_v1_connection(
+                model,
+                api_endpoint,
+                api_key,
+                &state.application_secret,
+            ))
+        }
+    };
+
+    let user_context = ctx.require_authenticated_user()?;
+
+    match user_context {
+        UserContext::MasterUser => {
+            let result = method.await;
+            println!("{:?}", result);
+            let connection = result?;
+            Ok(Json(connection.into()))
+        }
+        UserContext::WebAppUser { user, .. } => {
+            /*
+            if user.role != ApplicationRole::Admin {
+                return Err(LLMurError::NotAuthorized)
+            }
+
+            println!("Creating connection");
+
+            let result = method.await?;
+
+            println!("Connection: {:?}", result.id());
+
+            Ok(Json(StatusResponse {
+                success: true,
+                message: Some(format!("Connection {} created successfully", result.id())),
+            }))
+             */
+            Err(LLMurError::NotAuthorized)
+        }
+    }
+}
+
+pub(crate) async fn get_connection(
+    Extension(ctx): Extension<UserContextExtractionResult>,
+    State(state): State<Arc<LLMurState>>,
+    Path(id): Path<ConnectionId>,
+) -> Result<Json<GetConnectionResult>, LLMurError> {
+    let user_context = ctx.require_authenticated_user()?;
+
+    match user_context {
+        UserContext::MasterUser => {
+            let connection = state.data.get_connection(&id, &state.application_secret).await?.ok_or(LLMurError::AdminResourceNotFound)?;
+            Ok(Json(connection.into()))
+        }
+        UserContext::WebAppUser { user, .. } => {
+            if user.role == ApplicationRole::Admin {
+                let connection = state.data.get_connection(&id, &state.application_secret).await?.ok_or(LLMurError::AdminResourceNotFound)?;
+                Ok(Json(connection.into()))
+            }
+            else { Err(LLMurError::NotAuthorized) }
+        }
+    }
+}
+
+pub(crate) async fn delete_connection(
+    Extension(ctx): Extension<UserContextExtractionResult>,
+    State(state): State<Arc<LLMurState>>,
+    Path(id): Path<ConnectionId>,
+) -> Result<Json<StatusResponse>, LLMurError> {
+    let user_context = ctx.require_authenticated_user()?;
+
+    let result = match user_context {
+        UserContext::MasterUser => {
+            state.data.delete_connection(&id).await?
+        }
+        UserContext::WebAppUser { user, .. } => {
+            if user.role == ApplicationRole::Admin { state.data.delete_connection(&id).await? }
+            else { Err(LLMurError::NotAuthorized)? }
+        }
+    };
+
+    if result == 0 {
+        Err(LLMurError::AdminResourceNotFound)
+    }
+    else {
+        Ok(Json(StatusResponse { success: true, message: Some(format!("Connection {} deleted successfully", &id)) }))
+    }
+}
+
+// endregion: --- Routes
+
+// region:    --- Data Models
+#[derive(Deserialize)]
+#[serde(tag = "provider")]
+pub(crate) enum CreateConnectionPayload {
+    #[serde(rename = "azure/openai", alias = "azure/openai")]
+    AzureOpenAi {
+        deployment_name: String,
+        api_endpoint: String,
+        api_key: String,
+        api_version: AzureOpenAiApiVersion,
+    },
+    #[serde(rename = "openai/v1", alias = "openai/v1")]
+    OpenAi {
+        model: String,
+        api_endpoint: String,
+        api_key: String,
+    },
+}
+
+#[derive(Clone, Serialize)]
+#[serde(tag = "provider")]
+pub enum GetConnectionResult {
+    #[serde(rename = "azure/openai", alias = "azure/openai")]
+    AzureOpenAi {
+        id: ConnectionId,
+        api_key: String,
+        deployment_name: String,
+        api_endpoint: String,
+        api_version: AzureOpenAiApiVersion,
+    },
+    #[serde(rename = "openai/v1", alias = "openai/v1")]
+    OpenAiV1 {
+        id: ConnectionId,
+        api_key: String,
+        model: String,
+        api_endpoint: String,
+    },
+}
+
+#[derive(Serialize)]
+pub(crate) struct ListConnectionsResult {
+    pub(crate) connections: Vec<GetConnectionResult>,
+    pub(crate) total: usize
+}
+
+impl_from_vec_result!(GetConnectionResult, ListConnectionsResult, connections);
+
+impl From<Connection> for GetConnectionResult {
+    fn from(connection: Connection) -> Self {
+
+        match connection.connection_info {
+            ConnectionInfo::AzureOpenAiApiKey { api_key, api_endpoint, api_version, deployment_name } => {
+                GetConnectionResult::AzureOpenAi {
+                    id: connection.id,
+                    api_key,
+                    deployment_name,
+                    api_endpoint,
+                    api_version,
+                }
+            }
+            ConnectionInfo::OpenAiApiKey { api_key, api_endpoint, model } => {
+                GetConnectionResult::OpenAiV1 {
+                    id: connection.id,
+                    api_key,
+                    model,
+                    api_endpoint,
+                }
+            }
+        }
+    }
+}
+// endregion: --- Data Models
