@@ -1,28 +1,24 @@
 use crate::LLMurState;
 use crate::errors::LLMurError;
 use crate::providers::{ExposesDeployment, ExposesUsage};
-use crate::routes::extract::openai_request_data::OpenAiRequestData;
-use crate::routes::response::openai_responder::OpenAiCompatibleResponse;
+use crate::routes::openai::request::OpenAiRequestData;
+use crate::routes::openai::response::OpenAiCompatibleResponse;
 
 use crate::data::request_log::{RequestLogData, RequestLogId};
 use axum::extract::FromRequest;
 use axum::{
     body::Body,
     extract::State,
-    http::{Request, header::CONTENT_LENGTH},
+    http::Request,
     middleware::Next,
 };
 use chrono::{DateTime, Utc};
-use http_body_util::BodyExt;
 
-use crate::data::graph::{ConnectionNode, Graph};
-use log::trace;
+use crate::data::graph::ConnectionNode;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
 use tracing::Instrument;
-use uuid::Timestamp;
-use crate::data::connection::ConnectionId;
 
 pub(crate) async fn openai_route_controller_mw<I, O>(
     State(state): State<Arc<LLMurState>>,
@@ -72,7 +68,7 @@ where
             );
 
             let request_ts: DateTime<Utc> = Utc::now();
-            let mut response = next.clone().run(attempt_req).await;
+            let response = next.clone().run(attempt_req).await;
             let response_ts: DateTime<Utc> = Utc::now();
 
             println!(
@@ -98,12 +94,12 @@ where
                 &response_ts,
             );
 
-            (response)
+            response
         }
             .instrument(attempt_span)
             .await;
 
-        let (response) = result;
+        let response = result;
 
         // If status is OK and Upstream did not emit an error
         if response.status().is_success() && !response.extensions().get::<LLMurError>().is_some() {
@@ -166,7 +162,7 @@ where
                 path: request_data.path.clone(),
             }
         }
-        Err(error) => {
+        Err(_error) => {
             RequestLogData {
                 id: (*request_id).clone(),
                 attempt_number: attempt_number as i16,
@@ -194,3 +190,4 @@ where
         }
     };
 }
+

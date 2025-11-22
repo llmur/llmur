@@ -2,9 +2,7 @@ use axum::body::Body;
 use tracing::Instrument;
 use uuid::Uuid;
 use crate::data::request_log::RequestLogId;
-use axum::extract::{Request, State};
-use axum::http::{HeaderName, HeaderValue};
-use axum::middleware::Next;
+use axum::extract::Request;
 use axum::response::Response;
 
 
@@ -25,9 +23,10 @@ pub(crate) async fn common_tracing_mw(mut req: Request<Body>, next: axum::middle
         path = %req.uri().path()
     );
 
-    let mut res = next.run(req).instrument(span).await;
+    let res = next.run(req).instrument(span).await;
 
     // TODO: Insert X-LLMur-Request-Id header into response
 
     res
 }
+

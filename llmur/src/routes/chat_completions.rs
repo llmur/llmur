@@ -1,14 +1,12 @@
 use crate::data::connection::ConnectionInfo;
-use crate::errors::LLMurError;
 use crate::LLMurState;
 use axum::extract::State;
 use axum::Extension;
 use std::sync::Arc;
-use tracing::log::info;
 use crate::providers::openai::chat_completions::response::Response as ChatCompletionsResponse;
 use crate::providers::openai::chat_completions::request::Request as ChatCompletionsRequest;
-use crate::routes::extract::openai_request_data::OpenAiRequestData;
-use crate::routes::response::openai_responder::OpenAiCompatibleResponse;
+use crate::routes::openai::request::OpenAiRequestData;
+use crate::routes::openai::response::OpenAiCompatibleResponse;
 
 // Connection is passed via extension
 pub(crate) async fn chat_completions_route(

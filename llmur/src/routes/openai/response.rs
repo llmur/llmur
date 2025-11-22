@@ -1,6 +1,5 @@
 use crate::providers::ExposesUsage;
 use axum::response::{IntoResponse, Response};
-use axum::http::StatusCode;
 use serde::Serialize;
 use crate::errors::{ProxyRequestError};
 
@@ -36,3 +35,4 @@ where
         resp
     }
 }
+

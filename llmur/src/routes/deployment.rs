@@ -1,6 +1,6 @@
 use crate::data::deployment::{Deployment, DeploymentAccess, DeploymentId};
 use crate::errors::LLMurError;
-use crate::routes::middleware::user_context_load_mw::{AuthorizationManager, UserContext, UserContextExtractionResult};
+use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
 use crate::routes::StatusResponse;
 use crate::{impl_from_vec_result, LLMurState};
 use axum::extract::{Path, State};
