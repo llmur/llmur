@@ -33,6 +33,7 @@ pub struct RequestLogId(pub Uuid);
 #[derive(Clone, Debug, Serialize)]
 pub struct RequestLog {
     pub id: RequestLogId,
+    pub attempt_number: i16,
 
     pub virtual_key_id: VirtualKeyId,
     pub deployment_id: DeploymentId,
@@ -122,7 +123,7 @@ impl Database {
                 let result = sql.execute(pool).await;
 
                 // TODO: Handle errors properly
-                Ok(result.map(|qr| qr.rows_affected()).map_err(|e| DataAccessError::DatabaseError(DatabaseError::SqlxError(e)))?)
+                Ok(result.map(|qr| qr.rows_affected()).map_err(|e| DatabaseError::SqlxError(e.to_string()))?)
             }
         }
     }
@@ -255,6 +256,7 @@ pub(crate) fn pg_insert_m(
         INSERT INTO request_logs
         (
             id,
+            attempt_number,
             virtual_key_id,
             project_id,
             deployment_id,
@@ -282,6 +284,7 @@ pub(crate) fn pg_insert_m(
 
     query.push_values(request_logs, |mut b, log| {
         b.push_bind(&log.id)
+            .push_bind(&log.attempt_number)
             .push_bind(&log.graph.virtual_key.data.id)
             .push_bind(&log.graph.project.data.id)
             .push_bind(&log.graph.deployment.data.id)
@@ -426,6 +429,7 @@ pub(crate) fn pg_insert<'a>(
 #[derive(FromRow, Clone, Debug)]
 pub(crate) struct DbRequestLogRecord {
     pub id: RequestLogId,
+    pub attempt_number: i16,
 
     pub virtual_key_id: VirtualKeyId,
     pub deployment_id: DeploymentId,
@@ -458,6 +462,7 @@ impl ConvertInto<RequestLog> for DbRequestLogRecord {
     fn convert(self, _application_secret: &Option<Uuid>) -> Result<RequestLog, DataConversionError> {
         Ok(RequestLog {
             id: self.id,
+            attempt_number: self.attempt_number,
             virtual_key_id: self.virtual_key_id,
             deployment_id: self.deployment_id,
             connection_id: self.connection_id,
@@ -496,7 +501,6 @@ pub struct RequestLogData {
 
     pub input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
-    pub total_tokens: Option<i64>,
 
     pub cost: Option<f64>,
 

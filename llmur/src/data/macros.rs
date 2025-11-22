@@ -343,7 +343,7 @@ macro_rules! default_db_insert_fn {
                     crate::data::Database::Postgres { pool } => {
                         let mut query = $pg_query_fn($( $param_name ),*);
                         let sql = query.build_query_as::<$id_type>();
-                        let result = sql.fetch_one(pool).await?;
+                        let result = sql.fetch_one(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
 
                         Ok(result)
                     }
@@ -367,7 +367,7 @@ macro_rules! default_db_search_fn {
                     crate::data::Database::Postgres { pool } => {
                         let mut query = $pg_query_fn();
                         let sql = query.build_query_as::<$type>();
-                        let result = sql.fetch_all(pool).await?;
+                        let result = sql.fetch_all(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
 
                         Ok(result)
                     }
@@ -389,7 +389,7 @@ macro_rules! default_db_search_fn {
                     crate::data::Database::Postgres { pool } => {
                         let mut query = $pg_query_fn($( $param_name ),*);
                         let sql = query.build_query_as::<$type>();
-                        let result = sql.fetch_all(pool).await?;
+                        let result = sql.fetch_all(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
 
                         Ok(result)
                     }
@@ -413,9 +413,9 @@ macro_rules! default_db_get_fn {
                     crate::data::Database::Postgres { pool } => {
                         let mut query = $pg_query_fn(id);
                         let sql= query.build_query_as::<$type>();
-                        let result = sql.fetch_optional(pool).await;
+                        let result = sql.fetch_optional(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
 
-                        Ok(result?)
+                        Ok(result)
                     }
                 }
             }
@@ -437,7 +437,7 @@ macro_rules! default_db_get_multiple_fn {
                     crate::data::Database::Postgres { pool } => {
                         let mut query = $pg_query_fn(ids);
                         let sql= query.build_query_as::<$type>();
-                        let result = sql.fetch_all(pool).await?;
+                        let result = sql.fetch_all(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
 
                         // Create a map of found items using owned values
                         let found_items: std::collections::BTreeMap<$id_type, $type> = result
@@ -471,9 +471,9 @@ macro_rules! default_db_delete_fn {
                     crate::data::Database::Postgres { pool } => {
                         let mut query = $pg_query_fn(id);
                         let sql = query.build();
-                        let result = sql.execute(pool).await;
+                        let result = sql.execute(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
 
-                        Ok(result.map(|qr| qr.rows_affected())?)
+                        Ok(result.rows_affected())
                     }
                 }
             }

@@ -182,15 +182,15 @@ impl Database {
                          port,
                          database
                 )
-            ).await?
+            ).await.map_err(|e| DatabaseError::SqlxError(e.to_string()))?
         })
     }
 
     pub async fn migrate(&self) -> Result<(), DatabaseError> {
         match self {
             Database::Postgres { pool } => {
-                let m = Migrator::new(Path::new(&format!("{}/postgres/migration", env!("CARGO_MANIFEST_DIR")))).await?;
-                let _ = m.run(pool).await?;
+                let m = Migrator::new(Path::new(&format!("{}/postgres/migration", env!("CARGO_MANIFEST_DIR")))).await.map_err(|e| DatabaseError::MigrateError(e.to_string()))?;
+                let _ = m.run(pool).await.map_err(|e| DatabaseError::MigrateError(e.to_string()))?;
                 Ok(())
             }
         }
@@ -417,7 +417,6 @@ fn spawn_request_log_writer(
         println!("### usage writer started");
 
         loop {
-            println!("### usage writer waiting for events");
             select! {
                 _ = tick.tick() => {
                     if !batch.is_empty() {
