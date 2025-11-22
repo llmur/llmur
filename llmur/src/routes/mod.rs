@@ -9,10 +9,10 @@ use crate::data::graph::Graph;
 use crate::errors::LLMurError;
 use crate::LLMurState;
 use crate::routes::chat_completions::chat_completions_route;
-use crate::routes::middlewares::auth_token_extraction_mw::auth_token_extraction_mw;
-use crate::routes::middlewares::common_tracing_mw::common_tracing_mw;
-use crate::routes::middlewares::openai_route_controller_mw::openai_route_controller_mw;
-use crate::routes::middlewares::user_context_load_mw::user_context_load_mw;
+use crate::routes::middleware::auth_token_extraction_mw::auth_token_extraction_mw;
+use crate::routes::middleware::common_tracing_mw::common_tracing_mw;
+use crate::routes::middleware::openai_route_controller_mw::openai_route_controller_mw;
+use crate::routes::middleware::user_context_load_mw::user_context_load_mw;
 
 mod connection;
 mod deployment;
@@ -27,9 +27,9 @@ mod membership;
 mod chat_completions;
 
 mod macros;
-mod middlewares;
-mod extractors;
-mod responders;
+mod middleware;
+mod extract;
+mod response;
 
 pub(crate) fn all(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
     Router::new()

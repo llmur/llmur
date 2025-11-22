@@ -1,8 +1,8 @@
 use crate::LLMurState;
 use crate::errors::LLMurError;
 use crate::providers::{ExposesDeployment, ExposesUsage};
-use crate::routes::extractors::openai_request_data::OpenAiRequestData;
-use crate::routes::responders::openai_responder::OpenAiCompatibleResponse;
+use crate::routes::extract::openai_request_data::OpenAiRequestData;
+use crate::routes::response::openai_responder::OpenAiCompatibleResponse;
 
 use crate::data::request_log::{RequestLogData, RequestLogId};
 use axum::extract::FromRequest;

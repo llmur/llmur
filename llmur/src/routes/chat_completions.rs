@@ -7,8 +7,8 @@ use std::sync::Arc;
 use tracing::log::info;
 use crate::providers::openai::chat_completions::response::Response as ChatCompletionsResponse;
 use crate::providers::openai::chat_completions::request::Request as ChatCompletionsRequest;
-use crate::routes::extractors::openai_request_data::OpenAiRequestData;
-use crate::routes::responders::openai_responder::OpenAiCompatibleResponse;
+use crate::routes::extract::openai_request_data::OpenAiRequestData;
+use crate::routes::response::openai_responder::OpenAiCompatibleResponse;
 
 // Connection is passed via extension
 pub(crate) async fn chat_completions_route(

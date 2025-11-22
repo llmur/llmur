@@ -2,7 +2,7 @@ use crate::data::membership::{Membership, MembershipId};
 use crate::data::project::{ProjectId, ProjectRole};
 use crate::data::user::UserId;
 use crate::errors::LLMurError;
-use crate::routes::middlewares::user_context_load_mw::{AuthorizationManager, UserContext, UserContextExtractionResult};
+use crate::routes::middleware::user_context_load_mw::{AuthorizationManager, UserContext, UserContextExtractionResult};
 use crate::routes::StatusResponse;
 use crate::{impl_from_vec_result, LLMurState};
 use axum::extract::{Path, State};

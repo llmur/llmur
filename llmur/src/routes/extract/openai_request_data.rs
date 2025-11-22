@@ -10,7 +10,7 @@ use axum::{
     Json,
 };
 use http_body_util::BodyExt;
-use crate::routes::middlewares::auth_token_extraction_mw::{
+use crate::routes::middleware::auth_token_extraction_mw::{
     AuthorizationHeader, AuthorizationHeaderExtractionResult,
 };
 

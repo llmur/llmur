@@ -2,7 +2,7 @@ use crate::data::connection::ConnectionId;
 use crate::data::connection_deployment::{ConnectionDeployment, ConnectionDeploymentId};
 use crate::data::deployment::DeploymentId;
 use crate::errors::LLMurError;
-use crate::routes::middlewares::user_context_load_mw::{AuthorizationManager, UserContext, UserContextExtractionResult};
+use crate::routes::middleware::user_context_load_mw::{AuthorizationManager, UserContext, UserContextExtractionResult};
 use crate::routes::StatusResponse;
 use crate::{impl_from_vec_result, LLMurState};
 use axum::extract::{Path, State};
