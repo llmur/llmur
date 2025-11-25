@@ -9,7 +9,7 @@ use crate::data::connection::{AzureOpenAiApiVersion, Connection, ConnectionId, C
 use crate::{impl_from_vec_result, LLMurState};
 use crate::data::user::ApplicationRole;
 use crate::errors::{DataAccessError, LLMurError};
-use crate::routes::middlewares::user_context_load_mw::{AuthorizationManager, UserContext, UserContextExtractionResult};
+use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
 use crate::routes::StatusResponse;
 
 // region:    --- Routes

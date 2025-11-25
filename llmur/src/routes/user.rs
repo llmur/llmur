@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::errors::{DataAccessError, LLMurError};
 use crate::{impl_from_vec_result, LLMurState};
 use crate::data::user::{ApplicationRole, User, UserId};
-use crate::routes::middlewares::user_context_load_mw::{AuthorizationManager, UserContext, UserContextExtractionResult};
+use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
 use crate::routes::StatusResponse;
 
 // region:    --- Routes

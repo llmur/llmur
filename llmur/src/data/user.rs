@@ -135,9 +135,9 @@ impl Database {
             Database::Postgres { pool } => {
                 let mut query = pg_get_user_with_email_query(email);
                 let sql= query.build_query_as::<DbUserRecord>();
-                let result = sql.fetch_optional(pool).await;
+                let result = sql.fetch_optional(pool).await.map_err(|e| DatabaseError::SqlxError(e.to_string()))?;;
 
-                Ok(result?)
+                Ok(result)
             }
         }
     }

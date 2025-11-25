@@ -1,24 +1,20 @@
 use crate::data::connection::ConnectionInfo;
-use crate::errors::LLMurError;
 use crate::LLMurState;
 use axum::extract::State;
 use axum::Extension;
 use std::sync::Arc;
-use tracing::log::info;
 use crate::providers::openai::chat_completions::response::Response as ChatCompletionsResponse;
 use crate::providers::openai::chat_completions::request::Request as ChatCompletionsRequest;
-use crate::routes::responders::openai_responder::OpenAiCompatibleResponse;
+use crate::routes::openai::request::OpenAiRequestData;
+use crate::routes::openai::response::OpenAiCompatibleResponse;
 
 // Connection is passed via extension
 pub(crate) async fn chat_completions_route(
     State(state): State<Arc<LLMurState>>,
     Extension(connection_info): Extension<ConnectionInfo>,
-    Extension(request): Extension<Arc<ChatCompletionsRequest>>,
-) -> Result<OpenAiCompatibleResponse<ChatCompletionsResponse>, LLMurError> {
+    Extension(request): Extension<Arc<OpenAiRequestData<ChatCompletionsRequest>>>,
+) -> OpenAiCompatibleResponse<ChatCompletionsResponse> {
     println!("== Executing Chat Completions request");
-    info!("== Executing Chat Completions request");
-
-    let payload = (*request).clone();
 
     let result = match &connection_info {
         ConnectionInfo::AzureOpenAiApiKey { api_key, api_endpoint, api_version, deployment_name } => {
@@ -28,8 +24,8 @@ pub(crate) async fn chat_completions_route(
                 api_key,
                 api_endpoint,
                 api_version,
-                payload
-            ).await?
+                request.payload.clone()
+            ).await
         }
         ConnectionInfo::OpenAiApiKey { api_key, api_endpoint, model } => {
             openai_v1_request::chat_completions(
@@ -37,13 +33,12 @@ pub(crate) async fn chat_completions_route(
                 model,
                 api_key,
                 api_endpoint,
-                payload
-            ).await?
+                request.payload.clone()
+            ).await
         }
     };
 
-    Ok(OpenAiCompatibleResponse::new(result))
-
+    OpenAiCompatibleResponse::new(result)
 }
 
 mod azure_openai_request {

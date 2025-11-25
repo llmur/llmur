@@ -1,6 +1,7 @@
 use reqwest::Client;
 use reqwest::header::HeaderMap;
 use serde_json::json;
+use crate::data::errors::DatabaseError;
 use crate::errors::ProxyRequestError;
 use crate::providers::{TransformationContext, TransformationLoss, Transformer};
 
@@ -28,7 +29,7 @@ pub(crate) async fn generic_post_proxy_request<
     let request_transformation = request.transform(request_context);
 
     println!("Serializing request of type {:?} into {:?}.", std::any::type_name::<RequestTransformed>(), std::any::type_name::<serde_json::Value>());
-    let body = serde_json::to_value(request_transformation.result)?;
+    let body = serde_json::to_value(request_transformation.result).map_err(|e| ProxyRequestError::SerdeError(e.to_string()))?;
 
     println!("Generating endpoint url");
     let url = generate_url_fn(request_transformation.loss);
@@ -39,14 +40,15 @@ pub(crate) async fn generic_post_proxy_request<
         .headers(request_headers)
         .json(&body)
         .send()
-        .await?;
+        .await
+        .map_err(|e| ProxyRequestError::ReqwestError(e.to_string()))?;
     println!("POST request executed successfully. Got status {:?}.", response.status());
 
     if response.status().is_success() {
         println!("Deserializing provider response into {:?}.", std::any::type_name::<ResponseProvider>());
         let deserialized_response = response
             .json::<ResponseProvider>()
-            .await.map_err(|e| ProxyRequestError::ReqwestSerdeError(e))?;
+            .await.map_err(|e| ProxyRequestError::ReqwestSerdeError(e.to_string()))?;
 
         println!("Transforming response {:?} into {:?}.", std::any::type_name::<ResponseProvider>(), std::any::type_name::<ResponseTransformed>());
         let response_transformation = deserialized_response.transform(response_context);

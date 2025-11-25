@@ -1,11 +1,11 @@
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum DatabaseError {
-    #[error(transparent)]
-    SqlxError(#[from] sqlx::Error),
+    #[error("Error: {0}")]
+    SqlxError(String),
     #[error(transparent)]
     UtilsError(#[from] UtilsError),
-    #[error(transparent)]
-    MigrateError(#[from] sqlx::migrate::MigrateError),
+    #[error("Error: {0}")]
+    MigrateError(String),
     #[error("FailedToGenerateSessionToken")]
     FailedToGenerateSessionToken,
     #[error("FailedToDecryptValue")]
@@ -16,7 +16,7 @@ pub enum DatabaseError {
     NothingToUpdate,
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum CacheError {
     #[error("Failed to start Redis manager. Reason: ({cause})")]
     RedisStartError { cause: String },
@@ -26,7 +26,7 @@ pub enum CacheError {
     RedisExecutionError { cause: String },
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum DataConversionError {
     #[error("Convert Database Model: ({cause})")]
     DefaultError { cause: String },

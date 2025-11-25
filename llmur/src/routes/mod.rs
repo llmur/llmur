@@ -9,10 +9,10 @@ use crate::data::graph::Graph;
 use crate::errors::LLMurError;
 use crate::LLMurState;
 use crate::routes::chat_completions::chat_completions_route;
-use crate::routes::middlewares::auth_token_extraction_mw::auth_token_extraction_mw;
-use crate::routes::middlewares::common_tracing_mw::common_tracing_mw;
-use crate::routes::middlewares::openai_route_handler_mw::openai_request_handler_mw;
-use crate::routes::middlewares::user_context_load_mw::user_context_load_mw;
+use crate::routes::middleware::auth::auth_token_extraction_mw;
+use crate::routes::middleware::tracing::common_tracing_mw;
+use crate::routes::openai::controller::openai_route_controller_mw;
+use crate::routes::middleware::user_context::user_context_load_mw;
 
 mod connection;
 mod deployment;
@@ -27,19 +27,14 @@ mod membership;
 mod chat_completions;
 
 mod macros;
-mod middlewares;
-mod extractors;
-mod responders;
+mod middleware;
+mod openai;
 
 pub(crate) fn all(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
     Router::new()
         .nest("/admin", admin_routes(state.clone()))
         .nest("/v1", openai_v1_routes(state.clone()))
         .with_state(state.clone())
-        // HTTP spans (latency, status) – works with any tracing subscriber incl. OTEL
-        .layer(TraceLayer::new_for_http())
-        // Common tracing middleware - Injects tracing info into request context
-        .layer(from_fn(common_tracing_mw))
 }
 
 pub(crate) fn admin_routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
@@ -57,6 +52,7 @@ pub(crate) fn admin_routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .route("/graph/{key}/{deployment}", get(get_graph))
         // Add user context loading middleware - loads user context based on auth info
         .route_layer(from_fn_with_state(state.clone(), user_context_load_mw))
+        .layer(TraceLayer::new_for_http())
         .with_state(state.clone())
 }
 
@@ -65,19 +61,18 @@ pub(crate) fn openai_v1_routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>
         .route(
             "/chat/completions",
             post(chat_completions_route)
-                // 2) inner: graph + fanout middleware
                 .route_layer(from_fn_with_state(
                     state.clone(),
-                    openai_request_handler_mw::<
+                    openai_route_controller_mw::<
                         crate::providers::openai::chat_completions::request::Request,
                         crate::providers::openai::chat_completions::response::Response,
                     >,
                 ))
-                // 1) outermost: auth first (runs before graph mw)
-                .route_layer(from_fn(auth_token_extraction_mw))
-                .route_layer(from_fn(common_tracing_mw)),
         )
         .with_state(state.clone())
+        .layer(from_fn(auth_token_extraction_mw))
+        .layer(from_fn(common_tracing_mw))
+        .layer(TraceLayer::new_for_http())
 }
 
 #[derive(Serialize)]

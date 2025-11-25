@@ -1,5 +1,7 @@
 CREATE TABLE request_logs (
-  id                UUID PRIMARY KEY,
+  id                UUID     NOT NULL,
+  attempt_number    SMALLINT NOT NULL,
+
   virtual_key_id    UUID NOT NULL,
   project_id        UUID NOT NULL,
   deployment_id     UUID NOT NULL,
@@ -24,7 +26,9 @@ CREATE TABLE request_logs (
   project_name      TEXT,
   virtual_key_alias TEXT,
 
-  created_at        TIMESTAMP NOT NULL DEFAULT (timezone('utc', now()))
+  created_at        TIMESTAMP NOT NULL DEFAULT (timezone('utc', now())),
+
+  PRIMARY KEY(id, attempt_number)
 );
 
 CREATE INDEX idx_request_logs_vk_ts   ON request_logs (virtual_key_id, request_ts) INCLUDE (cost, total_tokens);

@@ -10,7 +10,7 @@ use crate::data::project::ProjectId;
 use crate::data::virtual_key::VirtualKeyId;
 use crate::data::virtual_key_deployment::VirtualKeyDeploymentId;
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum GraphConstructionError {
     /// A deployment referenced by a VirtualKeyDeployment was not found in the provided deployments
     #[error("Virtual Key not found while building graph: {0}")]
@@ -26,7 +26,7 @@ pub enum GraphConstructionError {
     VirtualKeyDeploymentMismatch
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum DataAccessError {
     #[error(transparent)]
     DataConversionError(#[from] DataConversionError),
@@ -216,18 +216,41 @@ pub enum UserContextExtractionError {
 }
 
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum ProxyRequestError {
     #[error("Request successful but returned {0}")]
     ProxyReturnError(u16, serde_json::Value),
-    #[error(transparent)]
-    ReqwestSerdeError(reqwest::Error),
-    #[error(transparent)]
-    ReqwestError(#[from] reqwest::Error),
-    #[error(transparent)]
-    SerdeError(#[from] serde_json::Error),
-    #[error(transparent)]
+    #[error("Error: {0}")]
+    ReqwestSerdeError(String),
+    #[error("Error: {0}")]
+    ReqwestError(String),
+    #[error("Error: {0}")]
+    SerdeError(String),
+    #[error("Error: {0}")]
     DataAccessError(#[from] DataAccessError),
+}
+
+
+// TODO: Improve error handling
+impl IntoResponse for ProxyRequestError {
+    fn into_response(self) -> Response {
+        let status = match &self {
+            ProxyRequestError::ProxyReturnError(code, _value) => StatusCode::from_u16(*code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+
+        };
+
+        let body = axum::Json(serde_json::json!({
+            "error": format!("{:?}", self)
+        }));
+
+        let mut resp = (status, body).into_response();
+
+        // Insert error into extensions for middleware access
+        resp.extensions_mut().insert(self.clone());
+
+        resp
+    }
 }
 
 impl IntoResponse for LLMurError {

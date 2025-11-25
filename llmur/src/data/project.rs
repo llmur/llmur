@@ -98,17 +98,17 @@ impl Database {
     pub(crate) async fn insert_project_with_owner(&self, name: &str, owner: &UserId) -> Result<(ProjectId, MembershipId), DatabaseError> {
         match self {
             Database::Postgres { pool } => {
-                let mut tx = pool.begin().await?;
+                let mut tx = pool.begin().await.map_err(|e| DatabaseError::SqlxError(e.to_string()))?;
 
                 let mut insert_project_query = pg_insert(name);
                 let sql = insert_project_query.build_query_as::<ProjectId>();
-                let project_id = sql.fetch_one(&mut *tx).await?;
+                let project_id = sql.fetch_one(&mut *tx).await.map_err(|e| DatabaseError::SqlxError(e.to_string()))?;
 
                 let mut ins_creator_query = crate::data::membership::pg_insert(&project_id, &owner, &ProjectRole::Admin);
                 let ins_creator_sql = ins_creator_query.build_query_as::<MembershipId>();
-                let membership_id = ins_creator_sql.fetch_one(&mut *tx).await?;
+                let membership_id = ins_creator_sql.fetch_one(&mut *tx).await.map_err(|e| DatabaseError::SqlxError(e.to_string()))?;
 
-                tx.commit().await?;
+                tx.commit().await.map_err(|e| DatabaseError::SqlxError(e.to_string()))?;
                 Ok((project_id, membership_id))
             }
         }
