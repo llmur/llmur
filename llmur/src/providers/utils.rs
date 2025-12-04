@@ -1,4 +1,4 @@
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use reqwest::header::HeaderMap;
 use serde_json::json;
 use crate::data::errors::DatabaseError;
@@ -24,7 +24,7 @@ pub(crate) async fn generic_post_proxy_request<
     generate_url_fn: impl Fn(RequestTransformationLoss) -> String,
     request_headers: HeaderMap,
     response_context: ResponseTransformationContext,
-) -> Result<ResponseTransformed, ProxyRequestError> {
+) -> Result<(ResponseTransformed, StatusCode), ProxyRequestError> {
     println!("Transforming request {:?} into {:?}.", std::any::type_name::<RequestOriginal>(), std::any::type_name::<RequestTransformed>());
     let request_transformation = request.transform(request_context);
 
@@ -43,8 +43,10 @@ pub(crate) async fn generic_post_proxy_request<
         .await
         .map_err(|e| ProxyRequestError::ReqwestError(e.to_string()))?;
     println!("POST request executed successfully. Got status {:?}.", response.status());
+    
+    let status = response.status();
 
-    if response.status().is_success() {
+    if status.is_success() {
         println!("Deserializing provider response into {:?}.", std::any::type_name::<ResponseProvider>());
         let deserialized_response = response
             .json::<ResponseProvider>()
@@ -53,9 +55,9 @@ pub(crate) async fn generic_post_proxy_request<
         println!("Transforming response {:?} into {:?}.", std::any::type_name::<ResponseProvider>(), std::any::type_name::<ResponseTransformed>());
         let response_transformation = deserialized_response.transform(response_context);
 
-        Ok(response_transformation.result)
+        Ok((response_transformation.result, status))
     } else {
-        let status = response.status().as_u16();
+        let status = status.as_u16();
 
         println!("Getting error response received from provider {:?}.", std::any::type_name::<ResponseProvider>());
         match response.text().await {

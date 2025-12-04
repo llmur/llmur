@@ -6,6 +6,11 @@ CREATE TABLE IF NOT EXISTS deployments (
 
     access deployment_access NOT NULL DEFAULT 'private',
 
+    -- Limits
+    budget_limits JSONB,
+    request_limits JSONB,
+    token_limits JSONB,
+
     created_at TIMESTAMP NOT NULL DEFAULT (timezone('utc', now())),
     updated_at TIMESTAMP NOT NULL DEFAULT (timezone('utc', now()))
 );

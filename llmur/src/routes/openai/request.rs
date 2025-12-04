@@ -15,6 +15,7 @@ use crate::routes::middleware::auth::{
 
 use serde::de::DeserializeOwned;
 use std::{ops::Deref, sync::Arc};
+use chrono::Utc;
 
 /// Consumes the request and extracts/builds all required information from it
 pub struct OpenAiRequestData<T> {
@@ -65,9 +66,10 @@ where
         let deployment = payload.get_deployment_ref();
         let graph = match auth_header {
             AuthorizationHeader::Bearer(api_key) => {
+                // TODO: Pass the correct TS - TS of the actual request
                 app_state
                     .data
-                    .get_graph(&api_key, deployment, false, 10_000, &app_state.application_secret)
+                    .get_graph(&api_key, deployment, false, 10_000, &app_state.application_secret, &Utc::now())
                     .await?
             }
         };

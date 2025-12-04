@@ -3,6 +3,7 @@ use axum::extract::{Path, State};
 use axum::{Json, Router};
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{get, post};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use crate::data::graph::Graph;
@@ -28,7 +29,7 @@ mod chat_completions;
 
 mod macros;
 mod middleware;
-mod openai;
+pub(crate) mod openai;
 
 pub(crate) fn all(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
     Router::new()
@@ -91,7 +92,7 @@ pub(crate) async fn get_graph(
     State(state): State<Arc<LLMurState>>,
     Path(Params { key, deployment }): Path<Params>,
 ) -> Result<Json<Graph>, LLMurError> {
-    let graph = state.data.get_graph(&key, &deployment, false, 10000, &state.application_secret).await;
+    let graph = state.data.get_graph(&key, &deployment, false, 10000, &state.application_secret, &Utc::now()).await;
     println!("{:?}", graph);
     Ok(Json(graph?))
 }

@@ -1,13 +1,18 @@
-use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, Postgres, QueryBuilder};
-use uuid::Uuid;
-use crate::data::utils::{new_uuid_v5_from_string, ConvertInto};
-use crate::{default_access_fns, default_database_access_fns, impl_local_store_accessors, impl_locally_stored, impl_structured_id_utils, impl_with_id_parameter_for_struct};
-use crate::data::{DataAccess, Database};
 use crate::data::errors::{DataConversionError, DatabaseError};
+use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::membership::MembershipId;
 use crate::data::user::UserId;
+use crate::data::utils::{ConvertInto, new_uuid_v5_from_string};
+use crate::data::{DataAccess, Database};
 use crate::errors::DataAccessError;
+use crate::{
+    default_access_fns, default_database_access_fns, impl_local_store_accessors,
+    impl_locally_stored, impl_structured_id_utils, impl_with_id_parameter_for_struct,
+};
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, Postgres, QueryBuilder};
+use sqlx::types::Json;
+use uuid::Uuid;
 
 // region:    --- Main Model
 #[derive(Debug, Clone, sqlx::Type, PartialEq, Serialize, Deserialize)]
@@ -36,7 +41,7 @@ pub enum ProjectRole {
     sqlx::Type,
     Serialize,
     Deserialize,
-    FromRow
+    FromRow,
 )]
 #[sqlx(transparent)]
 pub struct ProjectId(pub Uuid);
@@ -45,13 +50,26 @@ pub struct ProjectId(pub Uuid);
 pub struct Project {
     pub id: ProjectId,
     pub name: String,
+
+    pub budget_limits: BudgetLimits,
+    pub request_limits: RequestLimits,
+    pub token_limits: TokenLimits,
 }
 
 impl Project {
-    pub(crate) fn new(id: ProjectId, name: String) -> Self {
+    pub(crate) fn new(
+        id: ProjectId,
+        name: String,
+        budget_limits: BudgetLimits,
+        request_limits: RequestLimits,
+        token_limits: TokenLimits,
+    ) -> Self {
         Project {
             id,
             name,
+            budget_limits,
+            request_limits,
+            token_limits,
         }
     }
 }
@@ -66,13 +84,27 @@ impl DataAccess {
         self.__get_project(id, &None).await
     }
 
-    pub async fn create_project(&self, name: &str, owner: &Option<UserId>) -> Result<Project, DataAccessError> {
+    pub async fn create_project(
+        &self,
+        name: &str,
+        owner: &Option<UserId>,
+        budget_limits: &Option<BudgetLimits>,
+        request_limits: &Option<RequestLimits>,
+        token_limits: &Option<TokenLimits>,
+    ) -> Result<Project, DataAccessError> {
         let project_id = match owner {
-            None => { self.database.insert_project(name).await? }
-            Some(user) => { self.database.insert_project_with_owner(name, user).await?.0 }
+            None => {
+                self.database
+                    .insert_project(name, budget_limits, request_limits, token_limits)
+                    .await?
+            }
+            Some(user) => self.database.insert_project_with_owner(name, user, budget_limits, request_limits, token_limits).await?.0,
         };
 
-        let record = self.__get_project(&project_id, &None).await?.ok_or(DataAccessError::FailedToCreateKey)?; // TODO
+        let record = self
+            .__get_project(&project_id, &None)
+            .await?
+            .ok_or(DataAccessError::FailedToCreateKey)?; // TODO
         Ok(record)
     }
 
@@ -82,39 +114,60 @@ impl DataAccess {
 }
 
 default_access_fns!(
-        Project,
-        ProjectId,
-        project,
-        projects,
-        create => {
-            name: &str
-        },
-        search => {}
-    );
+    Project,
+    ProjectId,
+    project,
+    projects,
+    create => {
+        name: &str,
+        budget_limits: &Option<BudgetLimits>,
+        request_limits: &Option<RequestLimits>,
+        token_limits: &Option<TokenLimits>
+    },
+    search => {}
+);
 // endregion: --- Data Access
 
 // region:    --- Database Access
 impl Database {
-    pub(crate) async fn insert_project_with_owner(&self, name: &str, owner: &UserId) -> Result<(ProjectId, MembershipId), DatabaseError> {
+    pub(crate) async fn insert_project_with_owner(
+        &self,
+        name: &str,
+        owner: &UserId,
+        budget_limits: &Option<BudgetLimits>,
+        request_limits: &Option<RequestLimits>,
+        token_limits: &Option<TokenLimits>
+    ) -> Result<(ProjectId, MembershipId), DatabaseError> {
         match self {
             Database::Postgres { pool } => {
-                let mut tx = pool.begin().await.map_err(|e| DatabaseError::SqlxError(e.to_string()))?;
+                let mut tx = pool
+                    .begin()
+                    .await
+                    .map_err(|e| DatabaseError::SqlxError(e.to_string()))?;
 
-                let mut insert_project_query = pg_insert(name);
+                let mut insert_project_query = pg_insert(name, budget_limits, request_limits, token_limits);
                 let sql = insert_project_query.build_query_as::<ProjectId>();
-                let project_id = sql.fetch_one(&mut *tx).await.map_err(|e| DatabaseError::SqlxError(e.to_string()))?;
+                let project_id = sql
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(|e| DatabaseError::SqlxError(e.to_string()))?;
 
-                let mut ins_creator_query = crate::data::membership::pg_insert(&project_id, &owner, &ProjectRole::Admin);
+                let mut ins_creator_query =
+                    crate::data::membership::pg_insert(&project_id, &owner, &ProjectRole::Admin);
                 let ins_creator_sql = ins_creator_query.build_query_as::<MembershipId>();
-                let membership_id = ins_creator_sql.fetch_one(&mut *tx).await.map_err(|e| DatabaseError::SqlxError(e.to_string()))?;
+                let membership_id = ins_creator_sql
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(|e| DatabaseError::SqlxError(e.to_string()))?;
 
-                tx.commit().await.map_err(|e| DatabaseError::SqlxError(e.to_string()))?;
+                tx.commit()
+                    .await
+                    .map_err(|e| DatabaseError::SqlxError(e.to_string()))?;
                 Ok((project_id, membership_id))
             }
         }
     }
 }
-
 
 default_database_access_fns!(
     DbProjectRecord,
@@ -122,7 +175,10 @@ default_database_access_fns!(
     project,
     projects,
     insert => {
-        name: &str
+        name: &str,
+        budget_limits: &Option<BudgetLimits>,
+        request_limits: &Option<RequestLimits>,
+        token_limits: &Option<TokenLimits>
     },
     search => { }
 );
@@ -132,12 +188,16 @@ pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
 }
 
 pub(crate) fn pg_get(id: &ProjectId) -> QueryBuilder<Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         SELECT
             id,
-            name
+            name,
+            budget_limits,
+            request_limits,
+            token_limits
         FROM projects
-        WHERE id="
+        WHERE id=",
     );
     // Push id
     query.push_bind(id);
@@ -150,9 +210,10 @@ pub(crate) fn pg_getm(ids: &Vec<ProjectId>) -> QueryBuilder<Postgres> {
 }
 
 pub(crate) fn pg_delete(id: &ProjectId) -> QueryBuilder<Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         DELETE FROM projects
-        WHERE id="
+        WHERE id=",
     );
     // Push id
     query.push_bind(id);
@@ -160,15 +221,49 @@ pub(crate) fn pg_delete(id: &ProjectId) -> QueryBuilder<Postgres> {
     query
 }
 
-pub(crate) fn pg_insert(name: &str) -> QueryBuilder<Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+pub(crate) fn pg_insert<'a>(
+    name: &'a str,
+    budget_limits: &'a Option<BudgetLimits>,
+    request_limits: &'a Option<RequestLimits>,
+    token_limits: &'a Option<TokenLimits>,
+) -> QueryBuilder<'a, Postgres> {
+    let mut query: QueryBuilder<'a, Postgres> = QueryBuilder::new(
+        "
         INSERT INTO projects
-            (id, name)
+            (id, name");
+
+    if budget_limits.is_some() {
+        query.push(", budget_limits");
+    }
+    if request_limits.is_some() {
+        query.push(", request_limits");
+    }
+    if token_limits.is_some() {
+        query.push(", token_limits");
+    }
+
+    query.push(")
         VALUES
-            (gen_random_uuid(), "
+            (gen_random_uuid(), ",
     );
     // Push name
     query.push_bind(name);
+
+    if let Some(limits) = budget_limits {
+        query.push(", ");
+        query.push_bind(Json::from(limits));
+    }
+
+    if let Some(limits) = request_limits {
+        query.push(", ");
+        query.push_bind(Json::from(limits));
+    }
+
+    if let Some(limits) = token_limits {
+        query.push(", ");
+        query.push_bind(Json::from(limits));
+    }
+
     // Push the rest of the query
     query.push(") RETURNING id");
     // Return builder
@@ -182,6 +277,10 @@ pub(crate) fn pg_insert(name: &str) -> QueryBuilder<Postgres> {
 pub(crate) struct DbProjectRecord {
     pub(crate) id: ProjectId,
     pub(crate) name: String,
+
+    pub(crate) budget_limits: Option<sqlx::types::Json<BudgetLimits>>,
+    pub(crate) request_limits: Option<sqlx::types::Json<RequestLimits>>,
+    pub(crate) token_limits: Option<sqlx::types::Json<TokenLimits>>,
 }
 
 impl ConvertInto<Project> for DbProjectRecord {
@@ -189,9 +288,12 @@ impl ConvertInto<Project> for DbProjectRecord {
         Ok(Project::new(
             self.id,
             self.name,
+            self.budget_limits.map(|l| l.0).unwrap_or_default(),
+            self.request_limits.map(|l| l.0).unwrap_or_default(),
+            self.token_limits.map(|l| l.0).unwrap_or_default(),
         ))
     }
 }
 
 impl_with_id_parameter_for_struct!(DbProjectRecord, ProjectId);
-// endregion: --- Database Model   
+// endregion: --- Database Model
