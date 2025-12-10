@@ -1,28 +1,23 @@
 use crate::data::errors::{CacheError, DatabaseError};
 use crate::data::graph::local_store::{GraphData, GraphDataId};
+use crate::data::request_log::RequestLogData;
 use crate::data::session_token::{SessionToken, SessionTokenId};
 use crate::data::utils::current_timestamp_ms;
 use crate::errors::BuilderError;
+use chrono::{DateTime, Utc};
 use redis::{AsyncCommands, ConnectionAddr, ConnectionInfo, FromRedisValue, ProtocolVersion, RedisConnectionInfo, RedisWrite, ToRedisArgs};
 use reqwest::Client;
+use serde::Serialize;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::PgPoolOptions;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use chrono::{DateTime, Utc};
-use serde::Serialize;
-use tokio::{select, sync::mpsc, time::interval};
 use tokio::task::JoinHandle;
-use crate::data::connection::ConnectionId;
-use crate::data::deployment::DeploymentId;
-use crate::data::graph::{Graph, VirtualKeyNode};
-use crate::data::project::ProjectId;
-use crate::data::request_log::{RequestLog, RequestLogData, RequestLogId};
-use crate::data::virtual_key::VirtualKeyId;
+use tokio::{select, sync::mpsc, time::interval};
 
 pub(crate) mod errors;
 pub(crate) mod macros;
@@ -43,15 +38,17 @@ pub mod membership;
 pub mod limits;
 pub mod graph;
 pub mod request_log;
+pub mod usage;
 
 
 // region:    --- Data Access
 pub struct DataAccess {
     pub(crate) database: Database,
-    pub(crate) cache: Cache,
+    pub(crate) cache: Arc<Cache>,
     pub(crate) http_client: reqwest::Client,
 
-    pub(crate) request_log_tx: mpsc::Sender<RequestLogData>,
+    pub(crate) request_log_tx: mpsc::Sender<Arc<RequestLogData>>,
+    pub(crate) usage_log_tx: mpsc::Sender<Arc<RequestLogData>>,
 }
 
 impl DataAccess {
@@ -122,20 +119,23 @@ impl DataAccessBuilder {
     // Finalize
     pub fn build(self) -> Result<DataAccess, BuilderError> {
         let database = self.database.ok_or(BuilderError::MissingDatabase)?;
-        let cache = self.cache.unwrap_or(Cache::local_only());
+        let cache = Arc::new(self.cache.unwrap_or(Cache::local_only()));
         let http_client = self.http_client.unwrap_or_else(Client::new);
 
-        let (request_log_tx, request_log_rx) = mpsc::channel::<RequestLogData>(256); // TODO: Parameterise buffer size
+        let (request_log_tx, request_log_rx) = mpsc::channel::<Arc<RequestLogData>>(256); // TODO: Parameterise buffer size
+        let (usage_log_tx, usage_log_rx) = mpsc::channel::<Arc<RequestLogData>>(256); // TODO: Parameterise buffer size
 
         // Background writer (flush every 750ms or 500 events)
         // TODO: Make parameters configurable
         spawn_request_log_writer(database.clone(), request_log_rx, Duration::from_millis(750), 500);
+        spawn_usage_writer(cache.clone(), usage_log_rx, Duration::from_millis(50), 10);
 
         Ok(DataAccess {
             database,
             cache,
             http_client,
             request_log_tx,
+            usage_log_tx,
         })
     }
 }
@@ -345,6 +345,33 @@ impl ExternalCache {
             }
         }
     }
+    /*
+    pub(crate) async fn increment_values(&self, keys: &BTreeSet<String>) -> Result<(), CacheError> {
+        match self {
+            ExternalCache::Redis { connection } => {
+                let mut conn = connection.clone();
+
+                // Convert BTreeSet to Vec for Redis mget
+                let keys_vec: Vec<&String> = keys.iter().collect();
+
+                conn.incr
+
+                // Use mget to retrieve all values for the given keys
+                let values: Vec<Option<String>> = conn.mget(keys_vec).await.map_err(|e| CacheError::RedisExecutionError { cause: e.to_string() })?;
+
+                // Convert into BTreeMap
+                let result = keys
+                    .iter()
+                    .cloned()
+                    .zip(values)
+                    .collect::<BTreeMap<String, Option<String>>>();
+
+                Ok(result)
+            }
+        }
+    }
+
+     */
 }
 
 
@@ -404,26 +431,26 @@ pub trait WithIdParameter<K> {
 // region:    --- Request Log Data
 fn spawn_request_log_writer(
     database: Database,
-    rx: mpsc::Receiver<RequestLogData>,
+    rx: mpsc::Receiver<Arc<RequestLogData>>,
     flush_every: Duration,
     max_batch: usize,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut rx = rx;
         let mut tick = interval(flush_every);
-        let mut batch = Vec::with_capacity(max_batch);
+        let mut batch: Vec<Arc<RequestLogData>> = Vec::with_capacity(max_batch);
 
 
-        println!("### usage writer started");
+        println!("### request log writer started");
 
         loop {
             select! {
                 _ = tick.tick() => {
                     if !batch.is_empty() {
-                        println!("### usage writer tick flush triggered with {} events", batch.len());
+                        println!("### request log tick flush triggered with {} events", batch.len());
                         let to_write = std::mem::take(&mut batch);
                         if let Err(e) = database.insert_request_logs(&to_write).await {
-                            println!("### usage writer tick flush failed {:?}", e);
+                            println!("### request log tick flush failed {:?}", e);
                         }
                     }
                 }
@@ -434,14 +461,67 @@ fn spawn_request_log_writer(
                             if batch.len() >= max_batch {
                                 let to_write = std::mem::take(&mut batch);
                                 if let Err(e) = database.insert_request_logs(&to_write).await {
-                                    println!("### usage writer size flush failed");
+                                    println!("### request log size flush failed");
+                                }
+                            }
+                        }
+                        None => {
+                            if !batch.is_empty() {
+                                println!("### request log shutdown flush triggered with {} events", batch.len());
+                                let _ = database.insert_request_logs(&batch).await;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    })
+}
+
+
+fn spawn_usage_writer(
+    cache: Arc<Cache>,
+    rx: mpsc::Receiver<Arc<RequestLogData>>,
+    flush_every: Duration,
+    max_batch: usize,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut rx = rx;
+        let mut tick = interval(flush_every);
+        let mut batch: Vec<Arc<RequestLogData>> = Vec::with_capacity(max_batch);
+
+
+        println!("### usage writer started");
+
+        loop {
+            select! {
+                _ = tick.tick() => {
+                    if !batch.is_empty() {
+                        println!("### usage writer tick flush triggered with {} events", batch.len());
+                        let to_write = std::mem::take(&mut batch);
+                        if let Err(e) = cache.increment_usage_data(to_write).await {
+                            println!("### usage writer tick flush failed {:?}", e);
+                        }
+                    }
+                }
+                msg = rx.recv() => {
+                    match msg {
+                        Some(ev) => {
+                            batch.push(ev);
+                            if batch.len() >= max_batch {
+                                let to_write = std::mem::take(&mut batch);
+                                if let Err(e) = cache.increment_usage_data(to_write).await {
+                                    println!("### usage writer size flush failed {:?}", e);
                                 }
                             }
                         }
                         None => {
                             if !batch.is_empty() {
                                 println!("### usage writer shutdown flush triggered with {} events", batch.len());
-                                let _ = database.insert_request_logs(&batch).await;
+                                if let Err(e) = cache.increment_usage_data(batch).await {
+                                    println!("### usage writer shutdown flush failed {:?}", e);
+                                }
                             }
                             break;
                         }

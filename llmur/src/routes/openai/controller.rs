@@ -1,20 +1,21 @@
 use crate::LLMurState;
-use crate::errors::LLMurError;
+use crate::errors::{LLMurError, ProxyRequestError};
 use crate::providers::{ExposesDeployment, ExposesUsage};
 use crate::routes::openai::request::OpenAiRequestData;
 use crate::routes::openai::response::OpenAiCompatibleResponse;
+use std::collections::BTreeMap;
 
-use crate::data::request_log::{RequestLogData, RequestLogId};
+use crate::data::request_log::{RequestLog, RequestLogData, RequestLogId};
 use axum::extract::FromRequest;
-use axum::{
-    body::Body,
-    extract::State,
-    http::Request,
-    middleware::Next,
-};
+use axum::{body::Body, extract::State, http::Request, middleware::Next};
 use chrono::{DateTime, Utc};
 
-use crate::data::graph::ConnectionNode;
+use crate::data::connection::Connection;
+use crate::data::deployment::Deployment;
+use crate::data::graph::usage_stats::MetricsUsageStats;
+use crate::data::graph::{ConnectionNode, Graph, NodeLimitsChecker};
+use crate::data::project::Project;
+use crate::data::virtual_key::VirtualKey;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
@@ -35,6 +36,8 @@ where
     if request_data.graph.connections.is_empty() {
         return Err(LLMurError::NotAuthorized);
     }
+
+    validate_usage(Arc::clone(&request_data))?;
 
     // --- Try each connection with a freshly-built Request each time ---
     for (attempt_number, connection) in request_data.graph.connections.iter().enumerate() {
@@ -67,9 +70,7 @@ where
                 std::any::type_name::<I>()
             );
 
-            let request_ts: DateTime<Utc> = Utc::now();
             let response = next.clone().run(attempt_req).await;
-            let response_ts: DateTime<Utc> = Utc::now();
 
             println!(
                 "Received response from upstream with status: {}",
@@ -78,20 +79,22 @@ where
 
             let result = response
                 .extensions()
-                .get::<OpenAiCompatibleResponse<O>>()
+                .get::<Arc<OpenAiCompatibleResponse<O>>>()
                 .ok_or(LLMurError::InternalServerError("Failed to load result".to_string()))
-                .expect("If we get to this point layers aren't properly setup or route is not returning OpenAiCompatibleResponse<O>");
+                .expect("If we get to this point layers aren't properly setup or route is not returning OpenAiCompatibleResponse<O>")
+                .clone();
+
+            let request_log_data_arc = Arc::new(generate_request_log_data::<I, O>(
+                (*request_id).clone(),
+                request_data.clone(),
+                attempt_number,
+                connection.clone(),
+                result.clone()
+            ));
 
             submit_request_log::<I, O>(
                 state.clone(),
-                request_id.clone(),
-                request_data.clone(),
-                attempt_number,
-                connection,
-                &result,
-                &response,
-                &request_ts,
-                &response_ts,
+                request_log_data_arc,
             );
 
             response
@@ -119,69 +122,83 @@ where
 {
     println!("Executing OpenAI-compatible request");
     let request_id = request.extensions().get::<RequestLogId>().cloned().ok_or(
-        LLMurError::InternalServerError("Missing RequestLogId in request extensions".to_string())
+        LLMurError::InternalServerError("Missing RequestLogId in request extensions".to_string()),
     )?;
     let request_data = OpenAiRequestData::<I>::from_request(request, &state).await?;
 
     Ok((Arc::new(request_id), Arc::new(request_data)))
 }
 
+fn generate_request_log_data<I, O>(
+    request_id: RequestLogId,
+    request_data_arc: Arc<OpenAiRequestData<I>>,
+    attempt_number: usize,
+    selected_connection_node: ConnectionNode,
+    result_arc: Arc<OpenAiCompatibleResponse<O>>,
+) -> RequestLogData
+where
+    I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
+    O: Serialize + ExposesUsage + Send + 'static + Sync,
+{
+    match &result_arc.result {
+        Ok(inner) => RequestLogData {
+            id: request_id,
+            attempt_number: attempt_number as i16,
+            graph: request_data_arc.graph.clone(),
+            selected_connection_node,
+            input_tokens: Some(inner.data.get_input_tokens() as i64),
+            output_tokens: Some(inner.data.get_output_tokens() as i64),
+            cost: None,
+            http_status_code: inner.status_code.as_u16() as i16,
+            error: None,
+            request_ts: result_arc.request_ts,
+            response_ts: result_arc.response_ts,
+            method: request_data_arc.method.clone(),
+            path: request_data_arc.path.clone(),
+        },
+        Err(error) => RequestLogData {
+            id: request_id,
+            attempt_number: attempt_number as i16,
+            graph: request_data_arc.graph.clone(),
+            selected_connection_node,
+            input_tokens: None,
+            output_tokens: None,
+            cost: None,
+            http_status_code: if let ProxyRequestError::ProxyReturnError(status_code, _) = error {
+                *status_code as i16
+            } else {
+                500
+            },
+            error: Some(error.to_string()),
+            request_ts: result_arc.request_ts,
+            response_ts: result_arc.response_ts,
+            method: request_data_arc.method.clone(),
+            path: request_data_arc.path.clone(),
+        },
+    }
+}
+
 fn submit_request_log<I, O>(
     state: Arc<LLMurState>,
-    request_id: Arc<RequestLogId>,
-    request_data: Arc<OpenAiRequestData<I>>,
-    attempt_number: usize,
-    connection: &ConnectionNode,
-    result: &OpenAiCompatibleResponse<O>,
-    response: &axum::response::Response,
-    request_ts: &DateTime<Utc>,
-    response_ts: &DateTime<Utc>
+    request_log_data_arc: Arc<RequestLogData>,
 ) -> ()
 where
     I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
     O: Serialize + ExposesUsage + Send + 'static + Sync,
 {
-    //let result = response.extensions().get::<OpenAiCompatibleResponse<O>>();
-    //let error = response.extensions().get::<LLMurError>();
+    // Submit request log to 2 channels - One will add the record in the DB and the other will
+    // update the usage stats
 
-    let record_log = match &result.result {
-        Ok(inner) => {
-            RequestLogData {
-                id: (*request_id).clone(),
-                attempt_number: attempt_number as i16,
-                graph: (request_data.graph).clone(),
-                attempted_connection_id: connection.data.id,
-                input_tokens: Some(inner.get_input_tokens() as i64),
-                output_tokens: Some(inner.get_output_tokens() as i64),
-                cost: None,
-                http_status_code: response.status().as_u16() as i16,
-                error: None,
-                request_ts: *request_ts,
-                response_ts: *response_ts,
-                method: request_data.method.clone(),
-                path: request_data.path.clone(),
-            }
+    match state.data.usage_log_tx.try_send(request_log_data_arc.clone()) {
+        Ok(_) => {
+            println!("### Successfully sent request log to usage channel");
         }
-        Err(_error) => {
-            RequestLogData {
-                id: (*request_id).clone(),
-                attempt_number: attempt_number as i16,
-                graph: (request_data.graph).clone(),
-                attempted_connection_id: connection.data.id,
-                input_tokens: None,
-                output_tokens: None,
-                cost: None,
-                http_status_code: response.status().as_u16() as i16,
-                error: None,
-                request_ts: *request_ts,
-                response_ts: *response_ts,
-                method: request_data.method.clone(),
-                path: request_data.path.clone(),
-            }
+        Err(_) => {
+            println!("### Failed to send request log to usage channel");
         }
     };
 
-    match state.data.request_log_tx.try_send(record_log) {
+    match state.data.request_log_tx.try_send(request_log_data_arc.clone()) {
         Ok(_) => {
             println!("### Successfully sent request log to logging channel");
         }
@@ -191,3 +208,36 @@ where
     };
 }
 
+fn validate_usage<I>(data: Arc<OpenAiRequestData<I>>) -> Result<(), LLMurError>
+where
+    I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
+{
+    data.graph.virtual_key.validate_limits()?;
+    data.graph.project.validate_limits()?;
+    data.graph.deployment.validate_limits()?;
+
+    Ok(())
+}
+
+pub(crate) fn generate_usage_increments_map<I>(
+    data: Arc<OpenAiRequestData<I>>,
+    used_connection: Arc<ConnectionNode>,
+) -> Result<(), ()>
+where
+    I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
+{
+    let mut map: BTreeMap<String, String> = BTreeMap::new();
+
+    todo!()
+    /*
+    let mut keys = Vec::with_capacity((self.connections.len() * 3 * 4) + (3 * 3 * 4));
+    keys.extend(MetricsUsageStats::<VirtualKey>::generate_all_keys(&self.virtual_key.id, now_utc));
+    keys.extend(MetricsUsageStats::<Deployment>::generate_all_keys(&self.deployment.id, now_utc));
+    keys.extend(MetricsUsageStats::<Project>::generate_all_keys(&self.project.id, now_utc));
+    keys.extend(MetricsUsageStats::<Connection>::generate_all_keys_for_vector(
+        self.connections.iter().map(|c| &c.id).collect(),
+        now_utc
+    ));
+    keys
+    */
+}

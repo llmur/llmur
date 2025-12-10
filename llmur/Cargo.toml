@@ -33,3 +33,4 @@ sha2 = { workspace = true }
 hmac = { workspace = true }
 chrono = "0.4.42"
 log = "0.4.28"
+futures = "0.3.31"

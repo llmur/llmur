@@ -75,6 +75,13 @@ pub enum DataAccessError {
 
     #[error("No association between Virtual Key and Deployment not found for deployment: {0}")]
     InMemoryVirtualKeyDeploymentNotFoundForDeployment(DeploymentId),
+
+    #[error("Exceeded Budget: {0}")]
+    BudgetExceeded(String),
+    #[error("Exceeded RPM: {0}")]
+    RequestUsageExceeded(String),
+    #[error("Exceeded TPM: {0}")]
+    TokenUsageExceeded(String),
 }
 #[derive(thiserror::Error, Debug)]
 pub enum BuilderError {

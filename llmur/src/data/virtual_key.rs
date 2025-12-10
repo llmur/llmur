@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Postgres, QueryBuilder};
+use sqlx::types::Json;
 use uuid::Uuid;
 use crate::data::utils::{decrypt, encrypt, generate_random_api_key, new_uuid_v5_from_string, ConvertInto};
 use crate::{default_access_fns, default_database_access_fns, impl_local_store_accessors, impl_locally_stored, impl_structured_id_utils, impl_with_id_parameter_for_struct};
@@ -42,6 +43,10 @@ pub struct VirtualKey {
     pub blocked: bool,
     pub project_id: ProjectId,
 
+    pub budget_limits: BudgetLimits,
+    pub request_limits: RequestLimits,
+    pub token_limits: TokenLimits,
+    
     pub deployments: BTreeSet<VirtualKeyDeploymentId>,
 }
 
@@ -54,6 +59,11 @@ impl VirtualKey {
         encrypted_key: String,
         blocked: bool,
         project_id: ProjectId,
+
+        budget_limits: BudgetLimits,
+        request_limits: RequestLimits,
+        token_limits: TokenLimits,
+        
         deployments: BTreeSet<VirtualKeyDeploymentId>,
         application_secret: &Uuid
     ) -> Result<Self, DatabaseError> {
@@ -65,6 +75,9 @@ impl VirtualKey {
             alias,
             blocked,
             project_id,
+            budget_limits,
+            request_limits,
+            token_limits,
             deployments
         })
     }
@@ -87,6 +100,9 @@ impl DataAccess {
         description: &Option<String>,
         blocked: bool,
         project_id: &ProjectId,
+        budget_limits: &Option<BudgetLimits>,
+        request_limits: &Option<RequestLimits>,
+        token_limits: &Option<TokenLimits>,
         application_secret: &Uuid
     ) -> Result<VirtualKey, DataAccessError> {
         let key = generate_random_api_key(key_suffix_length);
@@ -104,6 +120,9 @@ impl DataAccess {
             &encrypted_key,
             blocked,
             project_id,
+            budget_limits,
+            request_limits,
+            token_limits,
             &Some(application_secret.clone()),
         ).await
     }
@@ -125,7 +144,10 @@ default_access_fns!(
             salt: &Uuid,
             encrypted_key: &str,
             blocked: bool,
-            project_id: &ProjectId
+            project_id: &ProjectId,
+            budget_limits: &Option<BudgetLimits>,
+            request_limits: &Option<RequestLimits>,
+            token_limits: &Option<TokenLimits>
         },
         search => {}
     );
@@ -143,7 +165,10 @@ default_database_access_fns!(
         description: &Option<String>,
         salt: &Uuid, encrypted_key: &str,
         blocked: bool,
-        project_id: &ProjectId
+        project_id: &ProjectId,
+        budget_limits: &Option<BudgetLimits>,
+        request_limits: &Option<RequestLimits>,
+        token_limits: &Option<TokenLimits>
     },
     search => { }
 );
@@ -241,7 +266,10 @@ pub(crate) fn pg_insert<'a>(
     salt: &'a Uuid,
     encrypted_key: &'a str,
     blocked: bool,
-    project_id: &'a ProjectId
+    project_id: &'a ProjectId,
+    budget_limits: &'a Option<BudgetLimits>,
+    request_limits: &'a Option<RequestLimits>,
+    token_limits: &'a Option<TokenLimits>
 ) -> QueryBuilder<'a, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         INSERT INTO virtual_keys
@@ -252,9 +280,19 @@ pub(crate) fn pg_insert<'a>(
             salt,
             encrypted_key,
             blocked,
-            project_id
-        )
-        VALUES (");
+            project_id");
+
+    if budget_limits.is_some() {
+        query.push(", budget_limits");
+    }
+    if request_limits.is_some() {
+        query.push(", request_limits");
+    }
+    if token_limits.is_some() {
+        query.push(", token_limits");
+    }
+    
+    query.push(") VALUES (");
     // Push id
     query.push_bind(id);
     query.push(", ");
@@ -275,6 +313,21 @@ pub(crate) fn pg_insert<'a>(
     query.push(", ");
     // Push name
     query.push_bind(project_id);
+
+    if let Some(limits) = budget_limits {
+        query.push(", ");
+        query.push_bind(Json::from(limits));
+    }
+
+    if let Some(limits) = request_limits {
+        query.push(", ");
+        query.push_bind(Json::from(limits));
+    }
+
+    if let Some(limits) = token_limits {
+        query.push(", ");
+        query.push_bind(Json::from(limits));
+    }
 
     // Push the rest of the query
     query.push(") RETURNING id");
@@ -313,6 +366,9 @@ impl ConvertInto<VirtualKey> for DbVirtualKeyRecord {
             self.encrypted_key,
             self.blocked,
             self.project_id,
+            self.budget_limits.map(|l| l.0).unwrap_or_default(),
+            self.request_limits.map(|l| l.0).unwrap_or_default(),
+            self.token_limits.map(|l| l.0).unwrap_or_default(),
             self.deployments.into_iter().collect(),
             &application_secret,
         ).map_err(|_| DataConversionError::DefaultError {cause: "Ups".to_string()})?)

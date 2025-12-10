@@ -7,6 +7,7 @@ use axum::routing::{delete, get, post};
 use serde::{Deserialize, Serialize};
 use crate::data::connection::{AzureOpenAiApiVersion, Connection, ConnectionId, ConnectionInfo};
 use crate::{impl_from_vec_result, LLMurState};
+use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::user::ApplicationRole;
 use crate::errors::{DataAccessError, LLMurError};
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
@@ -28,20 +29,26 @@ pub(crate) async fn create_connection(
 ) -> Result<Json<GetConnectionResult>, LLMurError> {
     let connections = state.data;
     let method: Pin<Box<dyn Future<Output = Result<Connection, DataAccessError>> + Send>> = match &payload {
-        CreateConnectionPayload::AzureOpenAi { deployment_name, api_endpoint, api_key, api_version } => {
+        CreateConnectionPayload::AzureOpenAi { deployment_name, api_endpoint, api_key, api_version, budget_limits, request_limits, token_limits } => {
             Box::pin(connections.create_azure_openai_connection(
                 deployment_name,
                 api_endpoint,
                 api_key,
                 api_version,
+                budget_limits,
+                request_limits,
+                token_limits,
                 &state.application_secret,
             ))
         },
-        CreateConnectionPayload::OpenAi { model, api_endpoint, api_key } => {
+        CreateConnectionPayload::OpenAi { model, api_endpoint, api_key, budget_limits, request_limits, token_limits } => {
             Box::pin(connections.create_openai_v1_connection(
                 model,
                 api_endpoint,
                 api_key,
+                budget_limits,
+                request_limits,
+                token_limits,
                 &state.application_secret,
             ))
         }
@@ -137,12 +144,20 @@ pub(crate) enum CreateConnectionPayload {
         api_endpoint: String,
         api_key: String,
         api_version: AzureOpenAiApiVersion,
+
+        budget_limits: Option<BudgetLimits>,
+        request_limits: Option<RequestLimits>,
+        token_limits: Option<TokenLimits>,
     },
     #[serde(rename = "openai/v1", alias = "openai/v1")]
     OpenAi {
         model: String,
         api_endpoint: String,
         api_key: String,
+
+        budget_limits: Option<BudgetLimits>,
+        request_limits: Option<RequestLimits>,
+        token_limits: Option<TokenLimits>,
     },
 }
 

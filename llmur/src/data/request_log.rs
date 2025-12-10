@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use crate::data::connection::ConnectionId;
 use crate::data::deployment::DeploymentId;
@@ -11,7 +12,7 @@ use crate::{default_access_fns, default_database_access_fns, impl_structured_id_
 use serde::{Deserialize, Serialize};
 use sqlx::{Execute, FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
-use crate::data::graph::Graph;
+use crate::data::graph::{ConnectionNode, Graph};
 
 // region:    --- Main Model
 #[derive(
@@ -114,12 +115,11 @@ default_access_fns!(
 
 // region:    --- Database Access
 impl Database {
-    pub async fn insert_request_logs(&self, request_logs: &Vec<RequestLogData>) -> Result<u64, DataAccessError> {
+    pub async fn insert_request_logs(&self, request_logs: &Vec<Arc<RequestLogData>>) -> Result<u64, DataAccessError> {
         match self {
             Database::Postgres { pool } => {
                 let mut query = pg_insert_m(request_logs);
                 let sql = query.build();
-                println!("### SQL: {}", sql.sql());
                 let result = sql.execute(pool).await;
 
                 // TODO: Handle errors properly
@@ -169,88 +169,19 @@ pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
 }
 
 pub(crate) fn pg_get(id: &RequestLogId) -> QueryBuilder<Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
-        SELECT
-            vk.id,
-            vk.alias,
-            vk.description,
-
-            vk.salt,
-            vk.encrypted_key,
-            vk.blocked,
-            vk.project_id,
-
-            vk.budget_limits,
-            vk.request_limits,
-            vk.token_limits,
-
-            COALESCE(array_agg(DISTINCT vkd.id) FILTER (WHERE vkd.id IS NOT NULL), '{}'::uuid[]) AS deployments
-        FROM
-            virtual_keys vk
-        LEFT JOIN virtual_keys_deployments_map vkd ON vkd.virtual_key_id = vk.id
-        WHERE
-            vk.id = "
-    );
-    // Push id
-    query.push_bind(id);
-
-    query.push(" GROUP BY vk.id, vk.alias, vk.description, vk.salt, vk.encrypted_key, vk.blocked, vk.project_id");
-    // Build query
-    query
+    todo!()
 }
 
 pub(crate) fn pg_getm(ids: &Vec<RequestLogId>) -> QueryBuilder<Postgres> {
-
-    /*
-    -- Limits
-    maximum_requests_per_minute INTEGER NULL,
-    maximum_tokens_per_minute INTEGER NULL,
-    maximum_budget INTEGER NULL,
-    budget_rate budget_rate NOT NULL DEFAULT 'monthly',
-    */
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
-        SELECT
-            vk.id,
-            vk.alias,
-            vk.description,
-
-            vk.salt,
-            vk.encrypted_key,
-            vk.blocked,
-            vk.project_id,
-
-            vk.budget_limits,
-            vk.request_limits,
-            vk.token_limits,
-
-            COALESCE(array_agg(DISTINCT vkd.id) FILTER (WHERE vkd.id IS NOT NULL), '{}'::uuid[]) AS deployments
-        FROM
-            virtual_keys vk
-        LEFT JOIN virtual_keys_deployments_map vkd ON vkd.virtual_key_id = vk.id
-        WHERE
-            vk.id IN ( "
-    );
-    // Push id
-    query.push_bind(ids);
-
-    query.push(" ) GROUP BY vk.id, vk.alias, vk.description, vk.salt, vk.encrypted_key, vk.blocked, vk.project_id");
-    // Build query
-    query
+    todo!()
 }
 
 pub(crate) fn pg_delete(id: &RequestLogId) -> QueryBuilder<Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
-        DELETE FROM virtual_keys
-        WHERE id="
-    );
-    // Push id
-    query.push_bind(id);
-    // Build query
-    query
+    todo!()
 }
 
 pub(crate) fn pg_insert_m(
-    request_logs: &Vec<RequestLogData>,
+    request_logs: &Vec<Arc<RequestLogData>>,
 ) -> QueryBuilder<Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         INSERT INTO request_logs
@@ -283,22 +214,22 @@ pub(crate) fn pg_insert_m(
         ");
 
     query.push_values(request_logs, |mut b, log| {
-        b.push_bind(&log.id)
-            .push_bind(&log.attempt_number)
-            .push_bind(&log.graph.virtual_key.data.id)
-            .push_bind(&log.graph.project.data.id)
-            .push_bind(&log.graph.deployment.data.id)
-            .push_bind(&log.attempted_connection_id)
+        b.push_bind(log.id)
+            .push_bind(log.attempt_number)
+            .push_bind(log.graph.virtual_key.data.id)
+            .push_bind(log.graph.project.data.id)
+            .push_bind(log.graph.deployment.data.id)
+            .push_bind(log.selected_connection_node.data.id)
             .push_bind(log.input_tokens.unwrap_or(0))
             .push_bind(log.output_tokens.unwrap_or(0))
             .push_bind(log.cost.unwrap_or(0.0))
-            .push_bind(&log.http_status_code)
+            .push_bind(log.http_status_code)
             .push_bind(&log.error)
             .push_bind(log.request_ts)
             .push_bind(log.response_ts)
             .push_bind(&log.method)
             .push_bind(&log.path)
-            .push_bind("LLMur") // TODO: remove provider
+            .push_bind(log.selected_connection_node.data.connection_info.get_provider_friendly_name())
             .push_bind(&log.graph.deployment.data.name)
             .push_bind(&log.graph.project.data.name)
             .push_bind(&log.graph.virtual_key.data.alias);
@@ -497,7 +428,7 @@ pub struct RequestLogData {
     pub attempt_number: i16,
 
     pub graph: Graph,
-    pub attempted_connection_id: ConnectionId,
+    pub selected_connection_node: ConnectionNode,
 
     pub input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,

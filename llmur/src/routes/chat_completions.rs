@@ -1,12 +1,12 @@
 use crate::data::connection::ConnectionInfo;
+use crate::providers::openai::chat_completions::request::Request as ChatCompletionsRequest;
+use crate::providers::openai::chat_completions::response::Response as ChatCompletionsResponse;
+use crate::routes::openai::request::OpenAiRequestData;
+use crate::routes::openai::response::OpenAiCompatibleResponse;
 use crate::LLMurState;
 use axum::extract::State;
 use axum::Extension;
 use std::sync::Arc;
-use crate::providers::openai::chat_completions::response::Response as ChatCompletionsResponse;
-use crate::providers::openai::chat_completions::request::Request as ChatCompletionsRequest;
-use crate::routes::openai::request::OpenAiRequestData;
-use crate::routes::openai::response::OpenAiCompatibleResponse;
 
 // Connection is passed via extension
 pub(crate) async fn chat_completions_route(
@@ -16,7 +16,7 @@ pub(crate) async fn chat_completions_route(
 ) -> OpenAiCompatibleResponse<ChatCompletionsResponse> {
     println!("== Executing Chat Completions request");
 
-    let result = match &connection_info {
+    match &connection_info {
         ConnectionInfo::AzureOpenAiApiKey { api_key, api_endpoint, api_version, deployment_name } => {
             azure_openai_request::chat_completions(
                 &state.data.http_client,
@@ -24,7 +24,7 @@ pub(crate) async fn chat_completions_route(
                 api_key,
                 api_endpoint,
                 api_version,
-                request.payload.clone()
+                request.payload.clone(),
             ).await
         }
         ConnectionInfo::OpenAiApiKey { api_key, api_endpoint, model } => {
@@ -33,25 +33,24 @@ pub(crate) async fn chat_completions_route(
                 model,
                 api_key,
                 api_endpoint,
-                request.payload.clone()
+                request.payload.clone(),
             ).await
         }
-    };
-
-    OpenAiCompatibleResponse::new(result)
+    }
 }
 
 mod azure_openai_request {
     use crate::data::connection::AzureOpenAiApiVersion;
-    use crate::errors::ProxyRequestError;
     use crate::providers::azure::openai::v2024_02_01::chat_completions::request::from_openai_transform::Context as RequestContextV2024_02_01;
     use crate::providers::azure::openai::v2024_02_01::chat_completions::response::to_openai_transform::Context as ResponseContextV2024_02_01;
     use crate::providers::openai::chat_completions::request::Request as OpenAiRequest;
     use crate::providers::openai::chat_completions::response::Response as OpenAiResponse;
     use crate::providers::utils::generic_post_proxy_request;
+    use crate::routes::openai::response::{OpenAiCompatibleResponse, OpenAiSuccessfulResponse};
+    use chrono::Utc;
     use reqwest::header::HeaderMap;
 
-    pub(crate) async fn chat_completions(client: &reqwest::Client, deployment_name: &str, api_key: &str, api_endpoint: &str, api_version: &AzureOpenAiApiVersion, payload: OpenAiRequest) -> Result<OpenAiResponse, ProxyRequestError> {
+    pub(crate) async fn chat_completions(client: &reqwest::Client, deployment_name: &str, api_key: &str, api_endpoint: &str, api_version: &AzureOpenAiApiVersion, payload: OpenAiRequest) -> OpenAiCompatibleResponse<OpenAiResponse> {
         let mut headers = HeaderMap::new();
         headers.insert("api-key", api_key.parse().unwrap());
         headers.insert("Content-Type", "application/json".parse().unwrap());
@@ -62,42 +61,67 @@ mod azure_openai_request {
                 let request_context = RequestContextV2024_02_01 { data_sources: None };
                 let response_context = ResponseContextV2024_02_01 { model: Some(payload.model.clone()) };
 
-                Ok(generic_post_proxy_request(
-                    client,
-                    payload,
-                    request_context,
-                    generate_url_fn,
-                    headers,
-                    response_context,
-                ).await?)
+                let start_ts = Utc::now();
+                match generic_post_proxy_request(
+                        client,
+                        payload,
+                        request_context,
+                        generate_url_fn,
+                        headers,
+                        response_context,
+                    ).await {
+                    Ok((successful_response, status_code)) => {
+                        OpenAiCompatibleResponse::new(
+                            Ok(OpenAiSuccessfulResponse { data: successful_response, status_code }), start_ts
+                        )
+                    }
+                    Err(error) => {
+                        OpenAiCompatibleResponse::new(
+                            Err(error), start_ts
+                        )
+                    }
+                }
             }
             AzureOpenAiApiVersion::V2024_06_01 => {
                 let request_context = RequestContextV2024_02_01 { data_sources: None };
                 let response_context = ResponseContextV2024_02_01 { model: Some(payload.model.clone()) };
 
-                Ok(generic_post_proxy_request(
+                let start_ts = Utc::now();
+                match generic_post_proxy_request(
                     client,
                     payload,
                     request_context,
                     generate_url_fn,
                     headers,
                     response_context,
-                ).await?)
+                ).await {
+                    Ok((successful_response, status_code)) => {
+                        OpenAiCompatibleResponse::new(
+                            Ok(OpenAiSuccessfulResponse { data: successful_response, status_code }), start_ts
+                        )
+                    }
+                    Err(error) => {
+                        OpenAiCompatibleResponse::new(
+                            Err(error), start_ts
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 mod openai_v1_request {
-    use crate::errors::ProxyRequestError;
     use crate::providers::openai::chat_completions::request::to_self::Context as RequestContext;
     use crate::providers::openai::chat_completions::request::Request as OpenAiRequest;
     use crate::providers::openai::chat_completions::response::to_self::Context as ResponseContext;
     use crate::providers::openai::chat_completions::response::Response as OpenAiResponse;
     use crate::providers::utils::generic_post_proxy_request;
+    use crate::routes::openai::response::{OpenAiCompatibleResponse, OpenAiSuccessfulResponse};
+    use chrono::Utc;
     use reqwest::header::HeaderMap;
 
-    pub(crate) async fn chat_completions(client: &reqwest::Client, model: &str, api_key: &str, api_endpoint: &str, payload: OpenAiRequest) -> Result<OpenAiResponse, ProxyRequestError> {
+    pub(crate) async fn chat_completions(client: &reqwest::Client, model: &str, api_key: &str, api_endpoint: &str, payload: OpenAiRequest) -> OpenAiCompatibleResponse<OpenAiResponse> {
         let mut headers = HeaderMap::new();
         headers.insert("Authorization", format!("Bearer {}", api_key).parse().unwrap());
         headers.insert("Content-Type", "application/json".parse().unwrap());
@@ -106,13 +130,25 @@ mod openai_v1_request {
         let request_context = RequestContext { model: Some(model.to_string()) };
         let response_context = ResponseContext { model: Some(payload.model.clone()) };
 
-        Ok(generic_post_proxy_request(
+        let start_ts = Utc::now();
+        match generic_post_proxy_request(
             client,
             payload,
             request_context,
             generate_url_fn,
             headers,
             response_context,
-        ).await?)
+        ).await {
+            Ok((successful_response, status_code)) => {
+                OpenAiCompatibleResponse::new(
+                    Ok(OpenAiSuccessfulResponse { data: successful_response, status_code }), start_ts
+                )
+            }
+            Err(error) => {
+                OpenAiCompatibleResponse::new(
+                    Err(error), start_ts
+                )
+            }
+        }
     }
 }

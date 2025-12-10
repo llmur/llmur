@@ -5,6 +5,7 @@ use axum::routing::{delete, get, post};
 use serde::{Deserialize, Serialize};
 use crate::errors::{DataAccessError, LLMurError};
 use crate::{impl_from_vec_result, LLMurState};
+use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::project::ProjectId;
 use crate::data::virtual_key::{VirtualKey, VirtualKeyId};
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
@@ -35,6 +36,9 @@ pub(crate) async fn create_key(
                 &payload.description,
                 false,
                 &payload.project_id,
+                &payload.budget_limits,
+                &payload.request_limits,
+                &payload.token_limits,
                 &state.application_secret).await?;
 
 
@@ -96,6 +100,10 @@ pub(crate) struct CreateVirtualKeyPayload {
     pub(crate) project_id: ProjectId,
     pub(crate) alias: Option<String>,
     pub(crate) description: Option<String>,
+
+    pub(crate) budget_limits: Option<BudgetLimits>,
+    pub(crate) request_limits: Option<RequestLimits>,
+    pub(crate) token_limits: Option<TokenLimits>,
 }
 
 #[derive(Serialize)]

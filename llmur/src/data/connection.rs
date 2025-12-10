@@ -1,9 +1,12 @@
+use crate::data::DataAccess;
 use crate::data::errors::DataConversionError;
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
-use crate::data::utils::{decrypt, encrypt, ConvertInto};
-use crate::data::DataAccess;
+use crate::data::utils::{ConvertInto, decrypt, encrypt};
 use crate::errors::DataAccessError;
-use crate::{default_access_fns, default_database_access_fns, impl_structured_id_utils, impl_with_id_parameter_for_struct};
+use crate::{
+    default_access_fns, default_database_access_fns, impl_structured_id_utils,
+    impl_with_id_parameter_for_struct,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
 use sqlx::{FromRow, Postgres, QueryBuilder};
@@ -34,7 +37,7 @@ pub enum AzureOpenAiApiVersion {
     sqlx::Type,
     Serialize,
     Deserialize,
-    FromRow
+    FromRow,
 )]
 #[sqlx(transparent)]
 pub struct ConnectionId(pub Uuid);
@@ -45,12 +48,21 @@ pub enum ConnectionInfo {
         api_key: String,
         api_endpoint: String,
         api_version: AzureOpenAiApiVersion,
-        deployment_name: String
+        deployment_name: String,
     },
     OpenAiApiKey {
         api_key: String,
         api_endpoint: String,
-        model: String
+        model: String,
+    },
+}
+
+impl ConnectionInfo {
+    pub(crate) fn get_provider_friendly_name(&self) -> &'static str {
+        match self {
+            ConnectionInfo::AzureOpenAiApiKey { .. } => "azure/openai",
+            ConnectionInfo::OpenAiApiKey { .. } => "openai/v1",
+        }
     }
 }
 
@@ -58,36 +70,25 @@ pub enum ConnectionInfo {
 pub struct Connection {
     pub id: ConnectionId,
     pub connection_info: ConnectionInfo,
-    pub budget_limits: Option<BudgetLimits>,
-    pub request_limits: Option<RequestLimits>,
-    pub token_limits: Option<TokenLimits>,
+    pub budget_limits: BudgetLimits,
+    pub request_limits: RequestLimits,
+    pub token_limits: TokenLimits,
 }
 
 impl Connection {
-    pub(crate) fn new(id: ConnectionId, connection_info: ConnectionInfo, budget_limits: Option<BudgetLimits>, request_limits: Option<RequestLimits>, token_limits: Option<TokenLimits>) -> Self {
+    pub(crate) fn new(
+        id: ConnectionId,
+        connection_info: ConnectionInfo,
+        budget_limits: BudgetLimits,
+        request_limits: RequestLimits,
+        token_limits: TokenLimits,
+    ) -> Self {
         Connection {
             id,
             connection_info,
             budget_limits,
             request_limits,
-            token_limits
-        }
-    }
-}
-
-impl ConnectionInfo {
-    fn concat(&self) -> String {
-        match self {
-            ConnectionInfo::AzureOpenAiApiKey {
-                api_key, api_endpoint, api_version, deployment_name
-            } => {
-                format!("AzureOpenAiApiKey:{:?}:{:?}:{:?}:{:?}", api_key, api_endpoint, api_version, deployment_name)
-            }
-            ConnectionInfo::OpenAiApiKey {
-                api_key, api_endpoint, model
-            } => {
-                format!("OpenAiApiKey:{:?}:{:?}:{:?}", api_key, api_endpoint, model)
-            }
+            token_limits,
         }
     }
 }
@@ -107,17 +108,37 @@ impl_with_id_parameter_for_struct!(Connection, ConnectionId);
 
 // region:    --- Data Access
 impl DataAccess {
-    pub async fn get_connection(&self, id: &ConnectionId, application_secret: &Uuid) -> Result<Option<Connection>, DataAccessError> {
-        self.__get_connection(id, &Some(application_secret.clone())).await
+    pub async fn get_connection(
+        &self,
+        id: &ConnectionId,
+        application_secret: &Uuid,
+    ) -> Result<Option<Connection>, DataAccessError> {
+        self.__get_connection(id, &Some(application_secret.clone()))
+            .await
     }
 
-    pub async fn get_connections(&self, ids: &BTreeSet<ConnectionId>, application_secret: &Uuid) -> Result<BTreeMap<ConnectionId, Option<Connection>>, DataAccessError> {
-        self.__get_connections(ids, &Some(application_secret.clone())).await
+    pub async fn get_connections(
+        &self,
+        ids: &BTreeSet<ConnectionId>,
+        application_secret: &Uuid,
+    ) -> Result<BTreeMap<ConnectionId, Option<Connection>>, DataAccessError> {
+        self.__get_connections(ids, &Some(application_secret.clone()))
+            .await
     }
 
-    pub async fn create_azure_openai_connection(&self, deployment_name: &str, api_endpoint: &str, api_key: &str, api_version: &AzureOpenAiApiVersion, application_secret: &Uuid) -> Result<Connection, DataAccessError> {
+    pub async fn create_azure_openai_connection(
+        &self,deployment_name: &str,
+        api_endpoint: &str,
+        api_key: &str,
+        api_version: &AzureOpenAiApiVersion,
+        budget_limits: &Option<BudgetLimits>,
+        request_limits: &Option<RequestLimits>,
+        token_limits: &Option<TokenLimits>,
+        application_secret: &Uuid,
+    ) -> Result<Connection, DataAccessError> {
         let salt = Uuid::now_v7();
-        let encrypted_api_key = encrypt(api_key, &salt, application_secret).map_err(|_| DataAccessError::FailedToCreateKey)?;
+        let encrypted_api_key = encrypt(api_key, &salt, application_secret)
+            .map_err(|_| DataAccessError::FailedToCreateKey)?;
 
         let connection_info = DbConnectionInfoColumn::AzureOpenAiApiKey {
             encrypted_api_key,
@@ -127,15 +148,23 @@ impl DataAccess {
             salt,
         };
 
-        self.__create_connection(
-            &connection_info,
-            &Some(application_secret.clone())
-        ).await
+        self.__create_connection(&connection_info, budget_limits, request_limits, token_limits, &Some(application_secret.clone()))
+            .await
     }
 
-    pub async fn create_openai_v1_connection(&self, model: &str, api_endpoint: &str, api_key: &str, application_secret: &Uuid) -> Result<Connection, DataAccessError> {
+    pub async fn create_openai_v1_connection(
+        &self,
+        model: &str,
+        api_endpoint: &str,
+        api_key: &str,
+        budget_limits: &Option<BudgetLimits>,
+        request_limits: &Option<RequestLimits>,
+        token_limits: &Option<TokenLimits>,
+        application_secret: &Uuid,
+    ) -> Result<Connection, DataAccessError> {
         let salt = Uuid::now_v7();
-        let encrypted_api_key = encrypt(api_key, &salt, application_secret).map_err(|_| DataAccessError::FailedToCreateKey)?;
+        let encrypted_api_key = encrypt(api_key, &salt, application_secret)
+            .map_err(|_| DataAccessError::FailedToCreateKey)?;
 
         let connection_info = DbConnectionInfoColumn::OpenAiApiKey {
             encrypted_api_key,
@@ -146,8 +175,12 @@ impl DataAccess {
 
         self.__create_connection(
             &connection_info,
-            &Some(application_secret.clone())
-        ).await
+            budget_limits,
+            request_limits,
+            token_limits,
+            &Some(application_secret.clone()),
+        )
+        .await
     }
 
     pub async fn delete_connection(&self, id: &ConnectionId) -> Result<u64, DataAccessError> {
@@ -156,15 +189,18 @@ impl DataAccess {
 }
 
 default_access_fns!(
-        Connection,
-        ConnectionId,
-        connection,
-        connections,
-        create => {
-            connection_info: &DbConnectionInfoColumn
-        },
-        search => {}
-    );
+    Connection,
+    ConnectionId,
+    connection,
+    connections,
+    create => {
+        connection_info: &DbConnectionInfoColumn,
+        budget_limits: &Option<BudgetLimits>,
+        request_limits: &Option<RequestLimits>,
+        token_limits: &Option<TokenLimits>
+    },
+    search => {}
+);
 // endregion: --- Data Access
 
 // region:    --- Database Access
@@ -174,7 +210,10 @@ default_database_access_fns!(
     connection,
     connections,
     insert => {
-        connection_info: &DbConnectionInfoColumn
+        connection_info: &DbConnectionInfoColumn,
+        budget_limits: &Option<BudgetLimits>,
+        request_limits: &Option<RequestLimits>,
+        token_limits: &Option<TokenLimits>
     },
     search => { }
 );
@@ -182,26 +221,60 @@ default_database_access_fns!(
 pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
     todo!()
 }
-pub(crate) fn pg_insert(connection_info: &DbConnectionInfoColumn) -> QueryBuilder<Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("INSERT INTO connections
+pub(crate) fn pg_insert<'a>(
+    connection_info: &'a DbConnectionInfoColumn,
+    budget_limits: &'a Option<BudgetLimits>,
+    request_limits: &'a Option<RequestLimits>,
+    token_limits: &'a Option<TokenLimits>,
+) -> QueryBuilder<'a, Postgres> {
+    let mut query: QueryBuilder<'a, Postgres> = QueryBuilder::new(
+        "INSERT INTO connections
         (
             id,
-            connection_info
-        )
-        VALUES (gen_random_uuid(), ");
+            connection_info");
+
+    if budget_limits.is_some() {
+        query.push(", budget_limits");
+    }
+    if request_limits.is_some() {
+        query.push(", request_limits");
+    }
+    if token_limits.is_some() {
+        query.push(", token_limits");
+    }
+    query.push(")
+        VALUES (gen_random_uuid(), ",
+    );
 
     // Push connection_info
     query.push_bind(Json::from(connection_info));
+
+    if let Some(limits) = budget_limits {
+        query.push(", ");
+        query.push_bind(Json::from(limits));
+    }
+
+    if let Some(limits) = request_limits {
+        query.push(", ");
+        query.push_bind(Json::from(limits));
+    }
+
+    if let Some(limits) = token_limits {
+        query.push(", ");
+        query.push_bind(Json::from(limits));
+    }
+
     query.push(") RETURNING id");
     // Return builder
     query
 }
 pub(crate) fn pg_get(id: &ConnectionId) -> QueryBuilder<Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         SELECT
             id, connection_info, budget_limits, request_limits, token_limits
             FROM connections
-        WHERE id="
+        WHERE id=",
     );
     // Push id
     query.push_bind(id);
@@ -210,11 +283,12 @@ pub(crate) fn pg_get(id: &ConnectionId) -> QueryBuilder<Postgres> {
     query
 }
 pub(crate) fn pg_getm(ids: &Vec<ConnectionId>) -> QueryBuilder<Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         SELECT
             id, connection_info, budget_limits, request_limits, token_limits
             FROM connections
-        WHERE id IN ( "
+        WHERE id IN ( ",
     );
     // Push ids
     let mut separated = query.separated(", ");
@@ -226,9 +300,10 @@ pub(crate) fn pg_getm(ids: &Vec<ConnectionId>) -> QueryBuilder<Postgres> {
     query
 }
 pub(crate) fn pg_delete(id: &ConnectionId) -> QueryBuilder<Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         DELETE FROM connections
-        WHERE id="
+        WHERE id=",
     );
     // Push id
     query.push_bind(id);
@@ -243,9 +318,10 @@ pub(crate) fn pg_delete(id: &ConnectionId) -> QueryBuilder<Postgres> {
 pub(crate) struct DbConnectionRecord {
     pub(crate) id: ConnectionId,
     pub(crate) connection_info: sqlx::types::Json<DbConnectionInfoColumn>,
+
     pub(crate) budget_limits: Option<sqlx::types::Json<BudgetLimits>>,
     pub(crate) request_limits: Option<sqlx::types::Json<RequestLimits>>,
-    pub(crate) token_limits: Option<sqlx::types::Json<TokenLimits>>
+    pub(crate) token_limits: Option<sqlx::types::Json<TokenLimits>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -269,38 +345,64 @@ pub(crate) enum DbConnectionInfoColumn {
 }
 
 impl ConvertInto<ConnectionInfo> for DbConnectionInfoColumn {
-    fn convert(self, application_secret: &Option<Uuid>) -> Result<ConnectionInfo, DataConversionError> {
-        let application_secret = application_secret.ok_or(DataConversionError::DefaultError {cause: "Ups".to_string()})?; // TODO return Internal Server Error
+    fn convert(
+        self,
+        application_secret: &Option<Uuid>,
+    ) -> Result<ConnectionInfo, DataConversionError> {
+        let application_secret = application_secret.ok_or(DataConversionError::DefaultError {
+            cause: "Ups".to_string(),
+        })?; // TODO return Internal Server Error
         match self {
             DbConnectionInfoColumn::AzureOpenAiApiKey {
-                encrypted_api_key, api_endpoint, api_version, deployment_name, salt
-            } => {
-                Ok(ConnectionInfo::AzureOpenAiApiKey {
-                    api_key: decrypt(&encrypted_api_key, &salt, &application_secret).map_err(|_| DataConversionError::DefaultError {cause: "Ups".to_string()})?,
-                    api_endpoint,
-                    api_version,
-                    deployment_name,
-                })
-            }
+                encrypted_api_key,
+                api_endpoint,
+                api_version,
+                deployment_name,
+                salt,
+            } => Ok(ConnectionInfo::AzureOpenAiApiKey {
+                api_key: decrypt(&encrypted_api_key, &salt, &application_secret).map_err(|_| {
+                    DataConversionError::DefaultError {
+                        cause: "Ups".to_string(),
+                    }
+                })?,
+                api_endpoint,
+                api_version,
+                deployment_name,
+            }),
             DbConnectionInfoColumn::OpenAiApiKey {
-                encrypted_api_key, api_endpoint, model, salt
-            } => {
-                Ok(ConnectionInfo::OpenAiApiKey {
-                    api_key: decrypt(&encrypted_api_key, &salt, &application_secret).map_err(|_| DataConversionError::DefaultError {cause: "Ups".to_string()})?,
-                    api_endpoint,
-                    model,
-                })
-            }
+                encrypted_api_key,
+                api_endpoint,
+                model,
+                salt,
+            } => Ok(ConnectionInfo::OpenAiApiKey {
+                api_key: decrypt(&encrypted_api_key, &salt, &application_secret).map_err(|_| {
+                    DataConversionError::DefaultError {
+                        cause: "Ups".to_string(),
+                    }
+                })?,
+                api_endpoint,
+                model,
+            }),
         }
     }
 }
 
 impl ConvertInto<Connection> for DbConnectionRecord {
     fn convert(self, application_secret: &Option<Uuid>) -> Result<Connection, DataConversionError> {
-        let connection_info = self.connection_info.0.convert(application_secret).map_err(|_| DataConversionError::DefaultError {cause: "Ups".to_string()})?;
-        Ok(
-            Connection::new(self.id, connection_info, None, None, None)
-        )
+        let connection_info = self
+            .connection_info
+            .0
+            .convert(application_secret)
+            .map_err(|_| DataConversionError::DefaultError {
+                cause: "Ups".to_string(),
+            })?;
+        Ok(Connection::new(
+            self.id,
+            connection_info,
+            self.budget_limits.map(|l| l.0).unwrap_or_default(),
+            self.request_limits.map(|l| l.0).unwrap_or_default(),
+            self.token_limits.map(|l| l.0).unwrap_or_default(),
+        ))
     }
 }
 

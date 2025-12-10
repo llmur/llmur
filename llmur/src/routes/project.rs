@@ -5,6 +5,7 @@ use axum::routing::{delete, get, post};
 use serde::{Deserialize, Serialize};
 use crate::errors::{DataAccessError, LLMurError};
 use crate::{impl_from_vec_result, LLMurState};
+use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::project::{Project, ProjectId};
 use crate::data::user::ApplicationRole;
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
@@ -37,8 +38,7 @@ pub(crate) async fn create_project(
     let user_context = ctx.require_authenticated_user()?;
     match user_context {
         UserContext::MasterUser => {
-            let result = state.data.create_project(&payload.name, &None).await;
-            println!("{:?}", result);
+            let result = state.data.create_project(&payload.name, &None, &payload.budget_limits, &payload.request_limits, &payload.token_limits).await;
             let project = result?;
             Ok(Json(project.into()))
         }
@@ -47,7 +47,7 @@ pub(crate) async fn create_project(
                 return Err(LLMurError::NotAuthorized)
             }
 
-            let project = state.data.create_project(&payload.name, &Some(user.id)).await?;
+            let project = state.data.create_project(&payload.name, &Some(user.id), &payload.budget_limits, &payload.request_limits, &payload.token_limits).await?;
 
             Ok(Json(project.into()))
         }
@@ -130,7 +130,11 @@ pub(crate) async fn delete_project(
 // region:    --- Data Models
 #[derive(Deserialize)]
 pub(crate) struct CreateProjectPayload {
-    pub(crate) name: String
+    pub(crate) name: String,
+    
+    pub(crate) budget_limits: Option<BudgetLimits>,
+    pub(crate) request_limits: Option<RequestLimits>,
+    pub(crate) token_limits: Option<TokenLimits>,
 }
 
 #[derive(Serialize)]
