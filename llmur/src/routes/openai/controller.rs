@@ -39,12 +39,14 @@ where
 
     validate_usage(Arc::clone(&request_data))?;
 
-    // --- Try each connection with a freshly-built Request each time ---
-    for (attempt_number, connection) in request_data.graph.connections.iter().enumerate() {
+    let connection = state.data.get_next_connection(&request_data.graph)?;
+    state.data.increment_opened_connection_count(&connection.data.id);
+
+    {
         // Create a child span for this attempt
         let attempt_span = tracing::info_span!(
             "upstream.attempt",
-            attempt = attempt_number,
+            attempt = 0,
             connection_id = ?connection.data.id
         );
 
@@ -71,6 +73,7 @@ where
             );
 
             let response = next.clone().run(attempt_req).await;
+            state.data.decrement_opened_connection_count(&connection.data.id);
 
             println!(
                 "Received response from upstream with status: {}",
@@ -87,7 +90,7 @@ where
             let request_log_data_arc = Arc::new(generate_request_log_data::<I, O>(
                 (*request_id).clone(),
                 request_data.clone(),
-                attempt_number,
+                0,
                 connection.clone(),
                 result.clone()
             ));

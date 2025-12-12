@@ -9,6 +9,7 @@ use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
+use crate::data::load_balancer::LoadBalancingStrategy;
 
 // region:    --- Routes
 pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
@@ -27,7 +28,8 @@ pub(crate) async fn create_deployment(
     let user_context = ctx.require_authenticated_user()?;
     match user_context {
         UserContext::MasterUser => {
-            let result = state.data.create_deployment(&payload.name, &payload.access.unwrap_or(DeploymentAccess::Private), &payload.budget_limits, &payload.request_limits, &payload.token_limits).await;
+            let result = state.data.create_deployment(&payload.name, &payload.access.unwrap_or(DeploymentAccess::Private), &payload.strategy.unwrap_or(LoadBalancingStrategy::RoundRobin), &payload.budget_limits, &payload.request_limits, &payload.token_limits).await;
+            println!("{:?}", result);
             let deployment = result?;
             Ok(Json(deployment.into()))
         }
@@ -85,6 +87,7 @@ pub(crate) async fn delete_deployment(
 pub(crate) struct CreateDeploymentPayload {
     pub(crate) name: String,
     pub(crate) access: Option<DeploymentAccess>,
+    pub(crate) strategy: Option<LoadBalancingStrategy>,
 
     pub(crate) budget_limits: Option<BudgetLimits>,
     pub(crate) request_limits: Option<RequestLimits>,

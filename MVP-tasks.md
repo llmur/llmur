@@ -3,7 +3,7 @@
 ## Required
 
 - [x] Rate limiter
-- [ ] Load balancer
+- [x] Load balancer
 - [ ] Error handling
 - [ ] Tracing
 - [ ] User Guide

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Datelike, TimeZone, Timelike, Utc};
 use redis::aio::MultiplexedConnection;
 use redis::Pipeline;
-use sqlx::{FromRow, Postgres, QueryBuilder};
+use sqlx::{Execute, FromRow, Postgres, QueryBuilder};
 use crate::data::{connection, Cache, DataAccess, Database, ExternalCache};
 use crate::data::connection::{Connection, ConnectionId};
 use crate::data::deployment::DeploymentId;

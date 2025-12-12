@@ -44,6 +44,8 @@ pub enum DataAccessError {
     FailedToCreateKey,
     #[error("FailedToHashPassword")] // TODO
     FailedToHashPassword,
+    #[error("NoConnectionsAvailable")] // TODO
+    NoConnectionsAvailable,
 
 
     #[error("Virtual key not found in cache: {0}")]

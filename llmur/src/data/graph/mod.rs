@@ -13,6 +13,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use uuid::Uuid;
 use futures::future::try_join_all;
+use crate::data::load_balancer::LoadBalancingStrategy;
 
 pub(crate) mod usage_stats;
 pub(crate) mod local_store;
@@ -131,6 +132,7 @@ pub(crate) struct DeploymentData {
 pub(crate) struct ConnectionNode {
     pub(crate) data: Connection,
     pub(crate) association_id: ConnectionDeploymentId,
+    pub(crate) weight: u16,
     pub(crate) usage_stats: ConnectionUsageStats,
 }
 
@@ -258,13 +260,14 @@ impl DataAccess {
         let connection_nodes = try_join_all(
             graph_data.connections.iter().map(|conn| async {
                 let conn_stats = self.load_connection_usage_and_set_cache(&conn.id, &stats_map, &ts).await?;
-                let association_id = graph_data.connection_deployments.iter()
+                let (association_id, weight) = graph_data.connection_deployments.iter()
                     .find(|cd| &cd.connection_id == &conn.id)
-                    .map(|cd| cd.id.clone())
+                    .map(|cd| (cd.id.clone(), cd.weight))
                     .unwrap();
                 Ok::<_, DataAccessError>(ConnectionNode {
                     data: conn.clone(),
                     association_id,
+                    weight,
                     usage_stats: conn_stats,
                 })
             })
