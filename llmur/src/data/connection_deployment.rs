@@ -34,15 +34,17 @@ pub struct ConnectionDeploymentId(pub Uuid);
 pub struct ConnectionDeployment {
     pub id: ConnectionDeploymentId,
     pub connection_id: ConnectionId,
-    pub deployment_id: DeploymentId
+    pub deployment_id: DeploymentId,
+    pub weight: u16
 }
 
 impl ConnectionDeployment {
-    pub fn new(id: ConnectionDeploymentId, connection_id: ConnectionId, deployment_id: DeploymentId) -> Self {
+    pub fn new(id: ConnectionDeploymentId, connection_id: ConnectionId, deployment_id: DeploymentId, weight: u16) -> Self {
         ConnectionDeployment {
             id,
             connection_id,
-            deployment_id
+            deployment_id,
+            weight
         }
     }
 }
@@ -61,9 +63,9 @@ impl DataAccess {
         self.__get_connection_deployments(ids, &None).await
     }
 
-    pub async fn create_connection_deployment(&self, connection_id: &ConnectionId, deployment_id: &DeploymentId) -> Result<ConnectionDeployment, DataAccessError> {
+    pub async fn create_connection_deployment(&self, connection_id: &ConnectionId, deployment_id: &DeploymentId, weight: i16) -> Result<ConnectionDeployment, DataAccessError> {
         //self.cache.delete_cached_deployment(deployment_id).await;
-        self.__create_connection_deployment(connection_id, deployment_id, &None).await
+        self.__create_connection_deployment(connection_id, deployment_id, weight, &None).await
     }
 
     pub async fn delete_connection_deployment(&self, id: &ConnectionDeploymentId) -> Result<u64, DataAccessError> {
@@ -82,7 +84,8 @@ default_access_fns!(
         connection_deployments,
         create => {
             connection_id: &ConnectionId,
-            deployment_id: &DeploymentId
+            deployment_id: &DeploymentId,
+            weight: i16
         },
         search => {
             connection_id: &Option<ConnectionId>,
@@ -99,7 +102,8 @@ default_database_access_fns!(
     connection_deployments,
     insert => {
         connection_id: &ConnectionId,
-        deployment_id: &DeploymentId
+        deployment_id: &DeploymentId,
+        weight: i16
     },
     search => {
         connection_id: &Option<ConnectionId>,
@@ -112,7 +116,8 @@ pub(crate) fn pg_search<'a>(connection_id: &'a Option<ConnectionId>, deployment_
         SELECT
             id,
             connection_id,
-            deployment_id
+            deployment_id,
+            weight
         FROM
             deployments_connections_map
         WHERE true=true"
@@ -137,7 +142,8 @@ pub(crate) fn pg_get(id: &ConnectionDeploymentId) -> QueryBuilder<Postgres> {
         SELECT
             id,
             connection_id,
-            deployment_id
+            deployment_id,
+            weight
         FROM
             deployments_connections_map
         WHERE
@@ -155,7 +161,8 @@ pub(crate) fn pg_getm(ids: &Vec<ConnectionDeploymentId>) -> QueryBuilder<Postgre
         SELECT
             id,
             connection_id,
-            deployment_id
+            deployment_id,
+            weight
         FROM
             deployments_connections_map
         WHERE
@@ -182,18 +189,21 @@ pub(crate) fn pg_delete(id: &ConnectionDeploymentId) -> QueryBuilder<Postgres> {
     query
 }
 
-pub(crate) fn pg_insert<'a>(connection_id: &'a ConnectionId, deployment_id: &'a DeploymentId) -> QueryBuilder<'a, Postgres> {
+pub(crate) fn pg_insert<'a>(connection_id: &'a ConnectionId, deployment_id: &'a DeploymentId, weight: i16) -> QueryBuilder<'a, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         INSERT INTO deployments_connections_map
-            (id, connection_id, deployment_id)
+            (id, connection_id, deployment_id, weight)
         VALUES
             (gen_random_uuid(), "
     );
     // Push name
     query.push_bind(connection_id);
     query.push(", ");
-    // Push access
+    // Push deployment id
     query.push_bind(deployment_id);
+    query.push(", ");
+    // Push weight
+    query.push_bind(weight);
 
     // Push the rest of the query
     query.push(") RETURNING id");
@@ -210,6 +220,7 @@ pub(crate) struct DbConnectionDeploymentRecord {
     pub(crate) id: ConnectionDeploymentId,
     pub(crate) connection_id: ConnectionId,
     pub(crate) deployment_id: DeploymentId,
+    pub(crate) weight: i16,
 }
 
 impl ConvertInto<ConnectionDeployment> for DbConnectionDeploymentRecord {
@@ -219,6 +230,7 @@ impl ConvertInto<ConnectionDeployment> for DbConnectionDeploymentRecord {
                 self.id,
                 self.connection_id,
                 self.deployment_id,
+                self.weight as u16
             )
         )
     }

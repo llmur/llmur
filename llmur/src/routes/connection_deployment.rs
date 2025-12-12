@@ -29,7 +29,7 @@ pub(crate) async fn create_connection_deployment(
     match user_context {
         UserContext::MasterUser => {
             println!("Creating Connection - Deployment");
-            let result = state.data.create_connection_deployment(&payload.connection_id, &payload.deployment_id).await;
+            let result = state.data.create_connection_deployment(&payload.connection_id, &payload.deployment_id, payload.weight.unwrap_or(1)).await;
             println!("{:?}", result);
             let cd = result?;
             Ok(Json(cd.into()))
@@ -87,7 +87,8 @@ pub(crate) async fn delete_connection_deployment(
 #[derive(Deserialize)]
 pub(crate) struct CreateConnectionDeploymentPayload {
     pub(crate) connection_id: ConnectionId,
-    pub(crate) deployment_id: DeploymentId
+    pub(crate) deployment_id: DeploymentId,
+    pub(crate) weight: Option<i16>,
 }
 
 #[derive(Serialize)]

@@ -1,17 +1,18 @@
-use crate::data::DataAccess;
 use crate::data::connection_deployment::ConnectionDeploymentId;
 use crate::data::errors::DataConversionError;
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
-use crate::data::utils::{ConvertInto, new_uuid_v5_from_string};
+use crate::data::load_balancer::LoadBalancingStrategy;
+use crate::data::utils::ConvertInto;
+use crate::data::DataAccess;
 use crate::errors::DataAccessError;
 use crate::{
-    default_access_fns, default_database_access_fns, impl_local_store_accessors,
-    impl_locally_stored, impl_structured_id_utils, impl_with_id_parameter_for_struct,
+    default_access_fns, default_database_access_fns
+    , impl_structured_id_utils, impl_with_id_parameter_for_struct,
 };
 use serde::{Deserialize, Serialize};
+use sqlx::types::Json;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use std::collections::{BTreeMap, BTreeSet};
-use sqlx::types::Json;
 use uuid::Uuid;
 
 // region:    --- Main Model
@@ -48,6 +49,7 @@ pub struct Deployment {
     pub id: DeploymentId,
     pub name: String,
     pub access: DeploymentAccess,
+    pub strategy: LoadBalancingStrategy,
 
     pub budget_limits: BudgetLimits,
     pub request_limits: RequestLimits,
@@ -62,6 +64,7 @@ impl Deployment {
         id: DeploymentId,
         name: String,
         access: DeploymentAccess,
+        strategy: LoadBalancingStrategy,
         budget_limits: BudgetLimits,
         request_limits: RequestLimits,
         token_limits: TokenLimits,
@@ -77,6 +80,7 @@ impl Deployment {
             id,
             name,
             access,
+            strategy,
             budget_limits,
             request_limits,
             token_limits,
@@ -116,11 +120,12 @@ impl DataAccess {
         &self,
         name: &str,
         access: &DeploymentAccess,
+        strategy: &LoadBalancingStrategy,
         budget_limits: &Option<BudgetLimits>,
         request_limits: &Option<RequestLimits>,
         token_limits: &Option<TokenLimits>,
     ) -> Result<Deployment, DataAccessError> {
-        self.__create_deployment(name, access, budget_limits, request_limits, token_limits, &None).await
+        self.__create_deployment(name, access, strategy, budget_limits, request_limits, token_limits, &None).await
     }
 
     pub async fn delete_deployment(&self, id: &DeploymentId) -> Result<u64, DataAccessError> {
@@ -135,7 +140,8 @@ default_access_fns!(
     deployments,
     create => {
         name: &str,
-        deployment_access: &DeploymentAccess,
+        access: &DeploymentAccess,
+        strategy: &LoadBalancingStrategy,
         budget_limits: &Option<BudgetLimits>,
         request_limits: &Option<RequestLimits>,
         token_limits: &Option<TokenLimits>
@@ -155,6 +161,7 @@ default_database_access_fns!(
     insert => {
         name: &str,
         access: &DeploymentAccess,
+        strategy: &LoadBalancingStrategy,
         budget_limits: &Option<BudgetLimits>,
         request_limits: &Option<RequestLimits>,
         token_limits: &Option<TokenLimits>
@@ -170,6 +177,7 @@ pub(crate) fn pg_search(name: &Option<String>) -> QueryBuilder<Postgres> {
             d.id,
             d.name,
             d.access,
+            d.strategy,
             d.budget_limits,
             d.request_limits,
             d.token_limits,
@@ -196,6 +204,7 @@ pub(crate) fn pg_get(id: &DeploymentId) -> QueryBuilder<Postgres> {
             d.id,
             d.name,
             d.access,
+            d.strategy,
             d.budget_limits,
             d.request_limits,
             d.token_limits,
@@ -220,6 +229,7 @@ pub(crate) fn pg_getm(ids: &Vec<DeploymentId>) -> QueryBuilder<Postgres> {
             d.id,
             d.name,
             d.access,
+            d.strategy,
             d.budget_limits,
             d.request_limits,
             d.token_limits,
@@ -257,6 +267,7 @@ pub(crate) fn pg_delete(id: &DeploymentId) -> QueryBuilder<Postgres> {
 pub(crate) fn pg_insert<'a>(
     name: &'a str,
     access: &'a DeploymentAccess,
+    strategy: &'a LoadBalancingStrategy,
     budget_limits: &'a Option<BudgetLimits>,
     request_limits: &'a Option<RequestLimits>,
     token_limits: &'a Option<TokenLimits>,
@@ -264,7 +275,7 @@ pub(crate) fn pg_insert<'a>(
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
         "
         INSERT INTO deployments
-            (id, name, access",
+            (id, name, access, strategy",
     );
 
     if budget_limits.is_some() {
@@ -286,6 +297,9 @@ pub(crate) fn pg_insert<'a>(
     query.push(", ");
     // Push access
     query.push_bind(access);
+    query.push(", ");
+    // Push strategy
+    query.push_bind(strategy);
 
     if let Some(limits) = budget_limits {
         query.push(", ");
@@ -316,6 +330,7 @@ pub(crate) struct DbDeploymentRecord {
     pub(crate) id: DeploymentId,
     pub(crate) name: String,
     pub(crate) access: DeploymentAccess,
+    pub(crate) strategy: LoadBalancingStrategy,
 
     pub(crate) budget_limits: Option<sqlx::types::Json<BudgetLimits>>,
     pub(crate) request_limits: Option<sqlx::types::Json<RequestLimits>>,
@@ -333,6 +348,7 @@ impl ConvertInto<Deployment> for DbDeploymentRecord {
             self.id,
             self.name,
             self.access,
+            self.strategy,
             self.budget_limits.map(|l| l.0).unwrap_or_default(),
             self.request_limits.map(|l| l.0).unwrap_or_default(),
             self.token_limits.map(|l| l.0).unwrap_or_default(),

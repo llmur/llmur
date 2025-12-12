@@ -246,7 +246,7 @@ pub(crate) fn pg_insert<'a>(
         VALUES (gen_random_uuid(), ",
     );
 
-    // Push connection_info
+    // Push !connection_info
     query.push_bind(Json::from(connection_info));
 
     if let Some(limits) = budget_limits {

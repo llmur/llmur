@@ -1,3 +1,4 @@
+use crate::data::connection::ConnectionId;
 use crate::data::errors::{CacheError, DatabaseError};
 use crate::data::graph::local_store::{GraphData, GraphDataId};
 use crate::data::request_log::RequestLogData;
@@ -18,6 +19,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::{select, sync::mpsc, time::interval};
+use crate::data::deployment::DeploymentId;
 
 pub(crate) mod errors;
 pub(crate) mod macros;
@@ -39,6 +41,7 @@ pub mod limits;
 pub mod graph;
 pub mod request_log;
 pub mod usage;
+pub mod load_balancer;
 
 
 // region:    --- Data Access
@@ -400,6 +403,12 @@ impl<T> LocallyStoredValue<T> {
 pub(crate) struct LocalStore {
     pub(crate) session_tokens: Mutex<BTreeMap<SessionTokenId, LocallyStoredValue<SessionToken>>>,
     pub(crate) graphs: Mutex<BTreeMap<GraphDataId, LocallyStoredValue<GraphData>>>,
+
+    // Tracks current connections per ConnectionId
+    pub(crate) opened_connections_counter: Mutex<BTreeMap<ConnectionId, LocallyStoredValue<u32>>>,
+
+    // Tracks round-robin index per deployment
+    pub(crate) deployment_rr_index: Mutex<BTreeMap<DeploymentId, LocallyStoredValue<usize>>>,
 }
 
 impl LocalStore {
@@ -407,6 +416,8 @@ impl LocalStore {
         LocalStore {
             session_tokens: Default::default(),
             graphs: Default::default(),
+            opened_connections_counter: Default::default(),
+            deployment_rr_index: Default::default(),
         }
     }
 }
