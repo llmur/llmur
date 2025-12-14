@@ -23,6 +23,15 @@ pub enum LoadBalancingStrategy {
 }
 
 impl DataAccess {
+    #[tracing::instrument(
+        level="trace",
+        name = "get.next.connection",
+        skip(self, graph),
+        fields(
+            deployment_id = %graph.deployment.data.id.0,
+            strategy = ?graph.deployment.data.strategy
+        )
+    )]
     pub fn get_next_connection<'a>(&self, graph: &'a Graph) -> Result<&'a ConnectionNode, DataAccessError> {
         if graph.connections.is_empty() {
             return Err(DataAccessError::NoConnectionsAvailable);
@@ -146,6 +155,14 @@ impl DataAccess {
     }
 
     // Helper method to increment connection counter when a connection is opened
+    #[tracing::instrument(
+        level = "trace",
+        name = "local.increment.opened.connection",
+        skip(self, connection_id),
+        fields(
+            connection_id = %connection_id.0
+        )
+    )]
     pub fn increment_opened_connection_count(&self, connection_id: &ConnectionId) {
         let mut counter_map = self.cache.local.opened_connections_counter.lock().unwrap();
         counter_map
@@ -155,6 +172,14 @@ impl DataAccess {
     }
 
     // Helper method to decrement connection counter when a connection is closed
+    #[tracing::instrument(
+        level = "trace",
+        name = "local.decrement.opened.connection",
+        skip(self, connection_id),
+        fields(
+            connection_id = %connection_id.0
+        )
+    )]
     pub fn decrement_opened_connection_count(&self, connection_id: &ConnectionId) {
         let mut counter_map = self.cache.local.opened_connections_counter.lock().unwrap();
         if let Some(stored) = counter_map.get_mut(connection_id) {

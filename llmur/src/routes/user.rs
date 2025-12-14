@@ -24,6 +24,10 @@ pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .with_state(state.clone())
 }
 
+#[tracing::instrument(
+    name = "handler.create.user",
+    skip(state, ctx, payload)
+)]
 pub(crate) async fn create_user(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
@@ -51,6 +55,13 @@ pub(crate) async fn create_user(
     }
 }
 
+#[tracing::instrument(
+    name = "handler.create.user",
+    skip(state, ctx, id),
+    fields(
+        id = %id.0,
+    )
+)]
 pub(crate) async fn get_user(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
@@ -72,6 +83,10 @@ pub(crate) async fn get_user(
     }
 }
 
+#[tracing::instrument(
+    name = "handler.get.user",
+    skip(ctx)
+)]
 pub(crate) async fn get_current_user(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(_): State<Arc<LLMurState>>
@@ -88,6 +103,13 @@ pub(crate) async fn get_current_user(
     }
 }
 
+#[tracing::instrument(
+    name = "handler.delete.user",
+    skip(state, ctx, id),
+    fields(
+        id = %id.0,
+    )
+)]
 pub(crate) async fn delete_user(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,

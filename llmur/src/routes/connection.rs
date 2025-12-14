@@ -22,12 +22,17 @@ pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .with_state(state.clone())
 }
 
+#[tracing::instrument(
+    name = "handler.create.connection",
+    skip(state, ctx, payload)
+)]
 pub(crate) async fn create_connection(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
     Json(payload): Json<CreateConnectionPayload>,
 ) -> Result<Json<GetConnectionResult>, LLMurError> {
     let connections = state.data;
+    
     let method: Pin<Box<dyn Future<Output = Result<Connection, DataAccessError>> + Send>> = match &payload {
         CreateConnectionPayload::AzureOpenAi { deployment_name, api_endpoint, api_key, api_version, budget_limits, request_limits, token_limits } => {
             Box::pin(connections.create_azure_openai_connection(
@@ -85,6 +90,13 @@ pub(crate) async fn create_connection(
     }
 }
 
+#[tracing::instrument(
+    name = "handler.get.connection",
+    skip(state, ctx, id),
+    fields(
+        id = %id.0,
+    )
+)]
 pub(crate) async fn get_connection(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
@@ -107,6 +119,13 @@ pub(crate) async fn get_connection(
     }
 }
 
+#[tracing::instrument(
+    name = "handler.delete.connection",
+    skip(state, ctx, id),
+    fields(
+        id = %id.0,
+    )
+)]
 pub(crate) async fn delete_connection(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,

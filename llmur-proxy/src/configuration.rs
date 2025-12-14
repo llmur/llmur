@@ -8,6 +8,7 @@ use crate::utils::AsyncFrom;
 #[derive(Debug, Deserialize, Clone)]
 pub(crate) struct Configuration {
     pub application_secret: String,
+    pub log_level: Option<String>,
     pub master_keys: Option<Vec<String>>,
     pub host: Option<String>,
     pub port: Option<u32>,

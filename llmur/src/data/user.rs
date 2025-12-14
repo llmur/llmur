@@ -74,10 +74,24 @@ impl_with_id_parameter_for_struct!(User, UserId);
 
 // region:    --- Data Access
 impl DataAccess {
+
+    #[tracing::instrument(
+        level="trace",
+        name = "get.user",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn get_user(&self, id: &UserId) -> Result<Option<User>, DataAccessError> {
         self.__get_user(id, &None).await
     }
-
+   
+    #[tracing::instrument(
+        level="trace",
+        name = "get.user",
+        skip(self)
+    )]
     pub async fn get_user_with_email(&self, email: &str) -> Result<Option<User>, DataAccessError> {
         let maybe_value: Option<User> = self.database.get_user_with_email(email).await?
             .map(|v| v.convert(&None)) // Returns Option<Result<X,Y>>
@@ -86,6 +100,11 @@ impl DataAccess {
         Ok(maybe_value)
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "create.user",
+        skip(self, name, password, email_verified, blocked, application_secret)
+    )]
     pub async fn create_user(&self, email: &str, name: &Option<String>, password: &str, email_verified: bool, blocked: bool, application_role: &ApplicationRole, application_secret: &Uuid) -> Result<User, DataAccessError>{
         let salt = Uuid::now_v7();
         let hashed_password = hash_password(password.to_string(), salt.clone(), application_secret.clone()).await.map_err(|_| DataAccessError::FailedToHashPassword)?;
@@ -104,7 +123,14 @@ impl DataAccess {
         self.__create_user(email, name, &hashed_password, email_verified, blocked, &salt, application_role, &None).await
     }
 
-
+    #[tracing::instrument(
+        level="trace",
+        name = "delete.user",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn delete_user(&self, id: &UserId) -> Result<u64, DataAccessError> {
         self.__delete_user(id).await
     }
@@ -130,6 +156,11 @@ default_access_fns!(
 
 // region:    --- Database Access
 impl Database {
+    #[tracing::instrument(
+        level="trace",
+        name = "db.get.user",
+        skip(self)
+    )]
     pub(crate) async fn get_user_with_email(&self, email: &str) -> Result<Option<DbUserRecord>, DatabaseError> {
         match self {
             Database::Postgres { pool } => {

@@ -11,16 +11,19 @@ use axum::{body::Body, extract::State, http::Request, middleware::Next};
 use chrono::{DateTime, Utc};
 
 use crate::data::connection::Connection;
-use crate::data::deployment::Deployment;
-use crate::data::graph::usage_stats::MetricsUsageStats;
-use crate::data::graph::{ConnectionNode, Graph, NodeLimitsChecker};
+use crate::data::graph::{ConnectionNode, NodeLimitsChecker};
 use crate::data::project::Project;
 use crate::data::virtual_key::VirtualKey;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
+use log::debug;
 use tracing::Instrument;
 
+#[tracing::instrument(
+    name = "controller",
+    skip(state, request, next)
+)]
 pub(crate) async fn openai_route_controller_mw<I, O>(
     State(state): State<Arc<LLMurState>>,
     request: Request<Body>,
@@ -44,15 +47,15 @@ where
 
     {
         // Create a child span for this attempt
-        let attempt_span = tracing::info_span!(
-            "upstream.attempt",
+        let primary_attempt_span = tracing::debug_span!(
+            "attempt",
             attempt = 0,
-            connection_id = ?connection.data.id
+            connection_id = ?connection.data.id.0
         );
 
         let result = async {
-            println!(
-                " == Attempting request via connection: {:?}",
+            debug!(
+                "Attempting primary request via connection: {:?}",
                 connection.data.connection_info
             );
 
@@ -88,7 +91,7 @@ where
                 .clone();
 
             let request_log_data_arc = Arc::new(generate_request_log_data::<I, O>(
-                (*request_id).clone(),
+                *request_id,
                 request_data.clone(),
                 0,
                 connection.clone(),
@@ -102,7 +105,7 @@ where
 
             response
         }
-            .instrument(attempt_span)
+            .instrument(primary_attempt_span)
             .await;
 
         let response = result;

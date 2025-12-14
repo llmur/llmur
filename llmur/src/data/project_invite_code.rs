@@ -54,10 +54,29 @@ impl_with_id_parameter_for_struct!(ProjectInviteCode, ProjectInviteCodeId);
 
 // region:    --- Data Access
 impl DataAccess {
+
+    #[tracing::instrument(
+        level="trace",
+        name = "get.project_invite_code",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn get_invite_code(&self, id: &ProjectInviteCodeId) -> Result<Option<ProjectInviteCode>, DataAccessError> {
         self.__get_project_invite_code(id, &None).await
     }
-
+    
+    #[tracing::instrument(
+        level="trace",
+        name = "create.project_invite_code",
+        skip(self, project_id, validity, code_length),
+        fields(
+            project_id = %project_id.0,
+            validity = %validity.clone().unwrap_or("Not set".to_string()),
+            code_length = %code_length.unwrap_or(10)
+        )
+    )]
     pub async fn create_invite_code(&self, project_id: &ProjectId, assign_role: &ProjectRole, validity: &Option<String>, code_length: &Option<usize>) -> Result<ProjectInviteCode, DataAccessError> {
         let code = &generate_random_alphanumeric_string(code_length.unwrap_or(10));
 
@@ -71,6 +90,14 @@ impl DataAccess {
         self.__create_project_invite_code(project_id, &code, assign_role, &valid_until, &None).await
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "delete.project_invite_code",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn delete_invite_code(&self, id: &ProjectInviteCodeId) -> Result<u64, DataAccessError> {
         self.__delete_project_invite_code(id).await
     }

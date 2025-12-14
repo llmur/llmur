@@ -181,15 +181,20 @@ macro_rules! default_db_insert_fn {
     ) => {
         paste::paste! {
             pub(crate) async fn [<insert_ $singular>](&self, $( $param_name: $param_ty ),*) -> Result<$id_type, crate::data::errors::DatabaseError> {
-                match self {
-                    crate::data::Database::Postgres { pool } => {
-                        let mut query = $pg_query_fn($( $param_name ),*);
-                        let sql = query.build_query_as::<$id_type>();
-                        let result = sql.fetch_one(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
+                let span = tracing::trace_span!(concat!("db.insert.", stringify!($singular)));
+                tracing::Instrument::instrument(
+                    async move {
+                        match self {
+                            crate::data::Database::Postgres { pool } => {
+                                let mut query = $pg_query_fn($( $param_name ),*);
+                                let sql = query.build_query_as::<$id_type>();
+                                let result = sql.fetch_one(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
 
-                        Ok(result)
-                    }
-                }
+                                Ok(result)
+                            }
+                        }
+                    }, span
+                ).await
             }
         }
     };
@@ -205,15 +210,20 @@ macro_rules! default_db_search_fn {
     ) => {
         paste::paste! {
             pub(crate) async fn [<search_ $plural>](&self) -> Result<Vec<$type>, crate::data::errors::DatabaseError> {
-                match self {
-                    crate::data::Database::Postgres { pool } => {
-                        let mut query = $pg_query_fn();
-                        let sql = query.build_query_as::<$type>();
-                        let result = sql.fetch_all(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
-
-                        Ok(result)
-                    }
-                }
+                let span = tracing::trace_span!(concat!("db.search.", stringify!($plural)));
+                tracing::Instrument::instrument(
+                    async move {
+                        match self {
+                            crate::data::Database::Postgres { pool } => {
+                                let mut query = $pg_query_fn();
+                                let sql = query.build_query_as::<$type>();
+                                let result = sql.fetch_all(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
+        
+                                Ok(result)
+                            }
+                        }
+                    }, span
+                ).await
             }
         }
     };
@@ -227,15 +237,20 @@ macro_rules! default_db_search_fn {
     ) => {
         paste::paste! {
             pub(crate) async fn [<search_ $plural>](&self, $( $param_name: $param_ty ),+) -> Result<Vec<$type>, crate::data::errors::DatabaseError> {
-                match self {
-                    crate::data::Database::Postgres { pool } => {
-                        let mut query = $pg_query_fn($( $param_name ),*);
-                        let sql = query.build_query_as::<$type>();
-                        let result = sql.fetch_all(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
-
-                        Ok(result)
-                    }
-                }
+                let span = tracing::trace_span!(concat!("db.search.", stringify!($plural)));
+                tracing::Instrument::instrument(
+                    async move {
+                        match self {
+                            crate::data::Database::Postgres { pool } => {
+                                let mut query = $pg_query_fn($( $param_name ),*);
+                                let sql = query.build_query_as::<$type>();
+                                let result = sql.fetch_all(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
+        
+                                Ok(result)
+                            }
+                        }
+                    }, span
+                ).await
             }
         }
     };
@@ -251,15 +266,20 @@ macro_rules! default_db_get_fn {
     ) => {
         paste::paste! {
             pub(crate) async fn [<get_ $singular>](&self, id: &$id_type) -> Result<Option<$type>, crate::data::errors::DatabaseError> {
-                match self {
-                    crate::data::Database::Postgres { pool } => {
-                        let mut query = $pg_query_fn(id);
-                        let sql= query.build_query_as::<$type>();
-                        let result = sql.fetch_optional(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
-
-                        Ok(result)
-                    }
-                }
+                let span = tracing::trace_span!(concat!("db.get.", stringify!($singular)));
+                tracing::Instrument::instrument(
+                    async move {
+                        match self {
+                            crate::data::Database::Postgres { pool } => {
+                                let mut query = $pg_query_fn(id);
+                                let sql= query.build_query_as::<$type>();
+                                let result = sql.fetch_optional(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
+        
+                                Ok(result)
+                            }
+                        }
+                    }, span
+                ).await
             }
         }
     };
@@ -275,27 +295,32 @@ macro_rules! default_db_get_multiple_fn {
     ) => {
         paste::paste! {
             pub(crate) async fn [<get_ $plural>](&self, ids: &Vec<$id_type>) -> Result<std::collections::BTreeMap<$id_type, Option<$type>>, crate::data::errors::DatabaseError> {
-                match self {
-                    crate::data::Database::Postgres { pool } => {
-                        let mut query = $pg_query_fn(ids);
-                        let sql= query.build_query_as::<$type>();
-                        let result = sql.fetch_all(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
-
-                        // Create a map of found items using owned values
-                        let found_items: std::collections::BTreeMap<$id_type, $type> = result
-                            .into_iter()
-                            .map(|item| (<$type as crate::data::WithIdParameter<$id_type>>::get_id_ref(&item).clone(), item))
-                            .collect();
-
-                        // Create final map with all requested IDs
-                        let map: std::collections::BTreeMap<$id_type, Option<$type>> = ids
-                            .iter()
-                            .map(|id| (id.clone(), found_items.get(id).cloned()))
-                            .collect();
-
-                        Ok(map)
-                    }
-                }
+                let span = tracing::trace_span!(concat!("db.get.", stringify!($plural)));
+                tracing::Instrument::instrument(
+                    async move {
+                        match self {
+                            crate::data::Database::Postgres { pool } => {
+                                let mut query = $pg_query_fn(ids);
+                                let sql= query.build_query_as::<$type>();
+                                let result = sql.fetch_all(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
+        
+                                // Create a map of found items using owned values
+                                let found_items: std::collections::BTreeMap<$id_type, $type> = result
+                                    .into_iter()
+                                    .map(|item| (<$type as crate::data::WithIdParameter<$id_type>>::get_id_ref(&item).clone(), item))
+                                    .collect();
+        
+                                // Create final map with all requested IDs
+                                let map: std::collections::BTreeMap<$id_type, Option<$type>> = ids
+                                    .iter()
+                                    .map(|id| (id.clone(), found_items.get(id).cloned()))
+                                    .collect();
+        
+                                Ok(map)
+                            }
+                        }
+                    }, span
+                ).await
             }
         }
     };
@@ -309,15 +334,20 @@ macro_rules! default_db_delete_fn {
     ) => {
         paste::paste! {
             pub(crate) async fn [<delete_ $singular>](&self, id: &$id_type) -> Result<u64, crate::data::errors::DatabaseError> {
-                match self {
-                    crate::data::Database::Postgres { pool } => {
-                        let mut query = $pg_query_fn(id);
-                        let sql = query.build();
-                        let result = sql.execute(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
-
-                        Ok(result.rows_affected())
-                    }
-                }
+                let span = tracing::trace_span!(concat!("db.delete.", stringify!($singular)));
+                tracing::Instrument::instrument(
+                    async move {
+                        match self {
+                            crate::data::Database::Postgres { pool } => {
+                                let mut query = $pg_query_fn(id);
+                                let sql = query.build();
+                                let result = sql.execute(pool).await.map_err(|e| crate::data::errors::DatabaseError::SqlxError(e.to_string()))?;
+        
+                                Ok(result.rows_affected())
+                            }
+                        }
+                    }, span
+                ).await
             }
         }
     };
@@ -428,22 +458,27 @@ macro_rules! impl_local_store_accessors {
         paste::paste! {
             impl crate::data::Cache {
                 pub(crate) fn [<get_local_ $singular>](&self, id: &$id_type) -> Option<crate::data::LocallyStoredValue<$type>> {
+                    let _span = tracing::trace_span!(concat!("local.get.", stringify!($singular))).entered();
                     self.get_local_record::<$type, $id_type>(id)
                 }
 
                 pub(crate) fn [<get_local_ $plural>](&self, ids: &std::collections::BTreeSet<$id_type>) -> std::collections::BTreeMap<$id_type, Option<crate::data::LocallyStoredValue<$type>>> {
+                    let _span = tracing::trace_span!(concat!("local.get.", stringify!($plural))).entered();
                     self.get_local_records::<$type, $id_type>(ids)
                 }
 
                 pub(crate) fn [<set_local_ $singular>](&self, value: $type) -> () {
+                    let _span = tracing::trace_span!(concat!("local.set.", stringify!($singular))).entered();
                     self.set_local_record::<$type, $id_type>(value)
                 }
 
                 pub(crate) fn [<set_local_ $plural>](&self, values: Vec<$type>) -> () {
+                    let _span = tracing::trace_span!(concat!("local.set.", stringify!($plural))).entered();
                     self.set_local_records::<$type, $id_type>(values)
                 }
 
                 pub(crate) fn [<delete_local_ $singular>](&self, id: &$id_type) -> () {
+                    let _span = tracing::trace_span!(concat!("local.delete.", stringify!($singular))).entered();
                     self.delete_local_record::<$type, $id_type>(id)
                 }
             }

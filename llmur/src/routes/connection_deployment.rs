@@ -20,6 +20,10 @@ pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .with_state(state.clone())
 }
 
+#[tracing::instrument(
+    name = "handler.create.connection_deployment",
+    skip(state, ctx, payload)
+)]
 pub(crate) async fn create_connection_deployment(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
@@ -40,6 +44,13 @@ pub(crate) async fn create_connection_deployment(
     }
 }
 
+#[tracing::instrument(
+    name = "handler.get.connection_deployment",
+    skip(state, ctx, id),
+    fields(
+        id = %id.0,
+    )
+)]
 pub(crate) async fn get_connection_deployment(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
@@ -59,6 +70,13 @@ pub(crate) async fn get_connection_deployment(
     }
 }
 
+#[tracing::instrument(
+    name = "handler.delete.connection_deployment",
+    skip(state, ctx, id),
+    fields(
+        id = %id.0,
+    )
+)]
 pub(crate) async fn delete_connection_deployment(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,

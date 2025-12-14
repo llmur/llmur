@@ -89,10 +89,23 @@ impl_with_id_parameter_for_struct!(VirtualKey, VirtualKeyId);
 
 // region:    --- Data Access
 impl DataAccess {
+    #[tracing::instrument(
+        level="trace",
+        name = "get.virtual_key",
+        skip(self, id, application_secret),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn get_virtual_key(&self, id: &VirtualKeyId, application_secret: &Uuid) -> Result<Option<VirtualKey>, DataAccessError> {
         self.__get_virtual_key(id, &Some(application_secret.clone())).await
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "create.virtual_key",
+        skip(self, key_suffix_length, alias, description, blocked, application_secret)
+    )]
     pub async fn create_virtual_key(
         &self,
         key_suffix_length: usize,
@@ -127,6 +140,14 @@ impl DataAccess {
         ).await
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "delete.virtual_key",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn delete_virtual_key(&self, id: &VirtualKeyId) -> Result<u64, DataAccessError> {
         self.__delete_virtual_key(id).await
     }

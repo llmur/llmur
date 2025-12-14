@@ -1,3 +1,4 @@
+use std::any::Any;
 use crate::data::DataAccess;
 use crate::data::errors::DataConversionError;
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
@@ -108,6 +109,14 @@ impl_with_id_parameter_for_struct!(Connection, ConnectionId);
 
 // region:    --- Data Access
 impl DataAccess {
+    #[tracing::instrument(
+        level="trace",
+        name = "get.connection",
+        skip(self, id, application_secret),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn get_connection(
         &self,
         id: &ConnectionId,
@@ -117,17 +126,36 @@ impl DataAccess {
             .await
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "get.connections",
+        skip(self, ids, application_secret),
+        fields(
+            ids = ?ids.iter().map(|id| id.0).collect::<Vec<Uuid>>()
+        )
+    )]
     pub async fn get_connections(
         &self,
         ids: &BTreeSet<ConnectionId>,
         application_secret: &Uuid,
     ) -> Result<BTreeMap<ConnectionId, Option<Connection>>, DataAccessError> {
+        let v = ids.iter().map(|id| &id.0).collect::<Vec<_>>();
         self.__get_connections(ids, &Some(application_secret.clone()))
             .await
     }
 
+
+    #[tracing::instrument(
+        level="trace",
+        name = "create.connection",
+        skip(self, api_key, application_secret),
+        fields(
+            provider = "azure/openai"
+        )
+    )]
     pub async fn create_azure_openai_connection(
-        &self,deployment_name: &str,
+        &self,
+        deployment_name: &str,
         api_endpoint: &str,
         api_key: &str,
         api_version: &AzureOpenAiApiVersion,
@@ -152,6 +180,14 @@ impl DataAccess {
             .await
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "create.connection",
+        skip(self, api_key, application_secret),
+        fields(
+            provider = "openai/v1"
+        )
+    )]
     pub async fn create_openai_v1_connection(
         &self,
         model: &str,
@@ -183,6 +219,14 @@ impl DataAccess {
         .await
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "delete.connection",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn delete_connection(&self, id: &ConnectionId) -> Result<u64, DataAccessError> {
         self.__delete_connection(id).await
     }

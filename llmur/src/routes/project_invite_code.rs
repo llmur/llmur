@@ -19,6 +19,10 @@ pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .with_state(state.clone())
 }
 
+#[tracing::instrument(
+    name = "handler.create.project_invite_code",
+    skip(state, ctx, payload)
+)]
 pub(crate) async fn create_project_invite_code(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
@@ -66,6 +70,13 @@ pub(crate) async fn create_project_invite_code(
     }
 }
 
+#[tracing::instrument(
+    name = "handler.delete.project_invite_code",
+    skip(state, ctx, id),
+    fields(
+        id = %id.0,
+    )
+)]
 pub(crate) async fn delete_project_invite_code(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,

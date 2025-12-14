@@ -15,15 +15,8 @@ pub(crate) async fn common_tracing_mw(mut req: Request<Body>, next: axum::middle
     let rid = RequestLogId(Uuid::now_v7());
     req.extensions_mut().insert(rid);
 
-    // top-level span carrying the id; TraceLayer nests under this
-    let span = tracing::info_span!(
-        "http.request",
-        request_id = %rid.0,
-        method = %req.method(),
-        path = %req.uri().path()
-    );
-
-    let res = next.run(req).instrument(span).await;
+    //let res = next.run(req).instrument(span).await;
+    let res = next.run(req).await;
 
     // TODO: Insert X-LLMur-Request-Id header into response
 

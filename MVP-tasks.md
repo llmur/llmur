@@ -5,7 +5,7 @@
 - [x] Rate limiter
 - [x] Load balancer
 - [ ] Error handling
-- [ ] Tracing
+- [x] Tracing
 - [ ] User Guide
 - [ ] Technical Documentation
 - [ ] Integration Tests

@@ -62,11 +62,13 @@ pub mod from_openai_transform {
     use crate::providers::openai::chat_completions::request::{Request as OpenAiRequest};
     use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
     use crate::providers::azure::openai::v2024_02_01::chat_completions::extension::AzureChatExtensionConfiguration;
-
+    
+    #[derive(Debug)]
     pub struct Loss {
         pub model: String,
     }
-
+    
+    #[derive(Debug)]
     pub struct Context {
         pub data_sources: Option<Vec<AzureChatExtensionConfiguration>>,
     }

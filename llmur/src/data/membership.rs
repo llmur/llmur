@@ -52,14 +52,40 @@ impl_with_id_parameter_for_struct!(Membership, MembershipId);
 
 // region:    --- Data Access
 impl DataAccess {
+    #[tracing::instrument(
+        level="trace",
+        name = "get.membership",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn get_membership(&self, id: &MembershipId) -> Result<Option<Membership>, DataAccessError> {
         self.__get_membership(id, &None).await
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "create.membership",
+        skip(self, user_id, project_id),
+        fields(
+            user_id = %user_id.0,
+            project_id = %project_id.0
+        )
+    )]
     pub async fn create_membership(&self, user_id: &UserId, project_id: &ProjectId, role: &ProjectRole) -> Result<Membership, DataAccessError>{
         self.__create_membership(project_id, user_id, role, &None).await
     }
 
+
+    #[tracing::instrument(
+        level="trace",
+        name = "delete.membership",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn delete_membership(&self, id: &MembershipId) -> Result<u64, DataAccessError> {
         self.__delete_membership(id).await
     }
