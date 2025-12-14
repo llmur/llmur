@@ -69,10 +69,28 @@ impl_with_id_parameter_for_struct!(RequestLog, RequestLogId);
 
 // region:    --- Data Access
 impl DataAccess {
+
+    #[tracing::instrument(
+        level="trace",
+        name = "get.request_log",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn get_request_log(&self, id: &RequestLogId) -> Result<Option<RequestLog>, DataAccessError> {
         self.__get_request_log(id, &None).await
     }
 
+
+    #[tracing::instrument(
+        level="trace",
+        name = "delete.project_invite_code",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn delete_request_log(&self, id: &RequestLogId) -> Result<u64, DataAccessError> {
         self.__delete_request_log(id).await
     }

@@ -21,6 +21,10 @@ pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .with_state(state.clone())
 }
 
+#[tracing::instrument(
+    name = "handler.create.virtual_key",
+    skip(state, ctx, payload)
+)]
 pub(crate) async fn create_key(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
@@ -50,6 +54,13 @@ pub(crate) async fn create_key(
     }
 }
 
+#[tracing::instrument(
+    name = "handler.get.virtual_key",
+    skip(state, ctx, id),
+    fields(
+        id = %id.0,
+    )
+)]
 pub(crate) async fn get_key(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
@@ -69,6 +80,13 @@ pub(crate) async fn get_key(
     }
 }
 
+#[tracing::instrument(
+    name = "handler.delete.virtual_key",
+    skip(state, ctx, id),
+    fields(
+        id = %id.0,
+    )
+)]
 pub(crate) async fn delete_key(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,

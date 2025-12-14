@@ -95,6 +95,14 @@ impl_with_id_parameter_for_struct!(Deployment, DeploymentId);
 
 // region:    --- Data Access
 impl DataAccess {
+    #[tracing::instrument(
+        level="trace",
+        name = "get.deployment",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn get_deployment(
         &self,
         id: &DeploymentId,
@@ -102,6 +110,14 @@ impl DataAccess {
         self.__get_deployment(id, &None).await
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "get.deployments",
+        skip(self, ids),
+        fields(
+            ids = ?ids.iter().map(|id| id.0).collect::<Vec<Uuid>>()
+        )
+    )]
     pub async fn get_deployments(
         &self,
         ids: &BTreeSet<DeploymentId>,
@@ -109,6 +125,14 @@ impl DataAccess {
         self.__get_deployments(ids, &None).await
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "search.deployments",
+        skip(self, name),
+        fields(
+            id = %name.clone().unwrap_or("*".to_string()),
+        )
+    )]
     pub async fn search_deployments(
         &self,
         name: &Option<String>,
@@ -116,6 +140,11 @@ impl DataAccess {
         self.__search_deployments(name, &None).await
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "create.deployment",
+        skip(self)
+    )]
     pub async fn create_deployment(
         &self,
         name: &str,
@@ -128,6 +157,14 @@ impl DataAccess {
         self.__create_deployment(name, access, strategy, budget_limits, request_limits, token_limits, &None).await
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "delete.deployment",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn delete_deployment(&self, id: &DeploymentId) -> Result<u64, DataAccessError> {
         self.__delete_deployment(id).await
     }

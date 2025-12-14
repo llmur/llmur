@@ -9,6 +9,13 @@ use axum::Extension;
 use std::sync::Arc;
 
 // Connection is passed via extension
+#[tracing::instrument(
+    name = "handler.openai.v1.chat_completions",
+    skip(state, connection_info, request),
+    fields(
+        model = %request.graph.deployment.data.name
+    )
+)]
 pub(crate) async fn chat_completions_route(
     State(state): State<Arc<LLMurState>>,
     Extension(connection_info): Extension<ConnectionInfo>,
@@ -50,6 +57,10 @@ mod azure_openai_request {
     use chrono::Utc;
     use reqwest::header::HeaderMap;
 
+    #[tracing::instrument(
+        name = "proxy.azure.openai.chat_completions",
+        skip(client, api_key, payload)
+    )]
     pub(crate) async fn chat_completions(client: &reqwest::Client, deployment_name: &str, api_key: &str, api_endpoint: &str, api_version: &AzureOpenAiApiVersion, payload: OpenAiRequest) -> OpenAiCompatibleResponse<OpenAiResponse> {
         let mut headers = HeaderMap::new();
         headers.insert("api-key", api_key.parse().unwrap());
@@ -121,6 +132,11 @@ mod openai_v1_request {
     use chrono::Utc;
     use reqwest::header::HeaderMap;
 
+
+    #[tracing::instrument(
+        name = "proxy.openai.v1.chat_completions",
+        skip(client, api_key, payload)
+    )]
     pub(crate) async fn chat_completions(client: &reqwest::Client, model: &str, api_key: &str, api_endpoint: &str, payload: OpenAiRequest) -> OpenAiCompatibleResponse<OpenAiResponse> {
         let mut headers = HeaderMap::new();
         headers.insert("Authorization", format!("Bearer {}", api_key).parse().unwrap());

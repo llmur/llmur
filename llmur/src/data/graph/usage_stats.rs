@@ -1,12 +1,8 @@
-use crate::data::connection::Connection;
-use crate::data::deployment::Deployment;
 use crate::data::graph::local_store::GraphData;
-use crate::data::project::Project;
-use crate::data::virtual_key::VirtualKey;
+use crate::data::usage::DbUsageStatsRecord;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::collections::BTreeMap;
-use crate::data::usage::DbUsageStatsRecord;
 
 // ---------- Enums instead of type-level tags ----------
 #[derive(Clone, Copy, Debug, Serialize)]

@@ -80,10 +80,27 @@ impl_with_id_parameter_for_struct!(Project, ProjectId);
 
 // region:    --- Data Access
 impl DataAccess {
+
+    #[tracing::instrument(
+        level="trace",
+        name = "get.project",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn get_project(&self, id: &ProjectId) -> Result<Option<Project>, DataAccessError> {
         self.__get_project(id, &None).await
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "create.project",
+        skip(self, owner),
+        fields(
+            owner = %owner.map(|id| id.0.to_string()).unwrap_or("None".to_string()),
+        )
+    )]
     pub async fn create_project(
         &self,
         name: &str,
@@ -108,6 +125,15 @@ impl DataAccess {
         Ok(record)
     }
 
+
+    #[tracing::instrument(
+        level="trace",
+        name = "delete.project",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn delete_project(&self, id: &ProjectId) -> Result<u64, DataAccessError> {
         self.__delete_project(id).await
     }

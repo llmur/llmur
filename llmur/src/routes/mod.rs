@@ -53,7 +53,6 @@ pub(crate) fn admin_routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .route("/graph/{key}/{deployment}", get(get_graph))
         // Add user context loading middleware - loads user context based on auth info
         .route_layer(from_fn_with_state(state.clone(), user_context_load_mw))
-        .layer(TraceLayer::new_for_http())
         .with_state(state.clone())
 }
 
@@ -73,7 +72,6 @@ pub(crate) fn openai_v1_routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>
         .with_state(state.clone())
         .layer(from_fn(auth_token_extraction_mw))
         .layer(from_fn(common_tracing_mw))
-        .layer(TraceLayer::new_for_http())
 }
 
 #[derive(Serialize)]

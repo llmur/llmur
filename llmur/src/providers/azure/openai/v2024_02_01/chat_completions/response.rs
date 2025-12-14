@@ -97,8 +97,10 @@ pub mod to_openai_transform {
     };
     use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
 
+    #[derive(Debug)]
     pub struct Loss {}
 
+    #[derive(Debug)]
     pub struct Context {
         pub model: Option<String>
     }

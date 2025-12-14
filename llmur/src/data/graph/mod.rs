@@ -13,6 +13,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use uuid::Uuid;
 use futures::future::try_join_all;
+use tracing::{instrument, trace_span, Instrument};
 use crate::data::load_balancer::LoadBalancingStrategy;
 
 pub(crate) mod usage_stats;
@@ -215,72 +216,87 @@ pub(crate) trait NodeLimitsChecker {
 
 // region:    --- Data Access
 impl DataAccess {
+    #[instrument(
+        level="trace",
+        name = "get.graph",
+        skip(self, api_key, application_secret)
+    )]
     pub async fn get_graph(&self, api_key: &str, model_name: &str, skip_local_cache: bool, local_cache_ttl_ms: u32, application_secret: &Uuid, ts: &DateTime<Utc>) -> Result<Graph, DataAccessError> {
-        println!("Loading Graph");
         // Step 1: Get Graph Data
         let graph_data = self.get_graph_data(api_key, model_name, skip_local_cache, &ts, local_cache_ttl_ms, application_secret).await?;
 
-        // Step 2: Load Usage Stats from External Cache or Fallback to Defaults TODO: Fallback to data from DB
-        let stats_keys = graph_data.generate_all_usage_stats_keys(&ts);
+        let stats_span = trace_span!("get.graph.usage");
+        let graph = async move {
+            // Step 2: Load Usage Stats from External Cache or Fallback to Defaults TODO: Fallback to data from DB
+            let stats_keys = graph_data.generate_all_usage_stats_keys(&ts);
 
-        // Step 3: Retrieve usage stats from External Cache or Fallback to Defaults TODO: Fallback to data from DB
-        let stats_map = if let Some(external_cache) = &self.cache.external {
-            match external_cache.get_values(&stats_keys.into_iter().collect()).await {
-                Ok(map) => { map }
-                Err(_) => { todo!("Handle external cache retrieval error") } // Maybe fallback to local data?
-            }
-        } else {
-            todo!("Handle case where no external cache is configured"); // Maybe store it locally?
-        };
+            // Step 3: Retrieve usage stats from External Cache or Fallback to Defaults TODO: Fallback to data from DB
+            let stats_map = if let Some(external_cache) = &self.cache.external {
+                match external_cache.get_values(&stats_keys.into_iter().collect()).await {
+                    Ok(map) => { map }
+                    Err(_) => { todo!("Handle external cache retrieval error") } // Maybe fallback to local data?
+                }
+            } else {
+                todo!("Handle case where no external cache is configured"); // Maybe store it locally?
+            };
 
-        // Step 4: Load cached data into Graph structure
-        // Part 1: Virtual Key Node
-        let virtual_key_stats = self.load_virtual_key_usage_and_set_cache(&graph_data.virtual_key.id, &stats_map, &ts).await?;
-        let virtual_key_node = VirtualKeyNode {
-            data: graph_data.virtual_key.clone(),
-            usage_stats: virtual_key_stats,
-        };
+            // Step 4: Load cached data into Graph structure
+            // Part 1: Virtual Key Node
+            let virtual_key_stats = self.load_virtual_key_usage_and_set_cache(&graph_data.virtual_key.id, &stats_map, &ts).await?;
+            let virtual_key_node = VirtualKeyNode {
+                data: graph_data.virtual_key.clone(),
+                usage_stats: virtual_key_stats,
+            };
 
-        // Part 2: Deployment Node
-        let deployment_stats = self.load_deployment_usage_and_set_cache(&graph_data.deployment.id, &stats_map, &ts).await?;
-        let deployment_node = DeploymentNode {
-            data: graph_data.deployment.clone(),
-            association_id: graph_data.virtual_key_deployment.id.clone(),
-            usage_stats: deployment_stats,
-        };
+            // Part 2: Deployment Node
+            let deployment_stats = self.load_deployment_usage_and_set_cache(&graph_data.deployment.id, &stats_map, &ts).await?;
+            let deployment_node = DeploymentNode {
+                data: graph_data.deployment.clone(),
+                association_id: graph_data.virtual_key_deployment.id.clone(),
+                usage_stats: deployment_stats,
+            };
 
-        // Part 3: Project Node
-        let project_stats = self.load_project_usage_and_set_cache(&graph_data.project.id, &stats_map, &ts).await?;
-        let project_node = ProjectNode {
-            data: graph_data.project.clone(),
-            usage_stats: project_stats,
-        };
+            // Part 3: Project Node
+            let project_stats = self.load_project_usage_and_set_cache(&graph_data.project.id, &stats_map, &ts).await?;
+            let project_node = ProjectNode {
+                data: graph_data.project.clone(),
+                usage_stats: project_stats,
+            };
 
-        // Part 4: Connection Nodes
-        let connection_nodes = try_join_all(
-            graph_data.connections.iter().map(|conn| async {
-                let conn_stats = self.load_connection_usage_and_set_cache(&conn.id, &stats_map, &ts).await?;
-                let (association_id, weight) = graph_data.connection_deployments.iter()
-                    .find(|cd| &cd.connection_id == &conn.id)
-                    .map(|cd| (cd.id.clone(), cd.weight))
-                    .unwrap();
-                Ok::<_, DataAccessError>(ConnectionNode {
-                    data: conn.clone(),
-                    association_id,
-                    weight,
-                    usage_stats: conn_stats,
+            // Part 4: Connection Nodes
+            let connection_nodes = try_join_all(
+                graph_data.connections.iter().map(|conn| async {
+                    let conn_stats = self.load_connection_usage_and_set_cache(&conn.id, &stats_map, &ts).await?;
+                    let (association_id, weight) = graph_data.connection_deployments.iter()
+                        .find(|cd| &cd.connection_id == &conn.id)
+                        .map(|cd| (cd.id.clone(), cd.weight))
+                        .unwrap();
+                    Ok::<_, DataAccessError>(ConnectionNode {
+                        data: conn.clone(),
+                        association_id,
+                        weight,
+                        usage_stats: conn_stats,
+                    })
                 })
-            })
-        ).await?;
+            ).await?;
 
-        Ok(Graph {
-            virtual_key: virtual_key_node,
-            deployment: deployment_node,
-            project: project_node,
-            connections: connection_nodes,
-        })
+            Ok::<Graph, DataAccessError>(Graph {
+                virtual_key: virtual_key_node,
+                deployment: deployment_node,
+                project: project_node,
+                connections: connection_nodes,
+            })
+        }.instrument(stats_span).await?;
+
+        Ok(graph)
     }
 
+
+    #[instrument(
+        level="trace",
+        name = "get.graph.data",
+        skip(self, api_key, application_secret)
+    )]
     async fn get_graph_data(&self, api_key: &str, model_name: &str, skip_local_cache: bool, now_utc: &DateTime<Utc>, local_cache_ttl_ms: u32, application_secret: &Uuid) -> Result<GraphData, DataAccessError> {
         let id = GraphDataId::new(model_name, api_key);
 

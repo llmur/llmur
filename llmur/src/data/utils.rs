@@ -69,10 +69,20 @@ pub fn generate_random_alphanumeric_string(length: usize) -> String {
         .collect()
 }
 
+#[tracing::instrument(
+    level = "trace",
+    name = "utils.string_to_uuid_v5",
+    skip(input)
+)]
 pub fn new_uuid_v5_from_string(input: &str) -> Uuid {
     Uuid::new_v5(&Uuid::NAMESPACE_DNS, input.as_bytes())
 }
 
+#[tracing::instrument(
+    level = "trace",
+    name = "utils.encrypt",
+    skip(input, salt, pepper)
+)]
 pub fn encrypt(input: &str, salt: &Uuid, pepper: &Uuid) -> Result<String, UtilsError> {
     // Combine salt and pepper (if provided) as the key source
     let mut key_source = salt.to_string();
@@ -99,6 +109,11 @@ pub fn encrypt(input: &str, salt: &Uuid, pepper: &Uuid) -> Result<String, UtilsE
     Ok(encrypted_base64)
 }
 
+#[tracing::instrument(
+    level = "trace",
+    name = "utils.decrypt",
+    skip(encrypted_input, salt, pepper)
+)]
 pub fn decrypt(encrypted_input: &str, salt: &Uuid, pepper: &Uuid) -> Result<String, UtilsError> {
     // Combine salt and pepper (if provided) as the key source
     let mut key_source = salt.to_string();
@@ -129,6 +144,11 @@ pub fn decrypt(encrypted_input: &str, salt: &Uuid, pepper: &Uuid) -> Result<Stri
     Ok(decrypted_string)
 }
 
+#[tracing::instrument(
+    level = "trace",
+    name = "utils.hash.v1",
+    skip(content, salt)
+)]
 pub fn hash_content_1(content: &str, salt: &Uuid) -> String {
     let combined = format!("{}{}", salt.to_string(), content);
 
@@ -141,6 +161,11 @@ pub fn hash_content_1(content: &str, salt: &Uuid) -> String {
     encode(hash)
 }
 
+#[tracing::instrument(
+    level = "trace",
+    name = "utils.hash.v2",
+    skip(content, salt)
+)]
 pub fn hash_content_2(content: &str, salt: &Uuid, pepper: &Uuid) -> Result<String, UtilsError> {
     let combined = format!("{}{}{}", salt.to_string(), content, pepper.to_string());
 

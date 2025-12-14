@@ -74,10 +74,28 @@ impl_locally_stored!(SessionToken, SessionTokenId, session_tokens);
 
 // region:    --- Data Access
 impl DataAccess {
+
+    #[tracing::instrument(
+        level="trace",
+        name = "get.session_token",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn get_session_token(&self, id: &SessionTokenId) -> Result<Option<SessionToken>, DataAccessError> {
         self.__get_session_token(id, &None).await // TODO : Parameterise
     }
 
+
+    #[tracing::instrument(
+        level="trace",
+        name = "create.session_token",
+        skip(self, id, user_id),
+        fields(
+            user_id = %user_id.0
+        )
+    )]
     pub async fn create_session_token(&self, id: &SessionTokenId, user_id: &UserId) -> Result<SessionToken, DataAccessError> {
         let seconds = parse_and_add_to_current_ts("30d").map_err(|_| DataAccessError::InvalidInviteCode)? ; // TODO
         let expires_at = chrono::DateTime::from_timestamp(seconds.clone(), 0).ok_or(DataAccessError::InvalidInviteCode)?; // TODO
@@ -85,6 +103,15 @@ impl DataAccess {
         self.__create_session_token(id, user_id, &expires_at, &None).await
     }
 
+
+    #[tracing::instrument(
+        level="trace",
+        name = "delete.session_token",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn delete_session_token(&self, id: &SessionTokenId) -> Result<u64, DataAccessError> {
         self.__delete_session_token(id).await
     }

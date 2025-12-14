@@ -86,7 +86,11 @@ impl ExposesUsage for Response {
 pub mod to_self {
     use crate::providers::openai::chat_completions::response::Response;
     use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
+
+    #[derive(Debug)]
     pub struct Loss {}
+
+    #[derive(Debug)]
     pub struct Context { pub model: Option<String> }
 
     impl TransformationContext<Response, Response> for Context {}

@@ -50,23 +50,66 @@ impl_with_id_parameter_for_struct!(VirtualKeyDeployment, VirtualKeyDeploymentId)
 
 // region:    --- Data Access
 impl DataAccess {
+
+    #[tracing::instrument(
+        level="trace",
+        name = "get.virtual_key_deployment",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn get_virtual_key_deployment(&self, id: &VirtualKeyDeploymentId) -> Result<Option<VirtualKeyDeployment>, DataAccessError> {
         self.__get_virtual_key_deployment(id, &None).await
     }
 
-    pub async fn get_virtual_key_deployments(&self, id: &BTreeSet<VirtualKeyDeploymentId>) -> Result<BTreeMap<VirtualKeyDeploymentId, Option<VirtualKeyDeployment>>, DataAccessError> {
-        self.__get_virtual_key_deployments(id, &None).await
+    #[tracing::instrument(
+        level="trace",
+        name = "get.virtual_key_deployments",
+        skip(self, ids),
+        fields(
+            ids = ?ids.iter().map(|id| id.0).collect::<Vec<Uuid>>()
+        )
+    )]
+    pub async fn get_virtual_key_deployments(&self, ids: &BTreeSet<VirtualKeyDeploymentId>) -> Result<BTreeMap<VirtualKeyDeploymentId, Option<VirtualKeyDeployment>>, DataAccessError> {
+        self.__get_virtual_key_deployments(ids, &None).await
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "create.virtual_key_deployments",
+        skip(self),
+        fields(
+            virtual_key_id = %virtual_key_id.0, 
+            deployment_id = %deployment_id.0
+        )
+    )]
     pub async fn create_virtual_key_deployment(&self, virtual_key_id: &VirtualKeyId, deployment_id: &DeploymentId) -> Result<VirtualKeyDeployment, DataAccessError> {
         //self.cache.delete_cached_virtual_key(virtual_key_id).await;
         self.__create_virtual_key_deployment(virtual_key_id, deployment_id, &None).await
     }
-
+    
+    #[tracing::instrument(
+        level="trace",
+        name = "delete.virtual_key_deployment",
+        skip(self, id),
+        fields(
+            id = %id.0
+        )
+    )]
     pub async fn delete_virtual_key_deployment(&self, id: &VirtualKeyDeploymentId) -> Result<u64, DataAccessError> {
         self.__delete_virtual_key_deployment(id).await
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "search.virtual_key_deployment",
+        skip(self, virtual_key_id, deployment_id),
+        fields(
+            virtual_key_id = %virtual_key_id.map(|id| id.0.to_string()).unwrap_or("*".to_string()),
+            deployment_id = %deployment_id.map(|id| id.0.to_string()).unwrap_or("*".to_string()),
+        )
+    )]
     pub async fn search_virtual_key_deployments(&self, virtual_key_id: &Option<VirtualKeyId>, deployment_id: &Option<DeploymentId>) -> Result<Vec<VirtualKeyDeployment>, DataAccessError> {
         self.__search_virtual_key_deployments(virtual_key_id, deployment_id, &None).await
     }

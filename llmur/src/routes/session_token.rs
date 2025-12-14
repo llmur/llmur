@@ -15,10 +15,13 @@ pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
     Router::new()
         // Project routes
         .route("/", post(create_session_token))
-
         .with_state(state.clone())
 }
 
+#[tracing::instrument(
+    name = "handler.create.session_token",
+    skip(state, payload)
+)]
 pub(crate) async fn create_session_token(
     State(state): State<Arc<LLMurState>>,
     Json(payload): Json<CreateSessionTokenPayload>,

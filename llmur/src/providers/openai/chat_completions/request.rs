@@ -73,9 +73,13 @@ impl ExposesDeployment for Request {
 }
 
 pub mod to_self {
+    use serde::Deserialize;
     use crate::providers::openai::chat_completions::request::Request;
     use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
+
+    #[derive(Debug)]
     pub struct Loss {}
+    #[derive(Debug)]
     pub struct Context { pub model: Option<String> }
 
     impl TransformationContext<Request, Request> for Context {}

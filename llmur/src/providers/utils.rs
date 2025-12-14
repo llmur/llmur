@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+use log::debug;
 use reqwest::{Client, StatusCode};
 use reqwest::header::HeaderMap;
 use serde_json::json;
@@ -5,16 +7,22 @@ use crate::data::errors::DatabaseError;
 use crate::errors::ProxyRequestError;
 use crate::providers::{TransformationContext, TransformationLoss, Transformer};
 
+
+#[tracing::instrument(
+    name = "http.request",
+    level = "debug",
+    skip(client, generate_url_fn, request_headers)
+)]
 pub(crate) async fn generic_post_proxy_request<
     RequestOriginal:
-    Transformer<RequestTransformed, RequestTransformationContext, RequestTransformationLoss>,
-    RequestTransformationContext: TransformationContext<RequestOriginal, RequestTransformed>,
+    Transformer<RequestTransformed, RequestTransformationContext, RequestTransformationLoss> + Debug,
+    RequestTransformationContext: TransformationContext<RequestOriginal, RequestTransformed> + Debug,
     RequestTransformationLoss: TransformationLoss<RequestOriginal, RequestTransformed>,
     RequestTransformed: serde::Serialize,
     ResponseProvider:
     Transformer<ResponseTransformed, ResponseTransformationContext, ResponseTransformationLoss> +
         for<'a> serde::Deserialize<'a>,
-    ResponseTransformationContext: TransformationContext<ResponseProvider, ResponseTransformed>,
+    ResponseTransformationContext: TransformationContext<ResponseProvider, ResponseTransformed> + Debug,
     ResponseTransformationLoss: TransformationLoss<ResponseProvider, ResponseTransformed>,
     ResponseTransformed
 >(
@@ -25,16 +33,15 @@ pub(crate) async fn generic_post_proxy_request<
     request_headers: HeaderMap,
     response_context: ResponseTransformationContext,
 ) -> Result<(ResponseTransformed, StatusCode), ProxyRequestError> {
-    println!("Transforming request {:?} into {:?}.", std::any::type_name::<RequestOriginal>(), std::any::type_name::<RequestTransformed>());
+    debug!("Transforming request {:?} into {:?}.", std::any::type_name::<RequestOriginal>(), std::any::type_name::<RequestTransformed>());
     let request_transformation = request.transform(request_context);
 
-    println!("Serializing request of type {:?} into {:?}.", std::any::type_name::<RequestTransformed>(), std::any::type_name::<serde_json::Value>());
+    debug!("Serializing request of type {:?} into {:?}.", std::any::type_name::<RequestTransformed>(), std::any::type_name::<serde_json::Value>());
     let body = serde_json::to_value(request_transformation.result).map_err(|e| ProxyRequestError::SerdeError(e.to_string()))?;
 
-    println!("Generating endpoint url");
     let url = generate_url_fn(request_transformation.loss);
 
-    println!("Executing POST request against url {:?}.", url);
+    debug!("Executing POST request against url {:?}.", url);
     let response = client
         .post(url)
         .headers(request_headers)
@@ -42,24 +49,25 @@ pub(crate) async fn generic_post_proxy_request<
         .send()
         .await
         .map_err(|e| ProxyRequestError::ReqwestError(e.to_string()))?;
-    println!("POST request executed successfully. Got status {:?}.", response.status());
+
+    debug!("POST request executed successfully. Got status {:?}.", response.status());
     
     let status = response.status();
 
     if status.is_success() {
-        println!("Deserializing provider response into {:?}.", std::any::type_name::<ResponseProvider>());
+        debug!("Deserializing provider response into {:?}.", std::any::type_name::<ResponseProvider>());
         let deserialized_response = response
             .json::<ResponseProvider>()
             .await.map_err(|e| ProxyRequestError::ReqwestSerdeError(e.to_string()))?;
 
-        println!("Transforming response {:?} into {:?}.", std::any::type_name::<ResponseProvider>(), std::any::type_name::<ResponseTransformed>());
+        debug!("Transforming response {:?} into {:?}.", std::any::type_name::<ResponseProvider>(), std::any::type_name::<ResponseTransformed>());
         let response_transformation = deserialized_response.transform(response_context);
 
         Ok((response_transformation.result, status))
     } else {
         let status = status.as_u16();
 
-        println!("Getting error response received from provider {:?}.", std::any::type_name::<ResponseProvider>());
+        debug!("Got error from provider {:?}.", std::any::type_name::<ResponseProvider>());
         match response.text().await {
             Ok(text_error) => {
                 let deserialized_error: serde_json::Value = serde_json::from_str(&text_error).unwrap_or(json!({"error": text_error.trim()}));
