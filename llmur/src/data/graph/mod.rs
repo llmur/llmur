@@ -8,7 +8,7 @@ use crate::data::project::{Project, ProjectId};
 use crate::data::virtual_key::{VirtualKey, VirtualKeyId};
 use crate::data::virtual_key_deployment::VirtualKeyDeploymentId;
 use crate::data::DataAccess;
-use crate::errors::{DataAccessError, GraphLoadError, InconsistentGraphDataError};
+use crate::errors::{DataAccessError, GraphLoadError, InconsistentGraphDataError, UsageExceededError};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use uuid::Uuid;
@@ -30,13 +30,13 @@ pub(crate) struct Graph {
 }
 
 macro_rules! check_limit {
-    ($current:expr, $limit:expr, $period:expr, $error:ident) => {
+    ($current:expr, $limit:expr, $error:ident) => {
         if let Some(limit) = $limit {
-            let current = $current;
-            if current > limit {
-                return Err(DataAccessError::$error(
-                    format!("({}) - {} > {}", $period, current, limit)
-                ));
+            let used = $current;
+            if used > limit {
+                return Err(UsageExceededError::$error {
+                    used, limit
+                });
             }
         }
     };
@@ -51,26 +51,26 @@ pub(crate) struct VirtualKeyNode {
 }
 
 impl NodeLimitsChecker for VirtualKeyNode {
-    fn validate_limits(&self) -> Result<(), DataAccessError> {
+    fn validate_limits(&self) -> Result<(), UsageExceededError> {
         let b = self.usage_stats.budget();
-        check_limit!(&b.current_month.value().as_f64(), &self.data.budget_limits.cost_per_month, "per month", BudgetExceeded);
-        check_limit!(&b.current_day.value().as_f64(), &self.data.budget_limits.cost_per_day, "per day", BudgetExceeded);
-        check_limit!(&b.current_hour.value().as_f64(), &self.data.budget_limits.cost_per_hour, "per hour", BudgetExceeded);
-        check_limit!(&b.current_minute.value().as_f64(), &self.data.budget_limits.cost_per_minute, "per minute", BudgetExceeded);
+        check_limit!(b.current_month.value().as_f64(), self.data.budget_limits.cost_per_month, MonthBudgetOverLimit);
+        check_limit!(b.current_day.value().as_f64(), self.data.budget_limits.cost_per_day, DayBudgetOverLimit);
+        check_limit!(b.current_hour.value().as_f64(), self.data.budget_limits.cost_per_hour, HourBudgetOverLimit);
+        check_limit!(b.current_minute.value().as_f64(), self.data.budget_limits.cost_per_minute, MinuteBudgetOverLimit);
 
 
         let r = &self.usage_stats.requests();
-        check_limit!(&r.current_month.value().as_i64(), &self.data.request_limits.requests_per_month, "per month", RequestUsageExceeded);
-        check_limit!(&r.current_day.value().as_i64(), &self.data.request_limits.requests_per_day, "per day", RequestUsageExceeded);
-        check_limit!(&r.current_hour.value().as_i64(), &self.data.request_limits.requests_per_hour, "per hour", RequestUsageExceeded);
-        check_limit!(&r.current_minute.value().as_i64(), &self.data.request_limits.requests_per_minute, "per minute", RequestUsageExceeded);
+        check_limit!(r.current_month.value().as_i64(), self.data.request_limits.requests_per_month, MonthRequestsOverLimit);
+        check_limit!(r.current_day.value().as_i64(), self.data.request_limits.requests_per_day, DayRequestsOverLimit);
+        check_limit!(r.current_hour.value().as_i64(), self.data.request_limits.requests_per_hour, HourRequestsOverLimit);
+        check_limit!(r.current_minute.value().as_i64(), self.data.request_limits.requests_per_minute, MinuteRequestsOverLimit);
 
 
         let r = &self.usage_stats.tokens();
-        check_limit!(&r.current_month.value().as_i64(), &self.data.token_limits.tokens_per_month, "per month", TokenUsageExceeded);
-        check_limit!(&r.current_day.value().as_i64(), &self.data.token_limits.tokens_per_day, "per day", TokenUsageExceeded);
-        check_limit!(&r.current_hour.value().as_i64(), &self.data.token_limits.tokens_per_hour, "per hour", TokenUsageExceeded);
-        check_limit!(&r.current_minute.value().as_i64(), &self.data.token_limits.tokens_per_minute, "per minute", TokenUsageExceeded);
+        check_limit!(r.current_month.value().as_i64(), self.data.token_limits.tokens_per_month, MonthTokensOverLimit);
+        check_limit!(r.current_day.value().as_i64(), self.data.token_limits.tokens_per_day, DayTokensOverLimit);
+        check_limit!(r.current_hour.value().as_i64(), self.data.token_limits.tokens_per_hour, HourTokensOverLimit);
+        check_limit!(r.current_minute.value().as_i64(), self.data.token_limits.tokens_per_minute, MinuteTokensOverLimit);
 
         Ok(())
     }
@@ -94,26 +94,26 @@ pub(crate)struct DeploymentNode {
 }
 
 impl NodeLimitsChecker for DeploymentNode {
-    fn validate_limits(&self) -> Result<(), DataAccessError> {
+    fn validate_limits(&self) -> Result<(), UsageExceededError> {
         let b = self.usage_stats.budget();
-        check_limit!(&b.current_month.value().as_f64(), &self.data.budget_limits.cost_per_month, "per month", BudgetExceeded);
-        check_limit!(&b.current_day.value().as_f64(), &self.data.budget_limits.cost_per_day, "per day", BudgetExceeded);
-        check_limit!(&b.current_hour.value().as_f64(), &self.data.budget_limits.cost_per_hour, "per hour", BudgetExceeded);
-        check_limit!(&b.current_minute.value().as_f64(), &self.data.budget_limits.cost_per_minute, "per minute", BudgetExceeded);
+        check_limit!(b.current_month.value().as_f64(), self.data.budget_limits.cost_per_month, MonthBudgetOverLimit);
+        check_limit!(b.current_day.value().as_f64(), self.data.budget_limits.cost_per_day, DayBudgetOverLimit);
+        check_limit!(b.current_hour.value().as_f64(), self.data.budget_limits.cost_per_hour, HourBudgetOverLimit);
+        check_limit!(b.current_minute.value().as_f64(), self.data.budget_limits.cost_per_minute, MinuteBudgetOverLimit);
 
 
         let r = &self.usage_stats.requests();
-        check_limit!(&r.current_month.value().as_i64(), &self.data.request_limits.requests_per_month, "per month", RequestUsageExceeded);
-        check_limit!(&r.current_day.value().as_i64(), &self.data.request_limits.requests_per_day, "per day", RequestUsageExceeded);
-        check_limit!(&r.current_hour.value().as_i64(), &self.data.request_limits.requests_per_hour, "per hour", RequestUsageExceeded);
-        check_limit!(&r.current_minute.value().as_i64(), &self.data.request_limits.requests_per_minute, "per minute", RequestUsageExceeded);
+        check_limit!(r.current_month.value().as_i64(), self.data.request_limits.requests_per_month, MonthRequestsOverLimit);
+        check_limit!(r.current_day.value().as_i64(), self.data.request_limits.requests_per_day, DayRequestsOverLimit);
+        check_limit!(r.current_hour.value().as_i64(), self.data.request_limits.requests_per_hour, HourRequestsOverLimit);
+        check_limit!(r.current_minute.value().as_i64(), self.data.request_limits.requests_per_minute, MinuteRequestsOverLimit);
 
 
         let r = &self.usage_stats.tokens();
-        check_limit!(&r.current_month.value().as_i64(), &self.data.token_limits.tokens_per_month, "per month", TokenUsageExceeded);
-        check_limit!(&r.current_day.value().as_i64(), &self.data.token_limits.tokens_per_day, "per day", TokenUsageExceeded);
-        check_limit!(&r.current_hour.value().as_i64(), &self.data.token_limits.tokens_per_hour, "per hour", TokenUsageExceeded);
-        check_limit!(&r.current_minute.value().as_i64(), &self.data.token_limits.tokens_per_minute, "per minute", TokenUsageExceeded);
+        check_limit!(r.current_month.value().as_i64(), self.data.token_limits.tokens_per_month, MonthTokensOverLimit);
+        check_limit!(r.current_day.value().as_i64(), self.data.token_limits.tokens_per_day, DayTokensOverLimit);
+        check_limit!(r.current_hour.value().as_i64(), self.data.token_limits.tokens_per_hour, HourTokensOverLimit);
+        check_limit!(r.current_minute.value().as_i64(), self.data.token_limits.tokens_per_minute, MinuteTokensOverLimit);
 
 
         Ok(())
@@ -139,26 +139,26 @@ pub(crate) struct ConnectionNode {
 
 
 impl NodeLimitsChecker for ConnectionNode {
-    fn validate_limits(&self) -> Result<(), DataAccessError> {
+    fn validate_limits(&self) -> Result<(), UsageExceededError> {
         let b = self.usage_stats.budget();
-        check_limit!(&b.current_month.value().as_f64(), &self.data.budget_limits.cost_per_month, "per month", BudgetExceeded);
-        check_limit!(&b.current_day.value().as_f64(), &self.data.budget_limits.cost_per_day, "per day", BudgetExceeded);
-        check_limit!(&b.current_hour.value().as_f64(), &self.data.budget_limits.cost_per_hour, "per hour", BudgetExceeded);
-        check_limit!(&b.current_minute.value().as_f64(), &self.data.budget_limits.cost_per_minute, "per minute", BudgetExceeded);
+        check_limit!(b.current_month.value().as_f64(), self.data.budget_limits.cost_per_month, MonthBudgetOverLimit);
+        check_limit!(b.current_day.value().as_f64(), self.data.budget_limits.cost_per_day, DayBudgetOverLimit);
+        check_limit!(b.current_hour.value().as_f64(), self.data.budget_limits.cost_per_hour, HourBudgetOverLimit);
+        check_limit!(b.current_minute.value().as_f64(), self.data.budget_limits.cost_per_minute, MinuteBudgetOverLimit);
 
 
         let r = &self.usage_stats.requests();
-        check_limit!(&r.current_month.value().as_i64(), &self.data.request_limits.requests_per_month, "per month", RequestUsageExceeded);
-        check_limit!(&r.current_day.value().as_i64(), &self.data.request_limits.requests_per_day, "per day", RequestUsageExceeded);
-        check_limit!(&r.current_hour.value().as_i64(), &self.data.request_limits.requests_per_hour, "per hour", RequestUsageExceeded);
-        check_limit!(&r.current_minute.value().as_i64(), &self.data.request_limits.requests_per_minute, "per minute", RequestUsageExceeded);
+        check_limit!(r.current_month.value().as_i64(), self.data.request_limits.requests_per_month, MonthRequestsOverLimit);
+        check_limit!(r.current_day.value().as_i64(), self.data.request_limits.requests_per_day, DayRequestsOverLimit);
+        check_limit!(r.current_hour.value().as_i64(), self.data.request_limits.requests_per_hour, HourRequestsOverLimit);
+        check_limit!(r.current_minute.value().as_i64(), self.data.request_limits.requests_per_minute, MinuteRequestsOverLimit);
 
 
         let r = &self.usage_stats.tokens();
-        check_limit!(&r.current_month.value().as_i64(), &self.data.token_limits.tokens_per_month, "per month", TokenUsageExceeded);
-        check_limit!(&r.current_day.value().as_i64(), &self.data.token_limits.tokens_per_day, "per day", TokenUsageExceeded);
-        check_limit!(&r.current_hour.value().as_i64(), &self.data.token_limits.tokens_per_hour, "per hour", TokenUsageExceeded);
-        check_limit!(&r.current_minute.value().as_i64(), &self.data.token_limits.tokens_per_minute, "per minute", TokenUsageExceeded);
+        check_limit!(r.current_month.value().as_i64(), self.data.token_limits.tokens_per_month, MonthTokensOverLimit);
+        check_limit!(r.current_day.value().as_i64(), self.data.token_limits.tokens_per_day, DayTokensOverLimit);
+        check_limit!(r.current_hour.value().as_i64(), self.data.token_limits.tokens_per_hour, HourTokensOverLimit);
+        check_limit!(r.current_minute.value().as_i64(), self.data.token_limits.tokens_per_minute, MinuteTokensOverLimit);
 
 
         Ok(())
@@ -175,26 +175,26 @@ pub(crate) struct ProjectNode {
 }
 
 impl NodeLimitsChecker for ProjectNode {
-    fn validate_limits(&self) -> Result<(), DataAccessError> {
+    fn validate_limits(&self) -> Result<(), UsageExceededError> {
         let b = self.usage_stats.budget();
-        check_limit!(&b.current_month.value().as_f64(), &self.data.budget_limits.cost_per_month, "per month", BudgetExceeded);
-        check_limit!(&b.current_day.value().as_f64(), &self.data.budget_limits.cost_per_day, "per day", BudgetExceeded);
-        check_limit!(&b.current_hour.value().as_f64(), &self.data.budget_limits.cost_per_hour, "per hour", BudgetExceeded);
-        check_limit!(&b.current_minute.value().as_f64(), &self.data.budget_limits.cost_per_minute, "per minute", BudgetExceeded);
+        check_limit!(b.current_month.value().as_f64(), self.data.budget_limits.cost_per_month, MonthBudgetOverLimit);
+        check_limit!(b.current_day.value().as_f64(), self.data.budget_limits.cost_per_day, DayBudgetOverLimit);
+        check_limit!(b.current_hour.value().as_f64(), self.data.budget_limits.cost_per_hour, HourBudgetOverLimit);
+        check_limit!(b.current_minute.value().as_f64(), self.data.budget_limits.cost_per_minute, MinuteBudgetOverLimit);
 
 
         let r = &self.usage_stats.requests();
-        check_limit!(&r.current_month.value().as_i64(), &self.data.request_limits.requests_per_month, "per month", RequestUsageExceeded);
-        check_limit!(&r.current_day.value().as_i64(), &self.data.request_limits.requests_per_day, "per day", RequestUsageExceeded);
-        check_limit!(&r.current_hour.value().as_i64(), &self.data.request_limits.requests_per_hour, "per hour", RequestUsageExceeded);
-        check_limit!(&r.current_minute.value().as_i64(), &self.data.request_limits.requests_per_minute, "per minute", RequestUsageExceeded);
+        check_limit!(r.current_month.value().as_i64(), self.data.request_limits.requests_per_month, MonthRequestsOverLimit);
+        check_limit!(r.current_day.value().as_i64(), self.data.request_limits.requests_per_day, DayRequestsOverLimit);
+        check_limit!(r.current_hour.value().as_i64(), self.data.request_limits.requests_per_hour, HourRequestsOverLimit);
+        check_limit!(r.current_minute.value().as_i64(), self.data.request_limits.requests_per_minute, MinuteRequestsOverLimit);
 
 
         let r = &self.usage_stats.tokens();
-        check_limit!(&r.current_month.value().as_i64(), &self.data.token_limits.tokens_per_month, "per month", TokenUsageExceeded);
-        check_limit!(&r.current_day.value().as_i64(), &self.data.token_limits.tokens_per_day, "per day", TokenUsageExceeded);
-        check_limit!(&r.current_hour.value().as_i64(), &self.data.token_limits.tokens_per_hour, "per hour", TokenUsageExceeded);
-        check_limit!(&r.current_minute.value().as_i64(), &self.data.token_limits.tokens_per_minute, "per minute", TokenUsageExceeded);
+        check_limit!(r.current_month.value().as_i64(), self.data.token_limits.tokens_per_month, MonthTokensOverLimit);
+        check_limit!(r.current_day.value().as_i64(), self.data.token_limits.tokens_per_day, DayTokensOverLimit);
+        check_limit!(r.current_hour.value().as_i64(), self.data.token_limits.tokens_per_hour, HourTokensOverLimit);
+        check_limit!(r.current_minute.value().as_i64(), self.data.token_limits.tokens_per_minute, MinuteTokensOverLimit);
 
         Ok(())
     }
@@ -210,7 +210,7 @@ pub(crate) struct ProjectData {
 
 // region:    --- Traits
 pub(crate) trait NodeLimitsChecker {
-    fn validate_limits(&self) -> Result<(), DataAccessError>;
+    fn validate_limits(&self) -> Result<(), UsageExceededError>;
 }
 // endregion: --- Traits
 
@@ -221,7 +221,7 @@ impl DataAccess {
         name = "get.graph",
         skip(self, api_key, application_secret)
     )]
-    pub async fn get_graph(&self, api_key: &str, model_name: &str, skip_local_cache: bool, local_cache_ttl_ms: u32, application_secret: &Uuid, ts: &DateTime<Utc>) -> Result<Graph, DataAccessError> {
+    pub async fn get_graph(&self, api_key: &str, model_name: &str, skip_local_cache: bool, local_cache_ttl_ms: u32, application_secret: &Uuid, ts: &DateTime<Utc>) -> Result<Graph, GraphLoadError> {
         // Step 1: Get Graph Data
         let graph_data = self.get_graph_data(api_key, model_name, skip_local_cache, &ts, local_cache_ttl_ms, application_secret).await?;
 
@@ -297,7 +297,7 @@ impl DataAccess {
         name = "get.graph.data",
         skip(self, api_key, application_secret)
     )]
-    async fn get_graph_data(&self, api_key: &str, model_name: &str, skip_local_cache: bool, now_utc: &DateTime<Utc>, local_cache_ttl_ms: u32, application_secret: &Uuid) -> Result<GraphData, DataAccessError> {
+    async fn get_graph_data(&self, api_key: &str, model_name: &str, skip_local_cache: bool, now_utc: &DateTime<Utc>, local_cache_ttl_ms: u32, application_secret: &Uuid) -> Result<GraphData, GraphLoadError> {
         let id = GraphDataId::new(model_name, api_key);
 
         if !skip_local_cache {
@@ -313,7 +313,7 @@ impl DataAccess {
         Ok(graph_data)
     }
 
-    async fn get_graph_data_from_db(&self, id: GraphDataId, application_secret: &Uuid) -> Result<GraphData, DataAccessError> {
+    async fn get_graph_data_from_db(&self, id: GraphDataId, application_secret: &Uuid) -> Result<GraphData, GraphLoadError> {
         println!("Loading Graph");
         let virtual_key = self.get_virtual_key(&id.virtual_key_id, application_secret).await?
             .ok_or(GraphLoadError::InvalidVirtualKey)?;

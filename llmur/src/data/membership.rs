@@ -1,4 +1,3 @@
-use crate::data::errors::DataConversionError;
 use crate::data::project::{ProjectId, ProjectRole};
 use crate::data::user::UserId;
 use crate::data::utils::{new_uuid_v5_from_string, ConvertInto};
@@ -7,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 use crate::data::DataAccess;
-use crate::errors::DataAccessError;
+use crate::errors::{DataAccessError, DbRecordConversionError};
 // region:    --- Main Model
 
 #[derive(
@@ -185,7 +184,7 @@ pub(crate) struct DbMembershipRecord {
 }
 
 impl ConvertInto<Membership> for DbMembershipRecord {
-    fn convert(self, _application_secret: &Option<Uuid>) -> Result<Membership, DataConversionError> {
+    fn convert(self, _application_secret: &Option<Uuid>) -> Result<Membership, DbRecordConversionError> {
         Ok(Membership::new(
             self.id,
             self.project_id,

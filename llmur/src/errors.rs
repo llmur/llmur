@@ -1,15 +1,210 @@
+use std::string::FromUtf8Error;
+use aes_gcm::aead;
 use axum::http::StatusCode;
 use axum::Json;
 use axum::response::{IntoResponse, Response};
+use hex::FromHexError;
+use redis::RedisError;
 use serde_json::json;
+use sqlx::migrate::MigrateError;
+use tokio::task::JoinError;
+use uuid::Uuid;
 use crate::data::connection::ConnectionId;
 use crate::data::connection_deployment::ConnectionDeploymentId;
 use crate::data::deployment::DeploymentId;
-use crate::data::errors::{CacheError, DataConversionError, DatabaseError};
+use crate::data::password::SchemeDispatcher;
 use crate::data::project::ProjectId;
 use crate::data::virtual_key::VirtualKeyId;
 use crate::data::virtual_key_deployment::VirtualKeyDeploymentId;
 
+
+
+#[derive(thiserror::Error, Debug)]
+pub enum GraphError {
+    #[error(transparent)]
+    GraphLoadError(#[from] GraphLoadError),
+    #[error(transparent)]
+    UsageExceededError(#[from] UsageExceededError),
+    #[error("No connection available for deployment")]
+    NoConnectionAvailable(MissingConnectionReason),
+}
+
+#[derive(Debug)]
+pub enum MissingConnectionReason {
+    NoUsageAvailable,
+    DeploymentConnectionsNotSetup
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum GraphLoadError {
+    #[error(transparent)]
+    DataAccessError(#[from] DataAccessError),
+    #[error("Invalid Virtual Key")]
+    InvalidVirtualKey,
+    #[error("Invalid Deployment Name")]
+    InvalidDeploymentName,
+    #[error(transparent)]
+    InconsistentGraphDataError(#[from] InconsistentGraphDataError),
+    #[error("Virtual key does not have access to deployment")]
+    InvalidVirtualKeyDeployment,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum InconsistentGraphDataError {
+    #[error("Invalid Project")]
+    InvalidProject,
+    #[error("Invalid Connection - Deployment association")]
+    InvalidConnectionDeployments,
+    #[error("Connection")]
+    InvalidConnection,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum DataAccessError {
+    #[error(transparent)]
+    SqlxError(#[from] sqlx::Error),
+    #[error(transparent)]
+    DbRecordConversionError(#[from] DbRecordConversionError),
+    #[error(transparent)]
+    EncryptionError(#[from] EncryptionError),
+    #[error(transparent)]
+    InvalidTimeFormatError(#[from] InvalidTimeFormatError),
+    #[error(transparent)]
+    HashError(#[from] HashError),
+    #[error(transparent)]
+    CacheAccessError(#[from] CacheAccessError),
+
+    
+    // TODO: These are used on the DB record creation methods. Should be replaced either by a single transaction or by returning the created record from the insert query instead of just the id
+    #[error("Successfully created {1} resource but failed to retrieve it afterward. Resource id: {2}. Reason: {0}")]
+    FailedToGetCreatedResource(Box<DataAccessError>, String, Uuid),
+    #[error("Successfully created {0} resource but failed to retrieve it afterward. Resource id: {1}. Reason: Resource not found")]
+    CreatedResourceNotFound(String, Uuid),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum SetupError {
+    #[error(transparent)]
+    SqlxError(#[from] sqlx::Error),
+    #[error(transparent)]
+    RedisError(#[from] RedisError),
+    #[error(transparent)]
+    ReqwestError(#[from] reqwest::Error),
+    #[error(transparent)]
+    MigrationError(#[from] MigrateError),
+    #[error("Database not configured")]
+    MissingDatabase,
+    #[error("Trying to set database twice")]
+    DatabaseAlreadySet,
+    #[error("Trying to set external cache twice")]
+    ExternalCacheAlreadySet,
+    #[error("Trying to set HTTP client twice")]
+    HttpClientAlreadySet,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum DbRecordConversionError {
+    #[error(transparent)]
+    EncryptionError(#[from] EncryptionError),
+    #[error(transparent)]
+    DecryptionError(#[from] DecryptionError),
+    #[error("Internal error: {0}. You should not be seeing this error. Please report a bug.")]
+    InternalError(String),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum CacheAccessError {
+    #[error(transparent)]
+    RedisError(#[from] RedisError)
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum InvalidTimeFormatError {
+    #[error("Invalid time format. Got '{0}'. '{1}' is not a valid value.")]
+    TimeValueNotAValidNumber(String, String),
+    #[error("Invalid time format. Got '{0}'. '{1}' is not a valid period.")]
+    InvalidTimePeriod(String, String),
+    #[error("Invalid time format. Got '{0}'.")]
+    InvalidTimeFormat(String),
+    #[error("Timestamp {0} out of range.")]
+    TimestampOutOfRange(i64),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum EncryptionError {
+    #[error(transparent)]
+    AeadError(#[from] aead::Error),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum DecryptionError {
+    #[error(transparent)]
+    AeadError(#[from] aead::Error),
+    #[error(transparent)]
+    FromUtf8Error(#[from] FromUtf8Error),
+    #[error(transparent)]
+    FromHexError(#[from] FromHexError),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum AuthenticationError {
+    #[error("Invalid credentials.")]
+    InvalidPassword,
+    #[error("Invalid password scheme. Got: {0}")]
+    AsyncError(#[from] AsyncError),
+    #[error("Unable to parse the password scheme into its correct parts.")]
+    PasswordSchemeParsingFailed,
+
+    #[error(transparent)]
+    HashError(#[from] HashError),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum AsyncError {
+    #[error("Failed to join threads")]
+    JoinError(#[from] JoinError),
+}
+#[derive(thiserror::Error, Debug)]
+pub enum HashError {
+    #[error(transparent)]
+    AsyncError(#[from] AsyncError),
+    #[error("Invalid password scheme. Got: {0}")]
+    SchemeNotFound(String),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum UsageExceededError {
+    #[error("Maximum budget limit exceeded. Used: {used}. Available: {limit} per month")]
+    MonthBudgetOverLimit { used: f64, limit: f64 },
+    #[error("Maximum budget limit exceeded. Used: {used}. Available: {limit} per hour")]
+    HourBudgetOverLimit { used: f64, limit: f64 },
+    #[error("Maximum budget limit exceeded. Used: {used}. Available: {limit} per day")]
+    DayBudgetOverLimit { used: f64, limit: f64 },
+    #[error("Maximum budget limit exceeded. Used: {used}. Available: {limit} per minute")]
+    MinuteBudgetOverLimit { used: f64, limit: f64 },
+
+    #[error("Maximum requests limit exceeded. Used: {used}. Available: {limit} per month")]
+    MonthRequestsOverLimit { used: i64, limit: i64 },
+    #[error("Maximum requests limit exceeded. Used: {used}. Available: {limit} per hour")]
+    HourRequestsOverLimit { used: i64, limit: i64 },
+    #[error("Maximum requests limit exceeded. Used: {used}. Available: {limit} per day")]
+    DayRequestsOverLimit { used: i64, limit: i64 },
+    #[error("Maximum requests limit exceeded. Used: {used}. Available: {limit} per minute")]
+    MinuteRequestsOverLimit { used: i64, limit: i64 },
+
+    #[error("Maximum tokens limit exceeded. Used: {used}. Available: {limit} per month")]
+    MonthTokensOverLimit { used: i64, limit: i64 },
+    #[error("Maximum tokens limit exceeded. Used: {used}. Available: {limit} per hour")]
+    HourTokensOverLimit { used: i64, limit: i64 },
+    #[error("Maximum tokens limit exceeded. Used: {used}. Available: {limit} per day")]
+    DayTokensOverLimit { used: i64, limit: i64 },
+    #[error("Maximum tokens limit exceeded. Used: {used}. Available: {limit} per minute")]
+    MinuteTokensOverLimit { used: i64, limit: i64 },
+}
+
+
+
+/*
 #[derive(thiserror::Error, Debug, Clone)]
 pub enum GraphConstructionError {
     /// A deployment referenced by a VirtualKeyDeployment was not found in the provided deployments
@@ -85,6 +280,8 @@ pub enum DataAccessError {
     #[error("Exceeded TPM: {0}")]
     TokenUsageExceeded(String),
 }
+
+
 #[derive(thiserror::Error, Debug)]
 pub enum BuilderError {
     #[error("missing database configuration")]
@@ -239,7 +436,7 @@ pub enum ProxyRequestError {
     DataAccessError(#[from] DataAccessError),
 }
 
-
+*/
 // TODO: Improve error handling
 impl IntoResponse for ProxyRequestError {
     fn into_response(self) -> Response {

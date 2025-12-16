@@ -5,10 +5,9 @@ use uuid::Uuid;
 use crate::data::utils::{new_uuid_v5_from_string, ConvertInto};
 use crate::{default_access_fns, default_database_access_fns, impl_local_store_accessors, impl_locally_stored, impl_structured_id_utils, impl_with_id_parameter_for_struct};
 use crate::data::{DataAccess, Database};
-use crate::data::errors::{DataConversionError, DatabaseError};
 use crate::data::membership::MembershipId;
 use crate::data::password::hash_password;
-use crate::errors::DataAccessError;
+use crate::errors::{DataAccessError, DbRecordConversionError};
 
 // region:    --- Main Model
 #[derive(Debug, Clone, sqlx::Type, PartialEq, Serialize, Deserialize)]
@@ -107,7 +106,7 @@ impl DataAccess {
     )]
     pub async fn create_user(&self, email: &str, name: &Option<String>, password: &str, email_verified: bool, blocked: bool, application_role: &ApplicationRole, application_secret: &Uuid) -> Result<User, DataAccessError>{
         let salt = Uuid::now_v7();
-        let hashed_password = hash_password(password.to_string(), salt.clone(), application_secret.clone()).await.map_err(|_| DataAccessError::FailedToHashPassword)?;
+        let hashed_password = hash_password(password.to_string(), salt.clone(), application_secret.clone()).await?;
         let name: &str = name
             .as_deref() // Convert &Option<String> to Option<&str>
             .filter(|s| !s.is_empty()) // Only use non-empty names
@@ -161,12 +160,12 @@ impl Database {
         name = "db.get.user",
         skip(self)
     )]
-    pub(crate) async fn get_user_with_email(&self, email: &str) -> Result<Option<DbUserRecord>, DatabaseError> {
+    pub(crate) async fn get_user_with_email(&self, email: &str) -> Result<Option<DbUserRecord>, DataAccessError> {
         match self {
             Database::Postgres { pool } => {
                 let mut query = pg_get_user_with_email_query(email);
                 let sql= query.build_query_as::<DbUserRecord>();
-                let result = sql.fetch_optional(pool).await.map_err(|e| DatabaseError::SqlxError(e.to_string()))?;;
+                let result = sql.fetch_optional(pool).await?;
 
                 Ok(result)
             }
@@ -324,7 +323,7 @@ pub(crate) struct DbUserRecord {
 }
 
 impl ConvertInto<User> for DbUserRecord {
-    fn convert(self, _application_secret: &Option<Uuid>) -> Result<User, DataConversionError> {
+    fn convert(self, _application_secret: &Option<Uuid>) -> Result<User, DbRecordConversionError> {
         Ok(User::new(
             self.id,
             self.email,

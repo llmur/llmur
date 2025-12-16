@@ -3,8 +3,6 @@ use log::debug;
 use reqwest::{Client, StatusCode};
 use reqwest::header::HeaderMap;
 use serde_json::json;
-use crate::data::errors::DatabaseError;
-use crate::errors::ProxyRequestError;
 use crate::providers::{TransformationContext, TransformationLoss, Transformer};
 
 

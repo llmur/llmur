@@ -1,4 +1,3 @@
-use crate::data::errors::DataConversionError;
 use crate::data::user::UserId;
 use crate::data::utils::{new_uuid_v5_from_string, parse_and_add_to_current_ts, ConvertInto};
 use crate::{default_access_fns, default_database_access_fns, impl_local_store_accessors, impl_locally_stored, impl_structured_id_utils, impl_with_id_parameter_for_struct};
@@ -9,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 use crate::data::DataAccess;
-use crate::errors::DataAccessError;
+use crate::errors::{DataAccessError, DbRecordConversionError, InvalidTimeFormatError};
 
 // region:    --- Main Model
 #[derive(
@@ -97,8 +96,8 @@ impl DataAccess {
         )
     )]
     pub async fn create_session_token(&self, id: &SessionTokenId, user_id: &UserId) -> Result<SessionToken, DataAccessError> {
-        let seconds = parse_and_add_to_current_ts("30d").map_err(|_| DataAccessError::InvalidInviteCode)? ; // TODO
-        let expires_at = chrono::DateTime::from_timestamp(seconds.clone(), 0).ok_or(DataAccessError::InvalidInviteCode)?; // TODO
+        let seconds = parse_and_add_to_current_ts("30d")?; // Should never fail - Still better handle it
+        let expires_at = chrono::DateTime::from_timestamp(seconds, 0).ok_or(InvalidTimeFormatError::TimestampOutOfRange(seconds))?;
 
         self.__create_session_token(id, user_id, &expires_at, &None).await
     }
@@ -212,7 +211,7 @@ pub struct DbSessionTokenRecord {
 }
 
 impl ConvertInto<SessionToken> for DbSessionTokenRecord {
-    fn convert(self, _application_secret: &Option<Uuid>) -> Result<SessionToken, DataConversionError> {
+    fn convert(self, _application_secret: &Option<Uuid>) -> Result<SessionToken, DbRecordConversionError> {
         Ok(SessionToken::new(
             self.id,
             self.user_id,

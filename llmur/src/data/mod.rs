@@ -1,12 +1,15 @@
 use crate::data::connection::ConnectionId;
-use crate::data::errors::{CacheError, DatabaseError};
+use crate::data::deployment::DeploymentId;
 use crate::data::graph::local_store::{GraphData, GraphDataId};
 use crate::data::request_log::RequestLogData;
 use crate::data::session_token::{SessionToken, SessionTokenId};
 use crate::data::utils::current_timestamp_ms;
-use crate::errors::BuilderError;
+use crate::errors::{CacheAccessError, DataAccessError, SetupError};
 use chrono::{DateTime, Utc};
-use redis::{AsyncCommands, ConnectionAddr, ConnectionInfo, FromRedisValue, ProtocolVersion, RedisConnectionInfo, RedisWrite, ToRedisArgs};
+use redis::{
+    AsyncCommands, ConnectionAddr, ConnectionInfo, FromRedisValue, ProtocolVersion,
+    RedisConnectionInfo, RedisWrite, ToRedisArgs,
+};
 use reqwest::Client;
 use serde::Serialize;
 use sqlx::migrate::Migrator;
@@ -19,30 +22,27 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::{select, sync::mpsc, time::interval};
-use crate::data::deployment::DeploymentId;
 
-pub(crate) mod errors;
-pub(crate) mod macros;
-pub(crate) mod utils;
 pub(crate) mod commons;
+pub(crate) mod macros;
 pub(crate) mod password;
+pub(crate) mod utils;
 
 pub mod connection;
-pub mod deployment;
-pub mod virtual_key;
 pub mod connection_deployment;
-pub mod virtual_key_deployment;
+pub mod deployment;
+pub mod graph;
+pub mod limits;
+pub mod load_balancer;
+pub mod membership;
 pub mod project;
 pub mod project_invite_code;
-pub mod session_token;
-pub mod user;
-pub mod membership;
-pub mod limits;
-pub mod graph;
 pub mod request_log;
+pub mod session_token;
 pub mod usage;
-pub mod load_balancer;
-
+pub mod user;
+pub mod virtual_key;
+pub mod virtual_key_deployment;
 
 // region:    --- Data Access
 pub struct DataAccess {
@@ -55,7 +55,7 @@ pub struct DataAccess {
 }
 
 impl DataAccess {
-    pub async fn migrate_database(&self) -> Result<(), DatabaseError> {
+    pub async fn migrate_database(&self) -> Result<(), SetupError> {
         self.database.migrate().await
     }
 }
@@ -70,7 +70,11 @@ pub struct DataAccessBuilder {
 
 impl DataAccessBuilder {
     pub fn new() -> Self {
-        Self { database: None, cache: None, http_client: None }
+        Self {
+            database: None,
+            cache: None,
+            http_client: None,
+        }
     }
 
     // Database
@@ -83,8 +87,10 @@ impl DataAccessBuilder {
         password: &str,
         min_connections: &Option<u32>,
         max_connections: &Option<u32>,
-    ) -> Result<Self, BuilderError> {
-        if self.database.is_some() { return Err(BuilderError::DatabaseAlreadySet); }
+    ) -> Result<Self, SetupError> {
+        if self.database.is_some() {
+            return Err(SetupError::DatabaseAlreadySet);
+        }
         let db = Database::new_postgres(
             host,
             port,
@@ -93,35 +99,44 @@ impl DataAccessBuilder {
             password,
             min_connections,
             max_connections,
-        ).await?;
+        )
+        .await?;
         self.database = Some(db);
         Ok(self)
     }
 
     // Cache
-    pub async fn with_redis_standalone(mut self, host: &str, port: u16, username: &str, password: &str) -> Result<Self, BuilderError> {
-        if self.cache.is_some() { return Err(BuilderError::CacheAlreadySet); }
-        let cache = Cache::new_redis_standalone(
-            host,
-            port,
-            username,
-            password,
-        ).await?;
+    pub async fn with_redis_standalone(
+        mut self,
+        host: &str,
+        port: u16,
+        username: &str,
+        password: &str,
+    ) -> Result<Self, SetupError> {
+        if self.cache.is_some() {
+            return Err(SetupError::ExternalCacheAlreadySet);
+        }
+        let cache = Cache::new_redis_standalone(host, port, username, password).await?;
         self.cache = Some(cache);
         Ok(self)
     }
 
     // HTTP client
-    pub fn with_http_client(mut self, builder: reqwest::ClientBuilder) -> Result<Self, BuilderError> {
-        if self.http_client.is_some() { return Err(BuilderError::HttpClientAlreadySet); }
+    pub fn with_http_client(
+        mut self,
+        builder: reqwest::ClientBuilder,
+    ) -> Result<Self, SetupError> {
+        if self.http_client.is_some() {
+            return Err(SetupError::HttpClientAlreadySet);
+        }
         let client = builder.build()?; // may error -> BuilderError::Http
         self.http_client = Some(client);
         Ok(self)
     }
 
     // Finalize
-    pub fn build(self) -> Result<DataAccess, BuilderError> {
-        let database = self.database.ok_or(BuilderError::MissingDatabase)?;
+    pub fn build(self) -> Result<DataAccess, SetupError> {
+        let database = self.database.ok_or(SetupError::MissingDatabase)?;
         let cache = Arc::new(self.cache.unwrap_or(Cache::local_only()));
         let http_client = self.http_client.unwrap_or_else(Client::new);
 
@@ -130,7 +145,12 @@ impl DataAccessBuilder {
 
         // Background writer (flush every 750ms or 500 events)
         // TODO: Make parameters configurable
-        spawn_request_log_writer(database.clone(), request_log_rx, Duration::from_millis(750), 500);
+        spawn_request_log_writer(
+            database.clone(),
+            request_log_rx,
+            Duration::from_millis(750),
+            500,
+        );
         spawn_usage_writer(cache.clone(), usage_log_rx, Duration::from_millis(50), 10);
 
         Ok(DataAccess {
@@ -166,7 +186,7 @@ impl Database {
         password: &str,
         min_connections: &Option<u32>,
         max_connections: &Option<u32>,
-    ) -> Result<Database, DatabaseError> {
+    ) -> Result<Database, SetupError> {
         let mut pool_options = PgPoolOptions::new();
 
         if let Some(min) = min_connections {
@@ -177,23 +197,24 @@ impl Database {
         }
 
         Ok(Database::Postgres {
-            pool: pool_options.connect(
-                &format!("postgres://{}:{}@{}:{}/{}",
-                         username,
-                         password,
-                         host,
-                         port,
-                         database
-                )
-            ).await.map_err(|e| DatabaseError::SqlxError(e.to_string()))?
+            pool: pool_options
+                .connect(&format!(
+                    "postgres://{}:{}@{}:{}/{}",
+                    username, password, host, port, database
+                ))
+                .await?,
         })
     }
 
-    pub async fn migrate(&self) -> Result<(), DatabaseError> {
+    pub async fn migrate(&self) -> Result<(), SetupError> {
         match self {
             Database::Postgres { pool } => {
-                let m = Migrator::new(Path::new(&format!("{}/postgres/migration", env!("CARGO_MANIFEST_DIR")))).await.map_err(|e| DatabaseError::MigrateError(e.to_string()))?;
-                let _ = m.run(pool).await.map_err(|e| DatabaseError::MigrateError(e.to_string()))?;
+                let m = Migrator::new(Path::new(&format!(
+                    "{}/postgres/migration",
+                    env!("CARGO_MANIFEST_DIR")
+                )))
+                .await?;
+                let _ = m.run(pool).await?;
                 Ok(())
             }
         }
@@ -215,7 +236,12 @@ impl Cache {
         }
     }
 
-    pub(crate) async fn new_redis_standalone(host: &str, port: u16, username: &str, password: &str) -> Result<Self, CacheError> {
+    pub(crate) async fn new_redis_standalone(
+        host: &str,
+        port: u16,
+        username: &str,
+        password: &str,
+    ) -> Result<Self, SetupError> {
         let client = redis::Client::open(ConnectionInfo {
             addr: ConnectionAddr::Tcp(host.to_string(), port),
             redis: RedisConnectionInfo {
@@ -224,15 +250,15 @@ impl Cache {
                 password: Some(password.to_string()),
                 protocol: ProtocolVersion::default(),
             },
-        }).map_err(|e| CacheError::RedisStartError { cause: e.to_string() })?;
+        })?;
 
-        let mut con = client.get_multiplexed_async_connection().await.map_err(|e| CacheError::RedisStartError { cause: e.to_string() })?;
+        let mut con = client
+            .get_multiplexed_async_connection()
+            .await?;
 
         Ok(Cache {
             local: LocalStore::new(),
-            external: Some(
-                ExternalCache::Redis { connection: con }
-            ),
+            external: Some(ExternalCache::Redis { connection: con }),
         })
     }
 }
@@ -252,7 +278,10 @@ impl Cache {
         Some(cached)
     }
 
-    pub(crate) fn get_local_records<R, K>(&self, ids: &BTreeSet<K>) -> BTreeMap<K, Option<LocallyStoredValue<R>>>
+    pub(crate) fn get_local_records<R, K>(
+        &self,
+        ids: &BTreeSet<K>,
+    ) -> BTreeMap<K, Option<LocallyStoredValue<R>>>
     where
         R: LocallyStored<K>,
         K: Ord + Clone + Display,
@@ -271,14 +300,16 @@ impl Cache {
             .collect()
     }
 
-
     pub(crate) fn set_local_record<R, K>(&self, record: R) -> ()
     where
         R: LocallyStored<K>,
         K: Ord + Clone + Display,
     {
         if let Ok(mut map) = R::get_local_map(&self.local).lock() {
-            map.insert(record.get_id_ref().clone(), LocallyStoredValue::new(record.clone()));
+            map.insert(
+                record.get_id_ref().clone(),
+                LocallyStoredValue::new(record.clone()),
+            );
         }
     }
 
@@ -289,8 +320,9 @@ impl Cache {
     {
         if let Ok(mut map) = R::get_local_map(&self.local).lock() {
             map.extend(
-                records.into_iter()
-                    .map(|record| (record.get_id_ref().clone(), LocallyStoredValue::new(record)))
+                records
+                    .into_iter()
+                    .map(|record| (record.get_id_ref().clone(), LocallyStoredValue::new(record))),
             );
         }
     }
@@ -322,11 +354,16 @@ impl Cache {
 
 // region:    --- External Cache
 pub(crate) enum ExternalCache {
-    Redis { connection: redis::aio::MultiplexedConnection },
+    Redis {
+        connection: redis::aio::MultiplexedConnection,
+    },
 }
 
 impl ExternalCache {
-    pub(crate) async fn get_values(&self, keys: &BTreeSet<String>) -> Result<BTreeMap<String, Option<String>>, CacheError> {
+    pub(crate) async fn get_values(
+        &self,
+        keys: &BTreeSet<String>,
+    ) -> Result<BTreeMap<String, Option<String>>, CacheAccessError> {
         match self {
             ExternalCache::Redis { connection } => {
                 let mut conn = connection.clone();
@@ -335,7 +372,9 @@ impl ExternalCache {
                 let keys_vec: Vec<&String> = keys.iter().collect();
 
                 // Use mget to retrieve all values for the given keys
-                let values: Vec<Option<String>> = conn.mget(keys_vec).await.map_err(|e| CacheError::RedisExecutionError { cause: e.to_string() })?;
+                let values: Vec<Option<String>> =
+                    conn.mget(keys_vec)
+                        .await?;
 
                 // Convert into BTreeMap
                 let result = keys
@@ -348,35 +387,7 @@ impl ExternalCache {
             }
         }
     }
-    /*
-    pub(crate) async fn increment_values(&self, keys: &BTreeSet<String>) -> Result<(), CacheError> {
-        match self {
-            ExternalCache::Redis { connection } => {
-                let mut conn = connection.clone();
-
-                // Convert BTreeSet to Vec for Redis mget
-                let keys_vec: Vec<&String> = keys.iter().collect();
-
-                conn.incr
-
-                // Use mget to retrieve all values for the given keys
-                let values: Vec<Option<String>> = conn.mget(keys_vec).await.map_err(|e| CacheError::RedisExecutionError { cause: e.to_string() })?;
-
-                // Convert into BTreeMap
-                let result = keys
-                    .iter()
-                    .cloned()
-                    .zip(values)
-                    .collect::<BTreeMap<String, Option<String>>>();
-
-                Ok(result)
-            }
-        }
-    }
-
-     */
 }
-
 
 // endregion: --- External Cache
 
@@ -424,7 +435,8 @@ impl LocalStore {
 // endregion: --- Local Cache
 
 #[async_trait::async_trait]
-pub(crate) trait LocallyStored<K>: WithIdParameter<K> + Clone + Send + Sync + 'static
+pub(crate) trait LocallyStored<K>:
+    WithIdParameter<K> + Clone + Send + Sync + 'static
 where
     K: Ord + Clone + Display,
 {
@@ -450,7 +462,6 @@ fn spawn_request_log_writer(
         let mut rx = rx;
         let mut tick = interval(flush_every);
         let mut batch: Vec<Arc<RequestLogData>> = Vec::with_capacity(max_batch);
-
 
         println!("### request log writer started");
 
@@ -490,7 +501,6 @@ fn spawn_request_log_writer(
     })
 }
 
-
 fn spawn_usage_writer(
     cache: Arc<Cache>,
     rx: mpsc::Receiver<Arc<RequestLogData>>,
@@ -501,7 +511,6 @@ fn spawn_usage_writer(
         let mut rx = rx;
         let mut tick = interval(flush_every);
         let mut batch: Vec<Arc<RequestLogData>> = Vec::with_capacity(max_batch);
-
 
         println!("### usage writer started");
 
