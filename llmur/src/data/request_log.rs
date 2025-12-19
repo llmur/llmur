@@ -2,12 +2,11 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use crate::data::connection::ConnectionId;
 use crate::data::deployment::DeploymentId;
-use crate::data::errors::{DataConversionError, DatabaseError};
 use crate::data::project::ProjectId;
 use crate::data::utils::ConvertInto;
 use crate::data::virtual_key::VirtualKeyId;
 use crate::data::{DataAccess, Database};
-use crate::errors::DataAccessError;
+use crate::errors::{DataAccessError, DbRecordConversionError};
 use crate::{default_access_fns, default_database_access_fns, impl_structured_id_utils, impl_with_id_parameter_for_struct};
 use serde::{Deserialize, Serialize};
 use sqlx::{Execute, FromRow, Postgres, QueryBuilder};
@@ -140,8 +139,7 @@ impl Database {
                 let sql = query.build();
                 let result = sql.execute(pool).await;
 
-                // TODO: Handle errors properly
-                Ok(result.map(|qr| qr.rows_affected()).map_err(|e| DatabaseError::SqlxError(e.to_string()))?)
+                Ok(result.map(|qr| qr.rows_affected())?)
             }
         }
     }
@@ -408,7 +406,7 @@ pub(crate) struct DbRequestLogRecord {
 }
 
 impl ConvertInto<RequestLog> for DbRequestLogRecord {
-    fn convert(self, _application_secret: &Option<Uuid>) -> Result<RequestLog, DataConversionError> {
+    fn convert(self, _application_secret: &Option<Uuid>) -> Result<RequestLog, DbRecordConversionError> {
         Ok(RequestLog {
             id: self.id,
             attempt_number: self.attempt_number,

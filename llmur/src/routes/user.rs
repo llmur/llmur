@@ -4,7 +4,7 @@ use axum::extract::{Path, State};
 use axum::routing::{delete, get, post};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use crate::errors::{DataAccessError, LLMurError};
+use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
 use crate::{impl_from_vec_result, LLMurState};
 use crate::data::user::{ApplicationRole, User, UserId};
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
@@ -50,7 +50,7 @@ pub(crate) async fn create_user(
             Ok(Json(user.into()))
         }
         UserContext::WebAppUser { .. } => {
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }
@@ -71,14 +71,14 @@ pub(crate) async fn get_user(
 
     match user_context {
         UserContext::MasterUser => {
-            let user = state.data.get_user(&id).await?.ok_or(LLMurError::AdminResourceNotFound)?;
+            let user = state.data.get_user(&id).await?.ok_or(DataAccessError::ResourceNotFound)?;
             Ok(Json(user.into()))
         }
         UserContext::WebAppUser { user, .. } => {
             if user.id == id.into() || user.role == ApplicationRole::Admin {
                 Ok(Json(user.into()))
             }
-            else { Err(LLMurError::NotAuthorized) }
+            else { Err(AuthorizationError::AccessDenied)? }
         }
     }
 }
@@ -95,7 +95,7 @@ pub(crate) async fn get_current_user(
 
     match user_context {
         UserContext::MasterUser => {
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
         UserContext::WebAppUser { user, .. } => {
             Ok(Json(user.into()))
@@ -123,12 +123,12 @@ pub(crate) async fn delete_user(
         }
         UserContext::WebAppUser { user, .. } => {
             if id == user.id { state.data.delete_user(&id).await? }
-            else { Err(LLMurError::NotAuthorized)? }
+            else { Err(AuthorizationError::AccessDenied)? }
         }
     };
 
     if result == 0 {
-        Err(LLMurError::AdminResourceNotFound)
+        Err(DataAccessError::ResourceNotFound)?
     }
     else {
         Ok(Json(StatusResponse { success: true, message: Some(format!("User {} deleted successfully", &id)) }))

@@ -2,7 +2,7 @@ use crate::data::connection::ConnectionId;
 use crate::data::deployment::DeploymentId;
 use crate::data::graph::{ConnectionNode, Graph};
 use crate::data::{DataAccess, LocallyStoredValue};
-use crate::errors::DataAccessError;
+use crate::errors::{DataAccessError, GraphError, MissingConnectionReason};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, PartialOrd, sqlx::Type)]
@@ -32,9 +32,9 @@ impl DataAccess {
             strategy = ?graph.deployment.data.strategy
         )
     )]
-    pub fn get_next_connection<'a>(&self, graph: &'a Graph) -> Result<&'a ConnectionNode, DataAccessError> {
+    pub fn get_next_connection<'a>(&self, graph: &'a Graph) -> Result<&'a ConnectionNode, GraphError> {
         if graph.connections.is_empty() {
-            return Err(DataAccessError::NoConnectionsAvailable);
+            return Err(GraphError::NoConnectionAvailable(MissingConnectionReason::DeploymentConnectionsNotSetup));
         }
 
         let deployment_id = &graph.deployment.data.id;
@@ -59,7 +59,7 @@ impl DataAccess {
         &self,
         deployment_id: &DeploymentId,
         connections: &'a [ConnectionNode],
-    ) -> Result<&'a ConnectionNode, DataAccessError> {
+    ) -> Result<&'a ConnectionNode, GraphError> {
         let mut index_map = self.cache.local.deployment_rr_index.lock().unwrap();
 
         let entry = index_map
@@ -76,7 +76,7 @@ impl DataAccess {
         &self,
         deployment_id: &DeploymentId,
         connections: &'a [ConnectionNode],
-    ) -> Result<&'a ConnectionNode, DataAccessError> {
+    ) -> Result<&'a ConnectionNode, GraphError> {
         // Calculate total weight
         let total_weight: u64 = connections.iter().map(|c| c.weight as u64).sum();
 
@@ -110,7 +110,7 @@ impl DataAccess {
     fn least_connections_select<'a>(
         &self,
         connections: &'a [ConnectionNode],
-    ) -> Result<&'a ConnectionNode, DataAccessError> {
+    ) -> Result<&'a ConnectionNode, GraphError> {
         let counter_map = self.cache.local.opened_connections_counter.lock().unwrap();
 
         connections
@@ -121,13 +121,13 @@ impl DataAccess {
                     .map(|stored| stored.value)
                     .unwrap_or(0)
             })
-            .ok_or(DataAccessError::NoConnectionsAvailable)
+            .ok_or(GraphError::NoConnectionAvailable(MissingConnectionReason::DeploymentConnectionsNotSetup))
     }
 
     fn weighted_least_connections_select<'a>(
         &self,
         connections: &'a [ConnectionNode],
-    ) -> Result<&'a ConnectionNode, DataAccessError> {
+    ) -> Result<&'a ConnectionNode, GraphError> {
         let counter_map = self.cache.local.opened_connections_counter.lock().unwrap();
 
         connections
@@ -151,7 +151,7 @@ impl DataAccess {
 
                 a_ratio.partial_cmp(&b_ratio).unwrap_or(std::cmp::Ordering::Equal)
             })
-            .ok_or(DataAccessError::NoConnectionsAvailable)
+            .ok_or(GraphError::NoConnectionAvailable(MissingConnectionReason::DeploymentConnectionsNotSetup))
     }
 
     // Helper method to increment connection counter when a connection is opened

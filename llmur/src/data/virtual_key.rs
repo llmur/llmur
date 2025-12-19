@@ -6,11 +6,10 @@ use uuid::Uuid;
 use crate::data::utils::{decrypt, encrypt, generate_random_api_key, new_uuid_v5_from_string, ConvertInto};
 use crate::{default_access_fns, default_database_access_fns, impl_local_store_accessors, impl_locally_stored, impl_structured_id_utils, impl_with_id_parameter_for_struct};
 use crate::data::DataAccess;
-use crate::data::errors::{DataConversionError, DatabaseError};
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::project::ProjectId;
 use crate::data::virtual_key_deployment::VirtualKeyDeploymentId;
-use crate::errors::DataAccessError;
+use crate::errors::{DataAccessError, DbRecordConversionError};
 
 // region:    --- Main Model
 #[derive(
@@ -55,8 +54,7 @@ impl VirtualKey {
         id: VirtualKeyId,
         alias: String,
         description: Option<String>,
-        salt: Uuid,
-        encrypted_key: String,
+        decrypted_key: String,
         blocked: bool,
         project_id: ProjectId,
 
@@ -65,13 +63,11 @@ impl VirtualKey {
         token_limits: TokenLimits,
         
         deployments: BTreeSet<VirtualKeyDeploymentId>,
-        application_secret: &Uuid
-    ) -> Result<Self, DatabaseError> {
-        let key = decrypt(&encrypted_key, &salt, application_secret)?;
+    ) -> Self {
 
-        Ok(VirtualKey {
+        VirtualKey {
             id,
-            key,
+            key: decrypted_key,
             alias,
             blocked,
             project_id,
@@ -79,7 +75,7 @@ impl VirtualKey {
             request_limits,
             token_limits,
             deployments
-        })
+        }
     }
 }
 
@@ -89,23 +85,10 @@ impl_with_id_parameter_for_struct!(VirtualKey, VirtualKeyId);
 
 // region:    --- Data Access
 impl DataAccess {
-    #[tracing::instrument(
-        level="trace",
-        name = "get.virtual_key",
-        skip(self, id, application_secret),
-        fields(
-            id = %id.0
-        )
-    )]
     pub async fn get_virtual_key(&self, id: &VirtualKeyId, application_secret: &Uuid) -> Result<Option<VirtualKey>, DataAccessError> {
         self.__get_virtual_key(id, &Some(application_secret.clone())).await
     }
 
-    #[tracing::instrument(
-        level="trace",
-        name = "create.virtual_key",
-        skip(self, key_suffix_length, alias, description, blocked, application_secret)
-    )]
     pub async fn create_virtual_key(
         &self,
         key_suffix_length: usize,
@@ -120,7 +103,7 @@ impl DataAccess {
     ) -> Result<VirtualKey, DataAccessError> {
         let key = generate_random_api_key(key_suffix_length);
         let salt = Uuid::now_v7();
-        let encrypted_key = encrypt(&key, &salt, application_secret).map_err(|_| DataAccessError::FailedToCreateKey)?;
+        let encrypted_key = encrypt(&key, &salt, application_secret)?;
         let id = VirtualKeyId::from_decrypted_key(&key);
 
         let alias = alias.clone().unwrap_or(format!("sk-...{}", key.char_indices().nth_back(4).unwrap().0));
@@ -140,14 +123,6 @@ impl DataAccess {
         ).await
     }
 
-    #[tracing::instrument(
-        level="trace",
-        name = "delete.virtual_key",
-        skip(self, id),
-        fields(
-            id = %id.0
-        )
-    )]
     pub async fn delete_virtual_key(&self, id: &VirtualKeyId) -> Result<u64, DataAccessError> {
         self.__delete_virtual_key(id).await
     }
@@ -377,22 +352,23 @@ pub(crate) struct DbVirtualKeyRecord {
 }
 
 impl ConvertInto<VirtualKey> for DbVirtualKeyRecord {
-    fn convert(self, application_secret: &Option<Uuid>) -> Result<VirtualKey, DataConversionError> {
-        let application_secret = application_secret.ok_or(DatabaseError::InvalidDatabaseRecord).map_err(|_| DataConversionError::DefaultError {cause: "Ups".to_string()})?; // TODO return Internal Server Error
+    fn convert(self, application_secret: &Option<Uuid>) -> Result<VirtualKey, DbRecordConversionError> {
+        let application_secret = application_secret
+            .ok_or(DbRecordConversionError::InternalError("Application Secret not passed to convert method for DbVirtualKeyRecord".to_string()))?;
+        let key = decrypt(&self.encrypted_key, &self.salt, &application_secret)?;
+
         Ok(VirtualKey::new(
             self.id,
             self.alias,
             self.description,
-            self.salt,
-            self.encrypted_key,
+            key,
             self.blocked,
             self.project_id,
             self.budget_limits.map(|l| l.0).unwrap_or_default(),
             self.request_limits.map(|l| l.0).unwrap_or_default(),
             self.token_limits.map(|l| l.0).unwrap_or_default(),
             self.deployments.into_iter().collect(),
-            &application_secret,
-        ).map_err(|_| DataConversionError::DefaultError {cause: "Ups".to_string()})?)
+        ))
     }
 }
 

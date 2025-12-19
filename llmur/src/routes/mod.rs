@@ -1,19 +1,18 @@
-use std::sync::Arc;
-use axum::extract::{Path, State};
-use axum::{Json, Router};
-use axum::middleware::{from_fn, from_fn_with_state};
-use axum::routing::{get, post};
-use chrono::Utc;
-use serde::{Deserialize, Serialize};
-use tower_http::trace::TraceLayer;
 use crate::data::graph::Graph;
-use crate::errors::LLMurError;
-use crate::LLMurState;
+use crate::errors::{GraphError, LLMurError};
 use crate::routes::chat_completions::chat_completions_route;
 use crate::routes::middleware::auth::auth_token_extraction_mw;
 use crate::routes::middleware::tracing::common_tracing_mw;
-use crate::routes::openai::controller::openai_route_controller_mw;
 use crate::routes::middleware::user_context::user_context_load_mw;
+use crate::routes::openai::controller::openai_route_controller_mw;
+use crate::LLMurState;
+use axum::extract::{Path, State};
+use axum::middleware::{from_fn, from_fn_with_state};
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 mod connection;
 mod deployment;
@@ -90,7 +89,10 @@ pub(crate) async fn get_graph(
     State(state): State<Arc<LLMurState>>,
     Path(Params { key, deployment }): Path<Params>,
 ) -> Result<Json<Graph>, LLMurError> {
-    let graph = state.data.get_graph(&key, &deployment, false, 10000, &state.application_secret, &Utc::now()).await;
-    println!("{:?}", graph);
+    let graph: Result<Graph, GraphError> = state
+        .data
+        .get_graph(&key, &deployment, false, 10000, &state.application_secret, &Utc::now())
+        .await
+        .map_err(|e| e.into());
     Ok(Json(graph?))
 }

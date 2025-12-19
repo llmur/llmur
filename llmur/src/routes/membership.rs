@@ -1,7 +1,7 @@
 use crate::data::membership::{Membership, MembershipId};
 use crate::data::project::{ProjectId, ProjectRole};
 use crate::data::user::UserId;
-use crate::errors::LLMurError;
+use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
 use crate::routes::StatusResponse;
 use crate::{impl_from_vec_result, LLMurState};
@@ -41,8 +41,7 @@ pub(crate) async fn create_membership(
             Ok(Json(membership.into()))
         }
         UserContext::WebAppUser { user, .. } => {
-            // TODO
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }
@@ -63,12 +62,12 @@ pub(crate) async fn get_membership(
 
     match user_context {
         UserContext::MasterUser => {
-            let membership = state.data.get_membership(&id).await?.ok_or(LLMurError::AdminResourceNotFound)?;
+            let membership = state.data.get_membership(&id).await?.ok_or(DataAccessError::ResourceNotFound)?;
             Ok(Json(membership.into()))
         }
         UserContext::WebAppUser { user, .. } => {
             // TODO
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }
@@ -87,7 +86,7 @@ pub(crate) async fn delete_membership(
 ) -> Result<Json<StatusResponse>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let membership = state.data.get_membership(&id).await?.ok_or(LLMurError::AdminResourceNotFound)?; // TODO
+    let membership = state.data.get_membership(&id).await?.ok_or(DataAccessError::ResourceNotFound)?;
 
     match user_context {
         UserContext::MasterUser => {
@@ -99,7 +98,7 @@ pub(crate) async fn delete_membership(
         }
         UserContext::WebAppUser { user, .. } => {
             // TODO
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }

@@ -1,6 +1,5 @@
 use crate::data::connection::{Connection, ConnectionId};
 use crate::data::deployment::DeploymentId;
-use crate::data::errors::{CacheError, DatabaseError};
 use crate::data::graph::local_store::GraphData;
 use crate::data::graph::usage_stats::{
     ConnectionUsageStats, DeploymentUsageStats, MetricsUsageStats, PeriodStats, ProjectUsageStats,
@@ -10,7 +9,7 @@ use crate::data::project::ProjectId;
 use crate::data::request_log::{RequestLogData, pg_insert_m};
 use crate::data::virtual_key::VirtualKeyId;
 use crate::data::{Cache, DataAccess, Database, ExternalCache, connection};
-use crate::errors::DataAccessError;
+use crate::errors::{CacheAccessError, DataAccessError};
 use chrono::{DateTime, Datelike, TimeZone, Timelike, Utc};
 use redis::Pipeline;
 use redis::aio::MultiplexedConnection;
@@ -214,8 +213,7 @@ impl Database {
                 // TODO: Handle errors properly
                 let result = sql
                     .fetch_one(pool)
-                    .await
-                    .map_err(|e| DatabaseError::SqlxError(e.to_string()))?;
+                    .await?;
 
                 Ok(result)
             }
@@ -237,12 +235,9 @@ impl Database {
             Database::Postgres { pool } => {
                 let mut query = pg_get_virtual_key_usage(virtual_key_id, now_utc);
                 let sql = query.build_query_as::<DbUsageStatsRecord>();
-                // TODO: Handle errors properly
                 let result = sql
                     .fetch_one(pool)
-                    .await
-                    .map_err(|e| DatabaseError::SqlxError(e.to_string()))?;
-
+                    .await?;
                 Ok(result)
             }
         }
@@ -263,12 +258,9 @@ impl Database {
             Database::Postgres { pool } => {
                 let mut query = pg_get_deployment_usage(deployment_id, now_utc);
                 let sql = query.build_query_as::<DbUsageStatsRecord>();
-                // TODO: Handle errors properly
                 let result = sql
                     .fetch_one(pool)
-                    .await
-                    .map_err(|e| DatabaseError::SqlxError(e.to_string()))?;
-
+                    .await?;
                 Ok(result)
             }
         }
@@ -291,8 +283,7 @@ impl Database {
                 // TODO: Handle errors properly
                 let result = sql
                     .fetch_one(pool)
-                    .await
-                    .map_err(|e| DatabaseError::SqlxError(e.to_string()))?;
+                    .await?;
 
                 Ok(result)
             }
@@ -309,7 +300,7 @@ impl Cache {
     pub(crate) async fn set_usage_stats(
         &self,
         stats: &MetricsUsageStats,
-    ) -> Result<(), CacheError> {
+    ) -> Result<(), CacheAccessError> {
         let stats_map = stats.clone().into_usage_stat_map();
 
         if let Some(external) = &self.external {
@@ -345,11 +336,7 @@ impl Cache {
                             }
                         }
 
-                        pipe.exec_async(&mut conn).await.map_err(|e| {
-                            CacheError::RedisExecutionError {
-                                cause: e.to_string(),
-                            }
-                        })
+                        pipe.exec_async(&mut conn).await
                     }
                     .instrument(span)
                     .await?;
@@ -368,7 +355,7 @@ impl Cache {
     pub(crate) async fn increment_usage_data(
         &self,
         records: Vec<Arc<RequestLogData>>,
-    ) -> Result<(), CacheError> {
+    ) -> Result<(), CacheAccessError> {
         let (requests_map, budget_map, tokens_map) = convert_records_to_cache_maps(records);
 
         if let Some(external) = &self.external {
@@ -389,11 +376,7 @@ impl Cache {
                             pipe.cmd("INCRBY").arg(key).arg(value);
                         }
 
-                        pipe.exec_async(&mut conn).await.map_err(|e| {
-                            CacheError::RedisExecutionError {
-                                cause: e.to_string(),
-                            }
-                        })
+                        pipe.exec_async(&mut conn).await
                     }
                     .instrument(span)
                     .await?;

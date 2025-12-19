@@ -4,8 +4,9 @@
 
 - [x] Rate limiter
 - [x] Load balancer
-- [ ] Error handling
+- [x] Error handling
 - [x] Tracing
+- [ ] Metrics
 - [ ] User Guide
 - [ ] Technical Documentation
 - [ ] Integration Tests

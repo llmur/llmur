@@ -1,5 +1,5 @@
 use crate::data::graph::Graph;
-use crate::errors::LLMurError;
+use crate::errors::{AuthenticationError, GraphError, LLMurError, ProxyError};
 use crate::providers::ExposesDeployment;
 use crate::LLMurState;
 
@@ -33,7 +33,7 @@ impl<T> Deref for OpenAiRequestData<T> {
 }
 
 
-impl<S, T> FromRequest<S, Body> for OpenAiRequestData<T>   // <— specialize B = Body to avoid overlap
+impl<S, T> FromRequest<S, Body> for OpenAiRequestData<T>  
 where
     Arc<LLMurState>: FromRef<S>,
     S: Send + Sync,
@@ -50,7 +50,7 @@ where
             .extensions()
             .get::<AuthorizationHeaderExtractionResult>()
             .cloned()
-            .ok_or(LLMurError::NotAuthorized)?;
+            .ok_or(AuthenticationError::InternalError("Unable to extract Authorization from middleware. You should not be seeing this error. Please open a ticket reporting the situation".to_string()))?;
 
         // Save head
         let method = request.method().to_string().clone();
@@ -59,7 +59,7 @@ where
         // Consumes request
         let Json(payload) = Json::<T>::from_request(request, state)
             .await
-            .map_err(|_| LLMurError::BadRequest("Invalid JSON".into()))?;
+            .map_err(ProxyError::from)?;
 
         // Build graph
         let auth_header = auth_ext?;
@@ -70,7 +70,8 @@ where
                 app_state
                     .data
                     .get_graph(&api_key, deployment, false, 10_000, &app_state.application_secret, &Utc::now())
-                    .await?
+                    .await
+                    .map_err(GraphError::from)?
             }
         };
 

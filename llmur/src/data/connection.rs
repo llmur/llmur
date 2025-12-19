@@ -1,9 +1,8 @@
 use std::any::Any;
 use crate::data::DataAccess;
-use crate::data::errors::DataConversionError;
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::utils::{ConvertInto, decrypt, encrypt};
-use crate::errors::DataAccessError;
+use crate::errors::{DataAccessError, DbRecordConversionError};
 use crate::{
     default_access_fns, default_database_access_fns, impl_structured_id_utils,
     impl_with_id_parameter_for_struct,
@@ -165,8 +164,7 @@ impl DataAccess {
         application_secret: &Uuid,
     ) -> Result<Connection, DataAccessError> {
         let salt = Uuid::now_v7();
-        let encrypted_api_key = encrypt(api_key, &salt, application_secret)
-            .map_err(|_| DataAccessError::FailedToCreateKey)?;
+        let encrypted_api_key = encrypt(api_key, &salt, application_secret)?;
 
         let connection_info = DbConnectionInfoColumn::AzureOpenAiApiKey {
             encrypted_api_key,
@@ -199,8 +197,7 @@ impl DataAccess {
         application_secret: &Uuid,
     ) -> Result<Connection, DataAccessError> {
         let salt = Uuid::now_v7();
-        let encrypted_api_key = encrypt(api_key, &salt, application_secret)
-            .map_err(|_| DataAccessError::FailedToCreateKey)?;
+        let encrypted_api_key = encrypt(api_key, &salt, application_secret)?;
 
         let connection_info = DbConnectionInfoColumn::OpenAiApiKey {
             encrypted_api_key,
@@ -392,10 +389,8 @@ impl ConvertInto<ConnectionInfo> for DbConnectionInfoColumn {
     fn convert(
         self,
         application_secret: &Option<Uuid>,
-    ) -> Result<ConnectionInfo, DataConversionError> {
-        let application_secret = application_secret.ok_or(DataConversionError::DefaultError {
-            cause: "Ups".to_string(),
-        })?; // TODO return Internal Server Error
+    ) -> Result<ConnectionInfo, DbRecordConversionError> {
+        let application_secret = application_secret.ok_or(DbRecordConversionError::InternalError("Application Secret not passed to convert method for ConnectionInfo".to_string()))?; // TODO return Internal Server Error
         match self {
             DbConnectionInfoColumn::AzureOpenAiApiKey {
                 encrypted_api_key,
@@ -404,11 +399,7 @@ impl ConvertInto<ConnectionInfo> for DbConnectionInfoColumn {
                 deployment_name,
                 salt,
             } => Ok(ConnectionInfo::AzureOpenAiApiKey {
-                api_key: decrypt(&encrypted_api_key, &salt, &application_secret).map_err(|_| {
-                    DataConversionError::DefaultError {
-                        cause: "Ups".to_string(),
-                    }
-                })?,
+                api_key: decrypt(&encrypted_api_key, &salt, &application_secret)?,
                 api_endpoint,
                 api_version,
                 deployment_name,
@@ -419,11 +410,7 @@ impl ConvertInto<ConnectionInfo> for DbConnectionInfoColumn {
                 model,
                 salt,
             } => Ok(ConnectionInfo::OpenAiApiKey {
-                api_key: decrypt(&encrypted_api_key, &salt, &application_secret).map_err(|_| {
-                    DataConversionError::DefaultError {
-                        cause: "Ups".to_string(),
-                    }
-                })?,
+                api_key: decrypt(&encrypted_api_key, &salt, &application_secret)?,
                 api_endpoint,
                 model,
             }),
@@ -432,14 +419,12 @@ impl ConvertInto<ConnectionInfo> for DbConnectionInfoColumn {
 }
 
 impl ConvertInto<Connection> for DbConnectionRecord {
-    fn convert(self, application_secret: &Option<Uuid>) -> Result<Connection, DataConversionError> {
+    fn convert(self, application_secret: &Option<Uuid>) -> Result<Connection, DbRecordConversionError> {
         let connection_info = self
             .connection_info
             .0
-            .convert(application_secret)
-            .map_err(|_| DataConversionError::DefaultError {
-                cause: "Ups".to_string(),
-            })?;
+            .convert(application_secret)?;
+        
         Ok(Connection::new(
             self.id,
             connection_info,

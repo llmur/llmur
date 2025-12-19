@@ -1,7 +1,7 @@
 use crate::data::connection::ConnectionId;
 use crate::data::connection_deployment::{ConnectionDeployment, ConnectionDeploymentId};
 use crate::data::deployment::DeploymentId;
-use crate::errors::LLMurError;
+use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
 use crate::routes::StatusResponse;
 use crate::{impl_from_vec_result, LLMurState};
@@ -32,14 +32,11 @@ pub(crate) async fn create_connection_deployment(
     let user_context = ctx.require_authenticated_user()?;
     match user_context {
         UserContext::MasterUser => {
-            println!("Creating Connection - Deployment");
-            let result = state.data.create_connection_deployment(&payload.connection_id, &payload.deployment_id, payload.weight.unwrap_or(1)).await;
-            println!("{:?}", result);
-            let cd = result?;
-            Ok(Json(cd.into()))
+            let result = state.data.create_connection_deployment(&payload.connection_id, &payload.deployment_id, payload.weight.unwrap_or(1)).await?;
+            Ok(Json(result.into()))
         }
         UserContext::WebAppUser { user, .. } => {
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }
@@ -58,14 +55,14 @@ pub(crate) async fn get_connection_deployment(
 ) -> Result<Json<GetConnectionDeploymentResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let cd = state.data.get_connection_deployment(&id).await?.ok_or(LLMurError::AdminResourceNotFound)?;
+    let cd = state.data.get_connection_deployment(&id).await?.ok_or(DataAccessError::ResourceNotFound)?;
 
     match user_context {
         UserContext::MasterUser => {
             Ok(Json(cd.into()))
         }
         UserContext::WebAppUser { user, .. } => {
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }
@@ -84,7 +81,7 @@ pub(crate) async fn delete_connection_deployment(
 ) -> Result<Json<StatusResponse>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let cd = state.data.get_connection_deployment(&id).await?.ok_or(LLMurError::AdminResourceNotFound)?; // TODO
+    let cd = state.data.get_connection_deployment(&id).await?.ok_or(DataAccessError::ResourceNotFound)?; // TODO
 
     match user_context {
         UserContext::MasterUser => {
@@ -95,7 +92,7 @@ pub(crate) async fn delete_connection_deployment(
             }))
         }
         UserContext::WebAppUser { user, .. } => {
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }

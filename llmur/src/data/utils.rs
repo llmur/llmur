@@ -1,5 +1,4 @@
 use std::str::FromStr;
-use crate::data::errors::{CryptUtilsError, DataConversionError, UtilsError};
 use uuid::Uuid;
 
 use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
@@ -10,17 +9,18 @@ use sha2::{Digest, Sha256};
 use chrono::{Duration, Utc};
 
 use lazy_regex::regex_captures;
+use crate::errors::{DbRecordConversionError, DecryptionError, EncryptionError, InvalidTimeFormatError};
 
 pub trait ConvertInto<T>: Sized {
     // Required method
-    fn convert(self, application_secret: &Option<Uuid>) -> Result<T, DataConversionError>;
+    fn convert(self, application_secret: &Option<Uuid>) -> Result<T, DbRecordConversionError>;
 }
 
 // region:    --- Time
-pub fn parse_and_add_to_current_ts(input: &str) -> Result<i64, UtilsError> {
+pub fn parse_and_add_to_current_ts(input: &str) -> Result<i64, InvalidTimeFormatError> {
     // Check if the input ends with a valid unit and extract the numeric value
     if let Some((value_str, unit)) = input.split_at_checked(input.len() - 1) {
-        let value: i64 = value_str.parse().map_err(|_| UtilsError::InvalidTimeFormat)?;
+        let value: i64 = value_str.parse().map_err(|_| InvalidTimeFormatError::TimeValueNotAValidNumber(input.to_string(), value_str.to_string()))?;
 
         // Determine the duration to add based on the unit
         let duration = match unit {
@@ -31,7 +31,7 @@ pub fn parse_and_add_to_current_ts(input: &str) -> Result<i64, UtilsError> {
             "w" => Duration::weeks(value),
             "M" => Duration::days(value * 30), // Approximation for 1 month as 30 days
             "y" => Duration::days(value * 365), // Approximation for 1 year as 365 days
-            _ => return Err(UtilsError::InvalidTimeFormat),
+            v => return Err(InvalidTimeFormatError::InvalidTimePeriod(input.to_string(), v.to_string())),
         };
 
         // Get the current UTC timestamp and add the duration
@@ -41,7 +41,7 @@ pub fn parse_and_add_to_current_ts(input: &str) -> Result<i64, UtilsError> {
         // Return the new timestamp as seconds since the UNIX epoch
         Ok(new_ts)
     } else {
-        Err(UtilsError::InvalidTimeFormat)
+        Err(InvalidTimeFormatError::InvalidTimeFormat(input.to_string()))
     }
 }
 
@@ -83,7 +83,7 @@ pub fn new_uuid_v5_from_string(input: &str) -> Uuid {
     name = "utils.encrypt",
     skip(input, salt, pepper)
 )]
-pub fn encrypt(input: &str, salt: &Uuid, pepper: &Uuid) -> Result<String, UtilsError> {
+pub fn encrypt(input: &str, salt: &Uuid, pepper: &Uuid) -> Result<String, EncryptionError> {
     // Combine salt and pepper (if provided) as the key source
     let mut key_source = salt.to_string();
     key_source.push_str(&pepper.to_string());
@@ -99,7 +99,7 @@ pub fn encrypt(input: &str, salt: &Uuid, pepper: &Uuid) -> Result<String, UtilsE
     let cipher = Aes256Gcm::new(key);
 
     // Encrypt the input string
-    let ciphertext = cipher.encrypt(&nonce, input.as_bytes()).map_err(|_| CryptUtilsError::EncryptError)?;
+    let ciphertext = cipher.encrypt(&nonce, input.as_bytes())?;
 
     // Encode nonce + ciphertext to base64 for easy storage/transmission
     let mut encrypted_data = nonce.to_vec();
@@ -114,7 +114,7 @@ pub fn encrypt(input: &str, salt: &Uuid, pepper: &Uuid) -> Result<String, UtilsE
     name = "utils.decrypt",
     skip(encrypted_input, salt, pepper)
 )]
-pub fn decrypt(encrypted_input: &str, salt: &Uuid, pepper: &Uuid) -> Result<String, UtilsError> {
+pub fn decrypt(encrypted_input: &str, salt: &Uuid, pepper: &Uuid) -> Result<String, DecryptionError> {
     // Combine salt and pepper (if provided) as the key source
     let mut key_source = salt.to_string();
     key_source.push_str(&pepper.to_string());
@@ -124,7 +124,7 @@ pub fn decrypt(encrypted_input: &str, salt: &Uuid, pepper: &Uuid) -> Result<Stri
     let key = Key::<Aes256Gcm>::from_slice(&key_hash);
 
     // Decode the encrypted base64 string
-    let encrypted_data = decode(encrypted_input).map_err(|_| CryptUtilsError::DecryptError)?;
+    let encrypted_data = decode(encrypted_input)?;
 
     // Extract the nonce (first 12 bytes)
     let nonce = Nonce::from_slice(&encrypted_data[..12]);
@@ -136,10 +136,10 @@ pub fn decrypt(encrypted_input: &str, salt: &Uuid, pepper: &Uuid) -> Result<Stri
     let cipher = Aes256Gcm::new(key);
 
     // Decrypt the ciphertext
-    let decrypted_data = cipher.decrypt(nonce, ciphertext).map_err(|_| CryptUtilsError::DecryptError)?;
+    let decrypted_data = cipher.decrypt(nonce, ciphertext)?;
 
     // Convert the decrypted bytes back to a string
-    let decrypted_string = String::from_utf8(decrypted_data).map_err(|_| CryptUtilsError::DecryptError)?;
+    let decrypted_string = String::from_utf8(decrypted_data)?;
 
     Ok(decrypted_string)
 }
@@ -166,7 +166,7 @@ pub fn hash_content_1(content: &str, salt: &Uuid) -> String {
     name = "utils.hash.v2",
     skip(content, salt)
 )]
-pub fn hash_content_2(content: &str, salt: &Uuid, pepper: &Uuid) -> Result<String, UtilsError> {
+pub fn hash_content_2(content: &str, salt: &Uuid, pepper: &Uuid) -> String {
     let combined = format!("{}{}{}", salt.to_string(), content, pepper.to_string());
 
     // Create a SHA-256 hash of the combined string
@@ -175,6 +175,6 @@ pub fn hash_content_2(content: &str, salt: &Uuid, pepper: &Uuid) -> Result<Strin
     let hash = hasher.finalize();
 
     // Encode the hash as a hexadecimal string
-    Ok(encode(hash))
+    encode(hash)
 }
 // endregion: --- Crypt

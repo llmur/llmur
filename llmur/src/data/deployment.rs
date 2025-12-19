@@ -1,10 +1,9 @@
 use crate::data::connection_deployment::ConnectionDeploymentId;
-use crate::data::errors::DataConversionError;
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::load_balancer::LoadBalancingStrategy;
 use crate::data::utils::ConvertInto;
 use crate::data::DataAccess;
-use crate::errors::DataAccessError;
+use crate::errors::{DataAccessError, DbRecordConversionError};
 use crate::{
     default_access_fns, default_database_access_fns
     , impl_structured_id_utils, impl_with_id_parameter_for_struct,
@@ -380,7 +379,7 @@ impl ConvertInto<Deployment> for DbDeploymentRecord {
     fn convert(
         self,
         _application_secret: &Option<Uuid>,
-    ) -> Result<Deployment, DataConversionError> {
+    ) -> Result<Deployment, DbRecordConversionError> {
         Ok(Deployment::new(
             self.id,
             self.name,

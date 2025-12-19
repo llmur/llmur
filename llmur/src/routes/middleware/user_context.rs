@@ -1,6 +1,6 @@
 use crate::data::session_token::SessionToken;
 use crate::data::user::User;
-use crate::errors::{LLMurError, UserContextExtractionError};
+use crate::errors::{AuthenticationError, AuthorizationError, LLMurError};
 use crate::LLMurState;
 use axum::extract::{Request, State};
 use axum::http::HeaderValue;
@@ -19,34 +19,34 @@ pub enum UserContext {
     },
 }
 
-pub type UserContextExtractionResult = Result<UserContext, UserContextExtractionError>;
+pub type UserContextExtractionResult = Result<UserContext, Arc<AuthenticationError>>;
 
 impl UserContext {
     pub fn resolve_from_key_header(state: Arc<LLMurState>, header: &HeaderValue) -> UserContextExtractionResult {
-        let key_str = header.to_str().map_err(|_| UserContextExtractionError::AuthInvalidAuthBearer)?;
+        let key_str = header.to_str().map_err(|_| AuthenticationError::InvalidAuthBearer)?;
 
         if state.master_keys.contains(key_str) {
             Ok(UserContext::MasterUser)
-        } else { Err(UserContextExtractionError::AuthInvalidAuthBearer) }
+        } else { Err(Arc::new(AuthenticationError::InvalidAuthBearer)) }
     }
 
     pub async fn resolve_from_session_header(state: Arc<LLMurState>, header: &HeaderValue) -> UserContextExtractionResult {
-        let session_token_str = header.to_str().map_err(|_| UserContextExtractionError::AuthInvalidAuthBearer)?;
+        let session_token_str = header.to_str().map_err(|_| AuthenticationError::InvalidAuthBearer)?;
         let session_token_id = SessionToken::generate_id(session_token_str, &state.application_secret).into();
 
         let token = state.data
             .get_session_token(&session_token_id)
             .await
-            .map_err(|_| UserContextExtractionError::UnableToFetchSessionToken)?
-            .ok_or(UserContextExtractionError::SessionTokenNotFound)?;
+            .map_err(|_| AuthenticationError::UnableToFetchSessionToken)?
+            .ok_or(AuthenticationError::InvalidSessionToken)?;
 
         // TODO: Check if session was revoked or expired
 
         let user = state.data
             .get_user(&token.user_id)
             .await
-            .map_err(|_| UserContextExtractionError::AuthUserNotFound)?
-            .ok_or(UserContextExtractionError::AuthUserNotFound)?;
+            .map_err(|_| AuthenticationError::UnableToFetchTokenUser)?
+            .ok_or(AuthenticationError::TokenUserNotFound)?;
 
         Ok(
             UserContext::WebAppUser {
@@ -57,7 +57,7 @@ impl UserContext {
     }
 
     pub fn unauthenticated() -> UserContextExtractionResult {
-        Err(UserContextExtractionError::AuthenticationNotProvided)
+        Err(Arc::new(AuthenticationError::Unauthenticated))
     }
 }
 
@@ -72,15 +72,18 @@ impl AuthorizationManager for UserContextExtractionResult {
             Ok(ctx) => {
                 match ctx {
                     UserContext::MasterUser => { Ok(ctx) }
-                    UserContext::WebAppUser { .. } => { Err(LLMurError::NotAuthorized) }
+                    UserContext::WebAppUser { .. } => { Err(AuthorizationError::AccessDenied)? }
                 }
             }
-            Err(_) => { Err(LLMurError::NotAuthorized) }
+            Err(_) => { Err(AuthorizationError::AccessDenied)? }
         }
     }
 
     fn require_authenticated_user(self) -> Result<UserContext, LLMurError> {
-        self.map_err(|_| LLMurError::NotAuthorized)
+        match self {
+            Ok(c) => {Ok(c)}
+            Err(e/*: Arc<AuthenticationError>*/) => { todo!("How can I do this") /*impl From<AuthenticationError> for LLMurError*/}
+        }
     }
 }
 

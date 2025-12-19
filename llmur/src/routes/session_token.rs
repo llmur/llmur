@@ -1,7 +1,7 @@
 use crate::data::password::{validate_password, SchemeStatus};
 use crate::data::session_token::{SessionToken, SessionTokenId};
 use crate::data::user::UserId;
-use crate::errors::LLMurError;
+use crate::errors::{AuthenticationError, LLMurError};
 use crate::{impl_from_vec_result, LLMurState};
 use axum::extract::State;
 use axum::routing::post;
@@ -31,14 +31,14 @@ pub(crate) async fn create_session_token(
         password: password_clear
     } = payload;
 
-    let user = state.data.get_user_with_email(&email).await?.ok_or(LLMurError::UserNotFound)?;
+    let user = state.data.get_user_with_email(&email).await?.ok_or(AuthenticationError::UserEmailNotFound)?;
 
     let status = validate_password(
         &password_clear,
         &user.hashed_password,
         &user.salt,
         &state.application_secret,
-    ).await.map_err(|_| LLMurError::PasswordDoesNotMatch)?;
+    ).await?;
 
     if let SchemeStatus::Outdated = status {
         // TODO: update password

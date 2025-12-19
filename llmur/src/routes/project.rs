@@ -3,7 +3,7 @@ use axum::{Extension, Json, Router};
 use axum::extract::{Path, State};
 use axum::routing::{delete, get, post};
 use serde::{Deserialize, Serialize};
-use crate::errors::{DataAccessError, LLMurError};
+use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
 use crate::{impl_from_vec_result, LLMurState};
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::project::{Project, ProjectId};
@@ -48,7 +48,7 @@ pub(crate) async fn create_project(
         }
         UserContext::WebAppUser { user, .. } => {
             if user.role != ApplicationRole::Admin {
-                return Err(LLMurError::NotAuthorized)
+                return Err(AuthorizationError::AccessDenied.into());
             }
 
             let project = state.data.create_project(&payload.name, &Some(user.id), &payload.budget_limits, &payload.request_limits, &payload.token_limits).await?;
@@ -72,7 +72,7 @@ pub(crate) async fn get_project(
 ) -> Result<Json<GetProjectResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let project = state.data.get_project(&id).await?.ok_or(LLMurError::AdminResourceNotFound)?;
+    let project = state.data.get_project(&id).await?.ok_or(DataAccessError::ResourceNotFound)?;
 
     match user_context {
         UserContext::MasterUser => {
@@ -88,7 +88,7 @@ pub(crate) async fn get_project(
             }
              */
 
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }
@@ -107,7 +107,7 @@ pub(crate) async fn delete_project(
 ) -> Result<Json<StatusResponse>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let project = state.data.get_project(&id).await?.ok_or(LLMurError::AdminResourceNotFound)?; // TODO
+    let project = state.data.get_project(&id).await?.ok_or(DataAccessError::ResourceNotFound)?;
 
     match user_context {
         UserContext::MasterUser => {
@@ -137,7 +137,7 @@ pub(crate) async fn delete_project(
                 }
             }
             */
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }

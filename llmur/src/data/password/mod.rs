@@ -1,8 +1,9 @@
+use std::error::Error;
+use crate::errors::{AsyncError, AuthenticationError, HashError};
+use lazy_regex::regex_captures;
 use std::hash::Hash;
 use std::str::FromStr;
-use lazy_regex::regex_captures;
 use uuid::Uuid;
-use crate::data::errors::AuthError;
 
 mod scheme01;
 
@@ -16,9 +17,15 @@ pub enum SchemeStatus {
 }
 
 pub(crate) trait Scheme {
-    fn hash(&self, content: &str, salt: &Uuid, pepper: &Uuid) -> Result<String, AuthError>;
+    fn hash(&self, content: &str, salt: &Uuid, pepper: &Uuid) -> String;
 
-    fn validate(&self, content: &str, reference: &str, salt: &Uuid, pepper: &Uuid) -> Result<(), AuthError>;
+    fn validate(
+        &self,
+        content: &str,
+        reference: &str,
+        salt: &Uuid,
+        pepper: &Uuid,
+    ) -> Result<(), AuthenticationError>;
 }
 
 pub(crate) enum SchemeDispatcher {
@@ -26,36 +33,55 @@ pub(crate) enum SchemeDispatcher {
 }
 
 impl Scheme for SchemeDispatcher {
-    fn hash(&self, content: &str, salt: &Uuid, pepper: &Uuid) -> Result<String, AuthError> {
+    fn hash(&self, content: &str, salt: &Uuid, pepper: &Uuid) -> String {
         match self {
-            SchemeDispatcher::Scheme01 => { scheme01::Scheme01.hash(content, salt, pepper) }
+            SchemeDispatcher::Scheme01 => scheme01::Scheme01.hash(content, salt, pepper),
         }
     }
 
-    fn validate(&self, content: &str, reference: &str, salt: &Uuid, pepper: &Uuid) -> Result<(), AuthError> {
+    fn validate(
+        &self,
+        content: &str,
+        reference: &str,
+        salt: &Uuid,
+        pepper: &Uuid,
+    ) -> Result<(), AuthenticationError> {
         match self {
-            SchemeDispatcher::Scheme01 => { scheme01::Scheme01.validate(content, reference, salt, pepper) }
+            SchemeDispatcher::Scheme01 => {
+                scheme01::Scheme01.validate(content, reference, salt, pepper)
+            }
         }
     }
 }
 
-pub(crate) fn get_scheme(scheme_name: &str) -> Result<impl Scheme, AuthError> {
+pub(crate) fn get_scheme(scheme_name: &str) -> Result<impl Scheme, HashError> {
     match scheme_name {
         "01" => Ok(SchemeDispatcher::Scheme01),
-        _ => Err(AuthError::SchemeNotFound { scheme: scheme_name.to_string() }),
+        _ => Err(HashError::SchemeNotFound(scheme_name.to_string())),
     }
 }
 // endregion: --- Scheme
 
 // region:    --- Password
 
-pub async fn hash_password(password_clear: String, salt: Uuid, pepper: Uuid) -> Result<String, AuthError> {
-    tokio::task::spawn_blocking(move || hash_for_scheme(DEFAULT_SCHEME, &password_clear, &salt, &pepper))
-        .await
-        .map_err(|e| AuthError::PasswordHashFailed { cause: e.to_string() })?
+pub async fn hash_password(
+    password_clear: String,
+    salt: Uuid,
+    pepper: Uuid,
+) -> Result<String, HashError> {
+    tokio::task::spawn_blocking(move || {
+        hash_for_scheme(DEFAULT_SCHEME, &password_clear, &salt, &pepper)
+    })
+    .await
+    .map_err(|e| AsyncError::JoinError(e.to_string()))?
 }
 
-pub async fn validate_password(password_clear: &str, reference: &str, salt: &Uuid, pepper: &Uuid) -> Result<SchemeStatus, AuthError> {
+pub async fn validate_password(
+    password_clear: &str,
+    reference: &str,
+    salt: &Uuid,
+    pepper: &Uuid,
+) -> Result<SchemeStatus, AuthenticationError> {
     let PasswordParts {
         scheme_name,
         hashed,
@@ -70,20 +96,26 @@ pub async fn validate_password(password_clear: &str, reference: &str, salt: &Uui
     let password_clear = password_clear.to_string();
     let hashed = hashed.clone();
     let scheme_name = scheme_name.clone();
-    let salt = *salt; // Uuid implements Copy
-    let pepper = *pepper; // Uuid implements Copy
+    let salt = *salt;
+    let pepper = *pepper;
 
     // The closure captures only owned data with 'static lifetime
     tokio::task::spawn_blocking(move || {
         validate_for_scheme(&scheme_name, &password_clear, &hashed, &salt, &pepper)
-    }).await
-        .map_err(|e| AuthError::SpawnThreadForValidationFailed { cause: e.to_string()})??;
+    })
+    .await
+    .map_err(|e| AsyncError::JoinError(e.to_string()))??;
 
     Ok(scheme_status)
 }
 
-fn hash_for_scheme(scheme_name: &str, to_hash: &str, salt: &Uuid, pepper: &Uuid) -> Result<String, AuthError> {
-    let hashed = get_scheme(scheme_name)?.hash(to_hash, salt, pepper)?;
+fn hash_for_scheme(
+    scheme_name: &str,
+    to_hash: &str,
+    salt: &Uuid,
+    pepper: &Uuid,
+) -> Result<String, HashError> {
+    let hashed = get_scheme(scheme_name)?.hash(to_hash, salt, pepper);
 
     Ok(format!("#{scheme_name}#{hashed}"))
 }
@@ -91,8 +123,10 @@ fn hash_for_scheme(scheme_name: &str, to_hash: &str, salt: &Uuid, pepper: &Uuid)
 fn validate_for_scheme(
     scheme_name: &str,
     content: &str,
-    reference: &str, salt: &Uuid, pepper: &Uuid,
-) -> Result<(), AuthError> {
+    reference: &str,
+    salt: &Uuid,
+    pepper: &Uuid,
+) -> Result<(), AuthenticationError> {
     get_scheme(scheme_name)?.validate(content, reference, salt, pepper)
 }
 
@@ -104,21 +138,18 @@ struct PasswordParts {
 }
 
 impl FromStr for PasswordParts {
-    type Err = AuthError;
+    type Err = AuthenticationError;
 
-    fn from_str(pwd_with_scheme: &str) -> Result<Self, AuthError> {
+    fn from_str(pwd_with_scheme: &str) -> Result<Self, AuthenticationError> {
         regex_captures!(
-			r#"^#(\w+)#(.*)"#, // a literal regex
-			pwd_with_scheme
-		)
-            .map(|(_, scheme, hashed)| {
-                Self {
-                    scheme_name: scheme.to_string(),
-                    hashed: hashed.to_string(),
-                }
-            })
-            .ok_or(AuthError::PasswordParsingFailed)
+            r#"^#(\w+)#(.*)"#, // Don't like to use regex but seems the simplest option
+            pwd_with_scheme
+        )
+        .map(|(_, scheme, hashed)| Self {
+            scheme_name: scheme.to_string(),
+            hashed: hashed.to_string(),
+        })
+        .ok_or(AuthenticationError::PasswordSchemeParsingFailed)
     }
 }
 // endregion: --- Password
-

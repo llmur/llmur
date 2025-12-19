@@ -6,9 +6,8 @@ use crate::data::utils::{new_uuid_v5_from_string, ConvertInto};
 use crate::{default_access_fns, default_database_access_fns, impl_local_store_accessors, impl_locally_stored, impl_structured_id_utils, impl_with_id_parameter_for_struct};
 use crate::data::DataAccess;
 use crate::data::deployment::{Deployment, DeploymentId};
-use crate::data::errors::{DataConversionError, DatabaseError};
 use crate::data::virtual_key::VirtualKeyId;
-use crate::errors::DataAccessError;
+use crate::errors::{DataAccessError, DbRecordConversionError};
 
 // region:    --- Main Model
 #[derive(
@@ -252,7 +251,7 @@ pub(crate) struct DbVirtualKeyDeploymentRecord {
 }
 
 impl ConvertInto<VirtualKeyDeployment> for DbVirtualKeyDeploymentRecord {
-    fn convert(self, _application_secret: &Option<Uuid>) -> Result<VirtualKeyDeployment, DataConversionError> {
+    fn convert(self, _application_secret: &Option<Uuid>) -> Result<VirtualKeyDeployment, DbRecordConversionError> {
         Ok(
             VirtualKeyDeployment::new(
                 self.id,
