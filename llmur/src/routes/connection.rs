@@ -9,7 +9,7 @@ use crate::data::connection::{AzureOpenAiApiVersion, Connection, ConnectionId, C
 use crate::{impl_from_vec_result, LLMurState};
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::user::ApplicationRole;
-use crate::errors::{DataAccessError};
+use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
 use crate::routes::StatusResponse;
 
@@ -63,10 +63,8 @@ pub(crate) async fn create_connection(
 
     match user_context {
         UserContext::MasterUser => {
-            let result = method.await;
-            println!("{:?}", result);
-            let connection = result?;
-            Ok(Json(connection.into()))
+            let result = method.await?;
+            Ok(Json(result.into()))
         }
         UserContext::WebAppUser { user, .. } => {
             /*
@@ -85,7 +83,7 @@ pub(crate) async fn create_connection(
                 message: Some(format!("Connection {} created successfully", result.id())),
             }))
              */
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }
@@ -106,15 +104,15 @@ pub(crate) async fn get_connection(
 
     match user_context {
         UserContext::MasterUser => {
-            let connection = state.data.get_connection(&id, &state.application_secret).await?.ok_or(LLMurError::AdminResourceNotFound)?;
+            let connection = state.data.get_connection(&id, &state.application_secret).await?.ok_or(DataAccessError::ResourceNotFound)?;
             Ok(Json(connection.into()))
         }
         UserContext::WebAppUser { user, .. } => {
             if user.role == ApplicationRole::Admin {
-                let connection = state.data.get_connection(&id, &state.application_secret).await?.ok_or(LLMurError::AdminResourceNotFound)?;
+                let connection = state.data.get_connection(&id, &state.application_secret).await?.ok_or(DataAccessError::ResourceNotFound)?;
                 Ok(Json(connection.into()))
             }
-            else { Err(LLMurError::NotAuthorized) }
+            else { Err(AuthorizationError::AccessDenied)? }
         }
     }
 }
@@ -139,12 +137,12 @@ pub(crate) async fn delete_connection(
         }
         UserContext::WebAppUser { user, .. } => {
             if user.role == ApplicationRole::Admin { state.data.delete_connection(&id).await? }
-            else { Err(LLMurError::NotAuthorized)? }
+            else { Err(AuthorizationError::AccessDenied)? }
         }
     };
 
     if result == 0 {
-        Err(LLMurError::AdminResourceNotFound)
+        Err(DataAccessError::ResourceNotFound)?
     }
     else {
         Ok(Json(StatusResponse { success: true, message: Some(format!("Connection {} deleted successfully", &id)) }))

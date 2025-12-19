@@ -1,7 +1,7 @@
 use crate::data::project::{ProjectId, ProjectRole};
 use crate::data::project_invite_code::{ProjectInviteCode, ProjectInviteCodeId};
 use crate::data::utils::current_timestamp_s;
-use crate::errors::LLMurError;
+use crate::errors::{AuthorizationError, LLMurError};
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
 use crate::routes::StatusResponse;
 use crate::{impl_from_vec_result, LLMurState};
@@ -65,7 +65,7 @@ pub(crate) async fn create_project_invite_code(
 
              */
 
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }
@@ -117,7 +117,7 @@ pub(crate) async fn delete_project_invite_code(
 
              */
 
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }

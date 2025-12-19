@@ -1,5 +1,7 @@
 use std::string::FromUtf8Error;
+use std::sync::Arc;
 use aes_gcm::aead;
+use axum::extract::rejection::JsonRejection;
 use axum::http::StatusCode;
 use axum::Json;
 use axum::response::{IntoResponse, Response};
@@ -18,21 +20,59 @@ use crate::data::virtual_key::VirtualKeyId;
 use crate::data::virtual_key_deployment::VirtualKeyDeploymentId;
 
 
+#[derive(thiserror::Error, Debug)]
+pub enum LLMurError {
+    #[error(transparent)]
+    AuthenticationError(#[from] AuthenticationError),
+    #[error(transparent)]
+    AuthorizationError(#[from] AuthorizationError),
+    #[error(transparent)]
+    DataAccessError(#[from] DataAccessError),
+    #[error(transparent)]
+    GraphError(#[from] GraphError),
+    #[error(transparent)]
+    SetupError(#[from] SetupError),
+    #[error(transparent)]
+    ProxyError(#[from] ProxyError),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ProxyError {
+    #[error("Invalid request")]
+    InvalidRequest(#[from] JsonRejection),
+    #[error("Got error from provider: ({0})")]
+    ProxyReturnError(reqwest::StatusCode, ProxyErrorMessage),
+    #[error("Got error from provider: ({0}) {1}")]
+    ProxyReqwestError(reqwest::StatusCode, reqwest::Error),
+    #[error(transparent)]
+    SerdeJsonError(#[from] serde_json::Error),
+    #[error(transparent)]
+    ReqwestError(#[from] reqwest::Error),
+    #[error("Internal error: {0}. You should not be seeing this error. Please report a bug.")]
+    InternalError(String),
+}
+
+#[derive(Debug)]
+pub enum ProxyErrorMessage {
+    Text(String),
+    Json(serde_json::Value),
+}
+
 
 #[derive(thiserror::Error, Debug)]
 pub enum GraphError {
     #[error(transparent)]
     GraphLoadError(#[from] GraphLoadError),
-    #[error(transparent)]
-    UsageExceededError(#[from] UsageExceededError),
     #[error("No connection available for deployment")]
     NoConnectionAvailable(MissingConnectionReason),
+    #[error(transparent)]
+    UsageExceededError(#[from] UsageExceededError),
 }
 
 #[derive(Debug)]
 pub enum MissingConnectionReason {
     NoUsageAvailable,
-    DeploymentConnectionsNotSetup
+    DeploymentConnectionsNotSetup,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -73,12 +113,15 @@ pub enum DataAccessError {
     HashError(#[from] HashError),
     #[error(transparent)]
     CacheAccessError(#[from] CacheAccessError),
+    #[error("Resource not found")]
+    ResourceNotFound,
 
-    
     // TODO: These are used on the DB record creation methods. Should be replaced either by a single transaction or by returning the created record from the insert query instead of just the id
-    #[error("Successfully created {1} resource but failed to retrieve it afterward. Resource id: {2}. Reason: {0}")]
+    #[error("Successfully created {1} resource but failed to retrieve it afterward. Resource id: {2}. Reason: {0}"
+    )]
     FailedToGetCreatedResource(Box<DataAccessError>, String, Uuid),
-    #[error("Successfully created {0} resource but failed to retrieve it afterward. Resource id: {1}. Reason: Resource not found")]
+    #[error("Successfully created {0} resource but failed to retrieve it afterward. Resource id: {1}. Reason: Resource not found"
+    )]
     CreatedResourceNotFound(String, Uuid),
 }
 
@@ -110,6 +153,8 @@ pub enum DbRecordConversionError {
     DecryptionError(#[from] DecryptionError),
     #[error("Internal error: {0}. You should not be seeing this error. Please report a bug.")]
     InternalError(String),
+    #[error("Internal error: {0}. You should not be seeing this error. Please report a bug.")]
+    InvalidStatusCode(#[from] axum::http::status::InvalidStatusCode),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -146,8 +191,13 @@ pub enum DecryptionError {
     FromHexError(#[from] FromHexError),
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum AuthenticationError {
+    #[error("Unauthorized.")]
+    Unauthenticated,
+
+    #[error("Invalid credentials.")]
+    UserEmailNotFound,
     #[error("Invalid credentials.")]
     InvalidPassword,
     #[error("Invalid password scheme. Got: {0}")]
@@ -155,16 +205,39 @@ pub enum AuthenticationError {
     #[error("Unable to parse the password scheme into its correct parts.")]
     PasswordSchemeParsingFailed,
 
+    #[error("Auth Header was not provided.")]
+    AuthHeaderNotProvided,
+    #[error("Auth Bearer has invalid format.")]
+    InvalidAuthBearer,
+    #[error("Failed to retrieve session token")]
+    UnableToFetchSessionToken,
+    #[error("Session token not valid.")]
+    InvalidSessionToken,
+
+    #[error("Failed to retrieve user.")]
+    UnableToFetchTokenUser,
+    #[error("User not found.")]
+    TokenUserNotFound,
+
     #[error(transparent)]
     HashError(#[from] HashError),
+
+    #[error("Internal error: {0}")]
+    InternalError(String),
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum AsyncError {
-    #[error("Failed to join threads")]
-    JoinError(#[from] JoinError),
+pub enum AuthorizationError {
+    #[error("Access denied.")]
+    AccessDenied,
 }
-#[derive(thiserror::Error, Debug)]
+
+#[derive(thiserror::Error, Debug, Clone)]
+pub enum AsyncError {
+    #[error("Failed to join threads. Reason: {0}")]
+    JoinError(String),
+}
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum HashError {
     #[error(transparent)]
     AsyncError(#[from] AsyncError),
@@ -202,6 +275,11 @@ pub enum UsageExceededError {
     MinuteTokensOverLimit { used: i64, limit: i64 },
 }
 
+impl From<Arc<AuthenticationError>> for LLMurError {
+    fn from(err: Arc<AuthenticationError>) -> Self {
+        LLMurError::AuthenticationError(Arc::unwrap_or_clone(err))
+    }
+}
 
 
 /*
@@ -438,22 +516,22 @@ pub enum ProxyRequestError {
 
 */
 // TODO: Improve error handling
-impl IntoResponse for ProxyRequestError {
+impl IntoResponse for &ProxyError {
     fn into_response(self) -> Response {
-        let status = match &self {
-            ProxyRequestError::ProxyReturnError(code, _value) => StatusCode::from_u16(*code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
-
+        let resp = match self {
+            ProxyError::InvalidRequest(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+            ProxyError::ProxyReturnError(s, v) => match v {
+                ProxyErrorMessage::Text(v) => (*s, v.to_string()).into_response(),
+                ProxyErrorMessage::Json(v) => (*s, Json(v)).into_response()
+            },
+            ProxyError::ProxyReqwestError(s, e) => (*s, e.to_string()).into_response(),
+            ProxyError::SerdeJsonError(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+            ProxyError::ReqwestError(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+            ProxyError::InternalError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
         };
 
-        let body = axum::Json(serde_json::json!({
-            "error": format!("{:?}", self)
-        }));
-
-        let mut resp = (status, body).into_response();
-
         // Insert error into extensions for middleware access
-        resp.extensions_mut().insert(self.clone());
+        //resp.extensions_mut().insert(self.clone());
 
         resp
     }
@@ -462,12 +540,13 @@ impl IntoResponse for ProxyRequestError {
 impl IntoResponse for LLMurError {
     fn into_response(self) -> Response {
         match self {
-            LLMurError::NotAuthorized => {
-                (StatusCode::UNAUTHORIZED, Json(json!({"error": self.to_string()}))).into_response()
-            }
-            _=> (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": self.to_string()}))).into_response()
+            LLMurError::AuthenticationError(e) => (StatusCode::UNAUTHORIZED, e.to_string()).into_response(),
+            LLMurError::AuthorizationError(e) => (StatusCode::UNAUTHORIZED, e.to_string()).into_response(),
+            LLMurError::DataAccessError(e) => (StatusCode::UNAUTHORIZED, e.to_string()).into_response(),
+            LLMurError::GraphError(e) => (StatusCode::UNAUTHORIZED, e.to_string()).into_response(),
+            LLMurError::SetupError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+            LLMurError::ProxyError(e) => e.into_response(),
         }
-
     }
     // Conversion logic to a suitable response type, e.g., JSON error message or HTTP status
 }

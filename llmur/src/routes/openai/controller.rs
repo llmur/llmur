@@ -1,8 +1,8 @@
 use crate::LLMurState;
-use crate::errors::{LLMurError, ProxyRequestError};
+use crate::errors::{GraphError, LLMurError, MissingConnectionReason, ProxyError};
 use crate::providers::{ExposesDeployment, ExposesUsage};
 use crate::routes::openai::request::OpenAiRequestData;
-use crate::routes::openai::response::OpenAiCompatibleResponse;
+use crate::routes::openai::response::{ProviderResponse, ProxyResponse};
 use std::collections::BTreeMap;
 
 use crate::data::request_log::{RequestLog, RequestLogData, RequestLogId};
@@ -14,16 +14,13 @@ use crate::data::connection::Connection;
 use crate::data::graph::{ConnectionNode, NodeLimitsChecker};
 use crate::data::project::Project;
 use crate::data::virtual_key::VirtualKey;
+use log::debug;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
-use log::debug;
 use tracing::Instrument;
 
-#[tracing::instrument(
-    name = "controller",
-    skip(state, request, next)
-)]
+#[tracing::instrument(name = "controller", skip(state, request, next))]
 pub(crate) async fn openai_route_controller_mw<I, O>(
     State(state): State<Arc<LLMurState>>,
     request: Request<Body>,
@@ -37,86 +34,85 @@ where
     let (request_id, request_data) = load_request_details::<I>(request, state.clone()).await?;
 
     if request_data.graph.connections.is_empty() {
-        return Err(LLMurError::NotAuthorized);
+        Err(GraphError::NoConnectionAvailable(
+            MissingConnectionReason::DeploymentConnectionsNotSetup,
+        ))?;
     }
 
     validate_usage(Arc::clone(&request_data))?;
 
     let connection = state.data.get_next_connection(&request_data.graph)?;
-    state.data.increment_opened_connection_count(&connection.data.id);
+    state
+        .data
+        .increment_opened_connection_count(&connection.data.id);
 
-    {
-        // Create a child span for this attempt
-        let primary_attempt_span = tracing::debug_span!(
-            "attempt",
-            attempt = 0,
-            connection_id = ?connection.data.id.0
+    // Create a child span for this attempt
+    let primary_attempt_span = tracing::debug_span!(
+        "attempt",
+        attempt = 0,
+        connection_id = ?connection.data.id.0
+    );
+
+    let result = async {
+        debug!(
+            "Attempting primary request via connection: {:?}",
+            connection.data.connection_info
         );
 
-        let result = async {
-            debug!(
-                "Attempting primary request via connection: {:?}",
-                connection.data.connection_info
-            );
-
-            let mut attempt_req = Request::new(Body::empty());
-            attempt_req
+        let mut attempt_req = Request::new(Body::empty());
+        attempt_req
                 .extensions_mut()
                 .insert(connection.data.connection_info.clone());
-            attempt_req
+        attempt_req
                 .extensions_mut()
                 .insert(request_data.clone());
 
             // Copy the RequestLogId to the new request
-            attempt_req.extensions_mut().insert(*request_id.as_ref());
+        attempt_req.extensions_mut().insert(*request_id.as_ref());
 
-            println!(
-                "Sending request to upstream. Payload type: {}",
-                std::any::type_name::<I>()
-            );
+        let response = next.clone().run(attempt_req).await;
+        state.data.decrement_opened_connection_count(&connection.data.id);
 
-            let response = next.clone().run(attempt_req).await;
-            state.data.decrement_opened_connection_count(&connection.data.id);
+        let result = response
+            .extensions()
+            .get::<Arc<ProxyResponse<O>>>()
+            .ok_or(ProxyError::InternalError("Layers aren't properly setup or route is not returning OpenAiCompatibleResponse<O>".to_string()))?
+            .clone();
 
-            println!(
-                "Received response from upstream with status: {}",
-                response.status()
-            );
+        let request_log_data_arc = Arc::new(generate_request_log_data::<I, O>(
+            *request_id,
+            request_data.clone(),
+            0,
+            connection.clone(),
+            result.clone()
+        ));
 
-            let result = response
-                .extensions()
-                .get::<Arc<OpenAiCompatibleResponse<O>>>()
-                .ok_or(LLMurError::InternalServerError("Failed to load result".to_string()))
-                .expect("If we get to this point layers aren't properly setup or route is not returning OpenAiCompatibleResponse<O>")
-                .clone();
+        submit_request_log::<I, O>(
+            state.clone(),
+            request_log_data_arc,
+        );
 
-            let request_log_data_arc = Arc::new(generate_request_log_data::<I, O>(
-                *request_id,
-                request_data.clone(),
-                0,
-                connection.clone(),
-                result.clone()
-            ));
+        Ok::<axum::http::Response<axum::body::Body>, ProxyError>(response)
+    }
+        .instrument(primary_attempt_span)
+        .await?;
 
-            submit_request_log::<I, O>(
-                state.clone(),
-                request_log_data_arc,
-            );
+    let mut response = result;
+    let mut maybe_error = response.extensions_mut().remove::<LLMurError>();
 
-            response
-        }
-            .instrument(primary_attempt_span)
-            .await;
-
-        let response = result;
-
-        // If status is OK and Upstream did not emit an error
-        if response.status().is_success() && !response.extensions().get::<LLMurError>().is_some() {
-            return Ok(response);
-        }
+    // If status is OK and Upstream did not emit an error
+    if response.status().is_success() && maybe_error.is_none() {
+        return Ok(response);
     }
 
-    Err(LLMurError::UpstreamUnavailable)
+    if let Some(error) = maybe_error {
+        return Err(error);
+    }
+
+    // Should never get to this point
+    Err(ProxyError::InternalError(
+        "Invalid controller path".to_string(),
+    ))?
 }
 
 async fn load_request_details<I>(
@@ -128,7 +124,7 @@ where
 {
     println!("Executing OpenAI-compatible request");
     let request_id = request.extensions().get::<RequestLogId>().cloned().ok_or(
-        LLMurError::InternalServerError("Missing RequestLogId in request extensions".to_string()),
+        ProxyError::InternalError("Missing RequestLogId in request extensions".to_string()),
     )?;
     let request_data = OpenAiRequestData::<I>::from_request(request, &state).await?;
 
@@ -140,27 +136,50 @@ fn generate_request_log_data<I, O>(
     request_data_arc: Arc<OpenAiRequestData<I>>,
     attempt_number: usize,
     selected_connection_node: ConnectionNode,
-    result_arc: Arc<OpenAiCompatibleResponse<O>>,
+    result_arc: Arc<ProxyResponse<O>>,
 ) -> RequestLogData
 where
     I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
     O: Serialize + ExposesUsage + Send + 'static + Sync,
 {
     match &result_arc.result {
-        Ok(inner) => RequestLogData {
-            id: request_id,
-            attempt_number: attempt_number as i16,
-            graph: request_data_arc.graph.clone(),
-            selected_connection_node,
-            input_tokens: Some(inner.data.get_input_tokens() as i64),
-            output_tokens: Some(inner.data.get_output_tokens() as i64),
-            cost: None,
-            http_status_code: inner.status_code.as_u16() as i16,
-            error: None,
-            request_ts: result_arc.request_ts,
-            response_ts: result_arc.response_ts,
-            method: request_data_arc.method.clone(),
-            path: request_data_arc.path.clone(),
+        Ok(inner) => {
+             match inner {
+                 ProviderResponse::DecodedResponse { data, status_code } => {
+                     RequestLogData {
+                         id: request_id,
+                         attempt_number: attempt_number as i16,
+                         graph: request_data_arc.graph.clone(),
+                         selected_connection_node,
+                         input_tokens: Some(data.get_input_tokens() as i64),
+                         output_tokens: Some(data.get_output_tokens() as i64),
+                         cost: None,
+                         http_status_code: status_code.as_u16() as i16,
+                         error: None,
+                         request_ts: result_arc.request_ts,
+                         response_ts: result_arc.response_ts,
+                         method: request_data_arc.method.clone(),
+                         path: request_data_arc.path.clone(),
+                     }
+                 }
+                 ProviderResponse::JsonResponse { data, status_code } => {
+                     RequestLogData {
+                         id: request_id,
+                         attempt_number: attempt_number as i16,
+                         graph: request_data_arc.graph.clone(),
+                         selected_connection_node,
+                         input_tokens: None,
+                         output_tokens: None,
+                         cost: None,
+                         http_status_code: status_code.as_u16() as i16,
+                         error: None,
+                         request_ts: result_arc.request_ts,
+                         response_ts: result_arc.response_ts,
+                         method: request_data_arc.method.clone(),
+                         path: request_data_arc.path.clone(),
+                     }
+                 }
+             }
         },
         Err(error) => RequestLogData {
             id: request_id,
@@ -170,10 +189,9 @@ where
             input_tokens: None,
             output_tokens: None,
             cost: None,
-            http_status_code: if let ProxyRequestError::ProxyReturnError(status_code, _) = error {
-                *status_code as i16
-            } else {
-                500
+            http_status_code: match error {
+                ProxyError::ProxyReturnError(status_code, _) => status_code.as_u16() as i16,
+                _ => reqwest::StatusCode::INTERNAL_SERVER_ERROR.as_u16() as i16,
             },
             error: Some(error.to_string()),
             request_ts: result_arc.request_ts,
@@ -184,10 +202,7 @@ where
     }
 }
 
-fn submit_request_log<I, O>(
-    state: Arc<LLMurState>,
-    request_log_data_arc: Arc<RequestLogData>,
-) -> ()
+fn submit_request_log<I, O>(state: Arc<LLMurState>, request_log_data_arc: Arc<RequestLogData>) -> ()
 where
     I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
     O: Serialize + ExposesUsage + Send + 'static + Sync,
@@ -195,7 +210,11 @@ where
     // Submit request log to 2 channels - One will add the record in the DB and the other will
     // update the usage stats
 
-    match state.data.usage_log_tx.try_send(request_log_data_arc.clone()) {
+    match state
+        .data
+        .usage_log_tx
+        .try_send(request_log_data_arc.clone())
+    {
         Ok(_) => {
             println!("### Successfully sent request log to usage channel");
         }
@@ -204,7 +223,11 @@ where
         }
     };
 
-    match state.data.request_log_tx.try_send(request_log_data_arc.clone()) {
+    match state
+        .data
+        .request_log_tx
+        .try_send(request_log_data_arc.clone())
+    {
         Ok(_) => {
             println!("### Successfully sent request log to logging channel");
         }
@@ -214,7 +237,7 @@ where
     };
 }
 
-fn validate_usage<I>(data: Arc<OpenAiRequestData<I>>) -> Result<(), LLMurError>
+fn validate_usage<I>(data: Arc<OpenAiRequestData<I>>) -> Result<(), GraphError>
 where
     I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
 {

@@ -3,7 +3,7 @@ use axum::{Extension, Json, Router};
 use axum::extract::{Path, State};
 use axum::routing::{delete, get, post};
 use serde::{Deserialize, Serialize};
-use crate::errors::{DataAccessError, LLMurError};
+use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
 use crate::{impl_from_vec_result, LLMurState};
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::project::ProjectId;
@@ -49,7 +49,7 @@ pub(crate) async fn create_key(
             Ok(Json(key.into()))
         }
         UserContext::WebAppUser { user, .. } => {
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }
@@ -68,14 +68,14 @@ pub(crate) async fn get_key(
 ) -> Result<Json<GetVirtualKeyResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let key = state.data.get_virtual_key(&id, &state.application_secret).await?.ok_or(LLMurError::AdminResourceNotFound)?;
+    let key = state.data.get_virtual_key(&id, &state.application_secret).await?.ok_or(DataAccessError::ResourceNotFound)?;
 
     match user_context {
         UserContext::MasterUser => {
             Ok(Json(key.into()))
         }
         UserContext::WebAppUser { user, .. } => {
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }
@@ -94,7 +94,7 @@ pub(crate) async fn delete_key(
 ) -> Result<Json<StatusResponse>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let key = state.data.get_virtual_key(&id, &state.application_secret).await?.ok_or(LLMurError::AdminResourceNotFound)?; // TODO
+    let key = state.data.get_virtual_key(&id, &state.application_secret).await?.ok_or(DataAccessError::ResourceNotFound)?;
 
     match user_context {
         UserContext::MasterUser => {
@@ -105,7 +105,7 @@ pub(crate) async fn delete_key(
             }))
         }
         UserContext::WebAppUser { user, .. } => {
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }

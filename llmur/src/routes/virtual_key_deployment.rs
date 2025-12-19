@@ -1,7 +1,7 @@
 use crate::data::deployment::DeploymentId;
 use crate::data::virtual_key::VirtualKeyId;
 use crate::data::virtual_key_deployment::{VirtualKeyDeployment, VirtualKeyDeploymentId};
-use crate::errors::LLMurError;
+use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
 use crate::routes::StatusResponse;
 use crate::{impl_from_vec_result, LLMurState};
@@ -33,14 +33,11 @@ pub(crate) async fn create_virtual_key_deployment(
     let user_context = ctx.require_authenticated_user()?;
     match user_context {
         UserContext::MasterUser => {
-            println!("Creating VirtualKey - Deployment");
-            let result = state.data.create_virtual_key_deployment(&payload.virtual_key_id, &payload.deployment_id).await;
-            println!("{:?}", result);
-            let vkd = result?;
-            Ok(Json(vkd.into()))
+            let result = state.data.create_virtual_key_deployment(&payload.virtual_key_id, &payload.deployment_id).await?;
+            Ok(Json(result.into()))
         }
         UserContext::WebAppUser { user, .. } => {
-            return Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }
@@ -59,14 +56,14 @@ pub(crate) async fn get_virtual_key_deployment(
 ) -> Result<Json<GetVirtualKeyDeploymentResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let vkd = state.data.get_virtual_key_deployment(&id).await?.ok_or(LLMurError::AdminResourceNotFound)?;
+    let vkd = state.data.get_virtual_key_deployment(&id).await?.ok_or(DataAccessError::ResourceNotFound)?;
 
     match user_context {
         UserContext::MasterUser => {
             Ok(Json(vkd.into()))
         }
         UserContext::WebAppUser { user, .. } => {
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }
@@ -85,7 +82,7 @@ pub(crate) async fn delete_virtual_key_deployment(
 ) -> Result<Json<StatusResponse>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let vkd = state.data.get_virtual_key_deployment(&id).await?.ok_or(LLMurError::AdminResourceNotFound)?; // TODO
+    let vkd = state.data.get_virtual_key_deployment(&id).await?.ok_or(DataAccessError::ResourceNotFound)?; // TODO
 
     match user_context {
         UserContext::MasterUser => {
@@ -96,7 +93,7 @@ pub(crate) async fn delete_virtual_key_deployment(
             }))
         }
         UserContext::WebAppUser { user, .. } => {
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }

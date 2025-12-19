@@ -1,5 +1,5 @@
 use crate::data::deployment::{Deployment, DeploymentAccess, DeploymentId};
-use crate::errors::LLMurError;
+use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
 use crate::routes::StatusResponse;
 use crate::{impl_from_vec_result, LLMurState};
@@ -32,13 +32,14 @@ pub(crate) async fn create_deployment(
     let user_context = ctx.require_authenticated_user()?;
     match user_context {
         UserContext::MasterUser => {
-            let result = state.data.create_deployment(&payload.name, &payload.access.unwrap_or(DeploymentAccess::Private), &payload.strategy.unwrap_or(LoadBalancingStrategy::RoundRobin), &payload.budget_limits, &payload.request_limits, &payload.token_limits).await;
-            println!("{:?}", result);
-            let deployment = result?;
-            Ok(Json(deployment.into()))
+            let result = state
+                .data
+                .create_deployment(&payload.name, &payload.access.unwrap_or(DeploymentAccess::Private), &payload.strategy.unwrap_or(LoadBalancingStrategy::RoundRobin), &payload.budget_limits, &payload.request_limits, &payload.token_limits)
+                .await?;
+            Ok(Json(result.into()))
         }
         UserContext::WebAppUser { user, .. } => {
-            return Err(LLMurError::NotAuthorized)
+            return Err(AuthorizationError::AccessDenied)?
         }
     }
 }
@@ -57,14 +58,14 @@ pub(crate) async fn get_deployment(
 ) -> Result<Json<GetDeploymentResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let deployment = state.data.get_deployment(&id).await?.ok_or(LLMurError::AdminResourceNotFound)?;
+    let deployment = state.data.get_deployment(&id).await?.ok_or(DataAccessError::ResourceNotFound)?;
 
     match user_context {
         UserContext::MasterUser => {
             Ok(Json(deployment.into()))
         }
         UserContext::WebAppUser { user, .. } => {
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }
@@ -83,7 +84,7 @@ pub(crate) async fn delete_deployment(
 ) -> Result<Json<StatusResponse>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let deployment = state.data.get_deployment(&id).await?.ok_or(LLMurError::AdminResourceNotFound)?; // TODO
+    let deployment = state.data.get_deployment(&id).await?.ok_or(DataAccessError::ResourceNotFound)?;
 
     match user_context {
         UserContext::MasterUser => {
@@ -94,7 +95,7 @@ pub(crate) async fn delete_deployment(
             }))
         }
         UserContext::WebAppUser { user, .. } => {
-            Err(LLMurError::NotAuthorized)
+            Err(AuthorizationError::AccessDenied)?
         }
     }
 }

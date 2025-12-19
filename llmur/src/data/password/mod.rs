@@ -1,3 +1,4 @@
+use std::error::Error;
 use crate::errors::{AsyncError, AuthenticationError, HashError};
 use lazy_regex::regex_captures;
 use std::hash::Hash;
@@ -72,7 +73,7 @@ pub async fn hash_password(
         hash_for_scheme(DEFAULT_SCHEME, &password_clear, &salt, &pepper)
     })
     .await
-    .map_err(|e| AsyncError::JoinError(e))?
+    .map_err(|e| AsyncError::JoinError(e.to_string()))?
 }
 
 pub async fn validate_password(
@@ -103,7 +104,7 @@ pub async fn validate_password(
         validate_for_scheme(&scheme_name, &password_clear, &hashed, &salt, &pepper)
     })
     .await
-    .map_err(|e| AsyncError::JoinError(e))??;
+    .map_err(|e| AsyncError::JoinError(e.to_string()))??;
 
     Ok(scheme_status)
 }

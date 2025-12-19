@@ -2,7 +2,7 @@ use crate::data::connection::ConnectionInfo;
 use crate::providers::openai::chat_completions::request::Request as ChatCompletionsRequest;
 use crate::providers::openai::chat_completions::response::Response as ChatCompletionsResponse;
 use crate::routes::openai::request::OpenAiRequestData;
-use crate::routes::openai::response::OpenAiCompatibleResponse;
+use crate::routes::openai::response::ProxyResponse;
 use crate::LLMurState;
 use axum::extract::State;
 use axum::Extension;
@@ -20,7 +20,7 @@ pub(crate) async fn chat_completions_route(
     State(state): State<Arc<LLMurState>>,
     Extension(connection_info): Extension<ConnectionInfo>,
     Extension(request): Extension<Arc<OpenAiRequestData<ChatCompletionsRequest>>>,
-) -> OpenAiCompatibleResponse<ChatCompletionsResponse> {
+) -> ProxyResponse<ChatCompletionsResponse> {
     println!("== Executing Chat Completions request");
 
     match &connection_info {
@@ -53,15 +53,16 @@ mod azure_openai_request {
     use crate::providers::openai::chat_completions::request::Request as OpenAiRequest;
     use crate::providers::openai::chat_completions::response::Response as OpenAiResponse;
     use crate::providers::utils::generic_post_proxy_request;
-    use crate::routes::openai::response::{OpenAiCompatibleResponse, OpenAiSuccessfulResponse};
+    use crate::routes::openai::response::ProxyResponse;
     use chrono::Utc;
     use reqwest::header::HeaderMap;
+    use std::sync::Arc;
 
     #[tracing::instrument(
         name = "proxy.azure.openai.chat_completions",
         skip(client, api_key, payload)
     )]
-    pub(crate) async fn chat_completions(client: &reqwest::Client, deployment_name: &str, api_key: &str, api_endpoint: &str, api_version: &AzureOpenAiApiVersion, payload: OpenAiRequest) -> OpenAiCompatibleResponse<OpenAiResponse> {
+    pub(crate) async fn chat_completions(client: &reqwest::Client, deployment_name: &str, api_key: &str, api_endpoint: &str, api_version: &AzureOpenAiApiVersion, payload: OpenAiRequest) -> ProxyResponse<OpenAiResponse> {
         let mut headers = HeaderMap::new();
         headers.insert("api-key", api_key.parse().unwrap());
         headers.insert("Content-Type", "application/json".parse().unwrap());
@@ -81,13 +82,11 @@ mod azure_openai_request {
                         headers,
                         response_context,
                     ).await {
-                    Ok((successful_response, status_code)) => {
-                        OpenAiCompatibleResponse::new(
-                            Ok(OpenAiSuccessfulResponse { data: successful_response, status_code }), start_ts
-                        )
+                    Ok(response) => {
+                        ProxyResponse::new(Ok(response), start_ts)
                     }
                     Err(error) => {
-                        OpenAiCompatibleResponse::new(
+                        ProxyResponse::new(
                             Err(error), start_ts
                         )
                     }
@@ -106,13 +105,11 @@ mod azure_openai_request {
                     headers,
                     response_context,
                 ).await {
-                    Ok((successful_response, status_code)) => {
-                        OpenAiCompatibleResponse::new(
-                            Ok(OpenAiSuccessfulResponse { data: successful_response, status_code }), start_ts
-                        )
+                    Ok(response) => {
+                        ProxyResponse::new(Ok(response), start_ts)
                     }
                     Err(error) => {
-                        OpenAiCompatibleResponse::new(
+                        ProxyResponse::new(
                             Err(error), start_ts
                         )
                     }
@@ -128,16 +125,17 @@ mod openai_v1_request {
     use crate::providers::openai::chat_completions::response::to_self::Context as ResponseContext;
     use crate::providers::openai::chat_completions::response::Response as OpenAiResponse;
     use crate::providers::utils::generic_post_proxy_request;
-    use crate::routes::openai::response::{OpenAiCompatibleResponse, OpenAiSuccessfulResponse};
+    use crate::routes::openai::response::ProxyResponse;
     use chrono::Utc;
     use reqwest::header::HeaderMap;
+    use std::sync::Arc;
 
 
     #[tracing::instrument(
         name = "proxy.openai.v1.chat_completions",
         skip(client, api_key, payload)
     )]
-    pub(crate) async fn chat_completions(client: &reqwest::Client, model: &str, api_key: &str, api_endpoint: &str, payload: OpenAiRequest) -> OpenAiCompatibleResponse<OpenAiResponse> {
+    pub(crate) async fn chat_completions(client: &reqwest::Client, model: &str, api_key: &str, api_endpoint: &str, payload: OpenAiRequest) -> ProxyResponse<OpenAiResponse> {
         let mut headers = HeaderMap::new();
         headers.insert("Authorization", format!("Bearer {}", api_key).parse().unwrap());
         headers.insert("Content-Type", "application/json".parse().unwrap());
@@ -155,13 +153,11 @@ mod openai_v1_request {
             headers,
             response_context,
         ).await {
-            Ok((successful_response, status_code)) => {
-                OpenAiCompatibleResponse::new(
-                    Ok(OpenAiSuccessfulResponse { data: successful_response, status_code }), start_ts
-                )
+            Ok(response) => {
+                ProxyResponse::new(Ok(response), start_ts)
             }
             Err(error) => {
-                OpenAiCompatibleResponse::new(
+                ProxyResponse::new(
                     Err(error), start_ts
                 )
             }
