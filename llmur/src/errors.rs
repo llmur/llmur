@@ -2,22 +2,13 @@ use std::string::FromUtf8Error;
 use std::sync::Arc;
 use aes_gcm::aead;
 use axum::extract::rejection::JsonRejection;
-use axum::http::StatusCode;
 use axum::Json;
 use axum::response::{IntoResponse, Response};
 use hex::FromHexError;
 use redis::RedisError;
-use serde_json::json;
 use sqlx::migrate::MigrateError;
-use tokio::task::JoinError;
+use tracing::info;
 use uuid::Uuid;
-use crate::data::connection::ConnectionId;
-use crate::data::connection_deployment::ConnectionDeploymentId;
-use crate::data::deployment::DeploymentId;
-use crate::data::password::SchemeDispatcher;
-use crate::data::project::ProjectId;
-use crate::data::virtual_key::VirtualKeyId;
-use crate::data::virtual_key_deployment::VirtualKeyDeploymentId;
 
 
 #[derive(thiserror::Error, Debug)]
@@ -30,8 +21,6 @@ pub enum LLMurError {
     DataAccessError(#[from] DataAccessError),
     #[error(transparent)]
     GraphError(#[from] GraphError),
-    #[error(transparent)]
-    SetupError(#[from] SetupError),
     #[error(transparent)]
     ProxyError(#[from] ProxyError),
 }
@@ -275,278 +264,75 @@ pub enum UsageExceededError {
     MinuteTokensOverLimit { used: i64, limit: i64 },
 }
 
+impl IntoResponse for LLMurError {
+    fn into_response(self) -> Response {
+        info!("Responding with error: {:?}", self);
+        match self {
+            LLMurError::AuthenticationError(e) => match e {
+                AuthenticationError::AsyncError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "AuthenticationError").into_response(),
+                AuthenticationError::PasswordSchemeParsingFailed => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "PasswordSchemeParsingFailed").into_response(),
+                AuthenticationError::UnableToFetchSessionToken => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "UnableToFetchSessionToken").into_response(),
+                AuthenticationError::UnableToFetchTokenUser => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "UnableToFetchTokenUser").into_response(),
+                AuthenticationError::HashError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "HashError").into_response(),
+                AuthenticationError::InternalError(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+                _ => (axum::http::StatusCode::UNAUTHORIZED, "Not allowed").into_response()
+            }
+            LLMurError::AuthorizationError(e) => match e {
+                AuthorizationError::AccessDenied => (axum::http::StatusCode::FORBIDDEN, "Access denied").into_response(),
+            },
+            LLMurError::DataAccessError(e) => e.into_response(),
+            LLMurError::GraphError(e) => match e {
+                GraphError::GraphLoadError(ge) => match ge {
+                    GraphLoadError::DataAccessError(e) => e.into_response(),
+                    GraphLoadError::InvalidVirtualKey => (axum::http::StatusCode::UNAUTHORIZED, "Not allowed").into_response(),
+                    GraphLoadError::InvalidDeploymentName => (axum::http::StatusCode::NOT_FOUND, "Model not found").into_response(),
+                    GraphLoadError::InconsistentGraphDataError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "InconsistentGraphDataError").into_response(),
+                    GraphLoadError::InvalidVirtualKeyDeployment => (axum::http::StatusCode::FORBIDDEN, "Not allowed").into_response(),
+                }
+                GraphError::NoConnectionAvailable(_) => (axum::http::StatusCode::SERVICE_UNAVAILABLE, "No connection available").into_response(),
+                GraphError::UsageExceededError(_) => (axum::http::StatusCode::TOO_MANY_REQUESTS, "Too many requests").into_response(),
+            },
+            LLMurError::ProxyError(e) => e.into_response(),
+        }
+    }
+}
+
 impl From<Arc<AuthenticationError>> for LLMurError {
     fn from(err: Arc<AuthenticationError>) -> Self {
         LLMurError::AuthenticationError(Arc::unwrap_or_clone(err))
     }
 }
 
-
-/*
-#[derive(thiserror::Error, Debug, Clone)]
-pub enum GraphConstructionError {
-    /// A deployment referenced by a VirtualKeyDeployment was not found in the provided deployments
-    #[error("Virtual Key not found while building graph: {0}")]
-    VirtualKeyNotFound(VirtualKeyId),
-    /// A deployment referenced by a VirtualKeyDeployment was not found in the provided deployments
-    #[error("Deployment not found while building graph: {0}")]
-    DeploymentNotFound(DeploymentId),
-    /// A connection referenced by a ConnectionDeployment was not found in the provided connections
-    #[error("Connection not found while building graph: {0}")]
-    ConnectionNotFound(ConnectionId),
-
-    #[error("Invalid association between Virtual Key and Deployment")]
-    VirtualKeyDeploymentMismatch
-}
-
-#[derive(thiserror::Error, Debug, Clone)]
-pub enum DataAccessError {
-    #[error(transparent)]
-    DataConversionError(#[from] DataConversionError),
-    #[error(transparent)]
-    DatabaseError(#[from] DatabaseError),
-    #[error(transparent)]
-    CacheError(#[from] CacheError),
-    #[error("CDatabaseInconsistencyError")] // TODO
-    DatabaseInconsistencyError,
-    #[error("InvalidEmail")] // TODO
-    InvalidEmail,
-    #[error("InvalidInviteCode")] // TODO
-    InvalidInviteCode,
-    #[error("FailedToCreateKey")] // TODO
-    FailedToCreateKey,
-    #[error("FailedToHashPassword")] // TODO
-    FailedToHashPassword,
-    #[error("NoConnectionsAvailable")] // TODO
-    NoConnectionsAvailable,
-
-
-    #[error("Virtual key not found in cache: {0}")]
-    InMemoryVirtualKeyNotFound(VirtualKeyId),
-
-    #[error("Project not found in cache: {0}")]
-    InMemoryProjectNotFound(ProjectId),
-
-    #[error("Virtual key deployment mapping not found: {0}")]
-    InMemoryVirtualKeyDeploymentNotFound(VirtualKeyDeploymentId),
-
-    #[error("Deployment not found: {0}")]
-    InMemoryDeploymentNotFound(DeploymentId),
-
-    #[error("Connection deployment mapping not found: {0}")]
-    InMemoryConnectionDeploymentNotFound(ConnectionDeploymentId),
-
-    #[error("Connection not found: {0}")]
-    InMemoryConnectionNotFound(ConnectionId),
-
-    #[error("Graph construction failed: {0}")]
-    GraphConstructionFailed(#[from] GraphConstructionError),
-
-    #[error("Graph Load failed: {0}")]
-    GraphLoadError(#[from] GraphLoadError),
-
-    #[error("Couldn't find deployment with name: {0}")]
-    InMemoryDeploymentNotFoundByName(String),
-
-    #[error("No association between Virtual Key and Deployment not found for deployment: {0}")]
-    InMemoryVirtualKeyDeploymentNotFoundForDeployment(DeploymentId),
-
-    #[error("Exceeded Budget: {0}")]
-    BudgetExceeded(String),
-    #[error("Exceeded RPM: {0}")]
-    RequestUsageExceeded(String),
-    #[error("Exceeded TPM: {0}")]
-    TokenUsageExceeded(String),
-}
-
-
-#[derive(thiserror::Error, Debug)]
-pub enum BuilderError {
-    #[error("missing database configuration")]
-    MissingDatabase,
-    #[error("missing cache configuration")]
-    MissingCache,
-    #[error("database already set")]
-    DatabaseAlreadySet,
-    #[error("cache already set")]
-    CacheAlreadySet,
-    #[error("HTTP client already set")]
-    HttpClientAlreadySet,
-    #[error("inner db/cache error: {0}")]
-    DatabaseBuilderError(#[from] DatabaseError),
-    #[error("inner db/cache error: {0}")]
-    CacheBuilderError(#[from] CacheError),
-    #[error("http client build error: {0}")]
-    Http(#[from] reqwest::Error),
-}
-
-
-
-
-
-
-#[derive(thiserror::Error, Debug)]
-pub enum LLMurError {
-    #[error("Upstream Unavailable")]
-    UpstreamUnavailable,
-    #[error("Missing Api Key error")]
-    ProxyApiKeyNotFound,
-    #[error("Missing Authorization error")]
-    ProxyMissingAuthorizationHeader,
-    #[error("Malformed Authorization error")]
-    ProxyMalformedAuthorizationHeader,
-    #[error(transparent)]
-    ProxyRequestError(#[from] ProxyRequestError),
-    #[error(transparent)]
-    GraphLoadError(#[from] GraphLoadError),
-
-    #[error(transparent)]
-    AdminDataAccessError(#[from] DataAccessError),
-
-    #[error(transparent)]
-    SerdeError(#[from] serde_json::Error),
-    #[error(transparent)]
-    UserContextExtractionError(#[from] UserContextExtractionError),
-    #[error(transparent)]
-    AuthorizationHeaderExtractionError(#[from] AuthorizationHeaderExtractionError),
-
-    #[error("Resource not found")]
-    AdminResourceNotFound,
-    #[error("Resource not found")]
-    UserNotFound,
-    #[error("Resource not found")]
-    PasswordDoesNotMatch,
-    #[error("Resource not found")]
-    FailedToHashPassword,
-    #[error("Resource not found")]
-    ApiKeyNotFound,
-    #[error("Resource not found")]
-    InvalidApiKey,
-    #[error("Not authorized")]
-    NotAuthorized,
-
-    #[error("Internal server error: {0}")]
-    InternalServerError(String),
-    #[error("Invalid Payload: {0}")]
-    BadRequest(String),
-}
-
-
-
-#[derive(thiserror::Error, Debug, Clone)]
-pub enum AuthorizationHeaderExtractionError {
-    #[error("Error")]
-    InvalidAuthorizationHeader ,
-    #[error("Error")]
-    AuthorizationHeaderNotProvided
-}
-
-#[derive(thiserror::Error, Debug, Clone)]
-pub enum GraphLoadError {
-    //#[error("Error")]
-    //AuthorizationHeaderExtractionError(#[from] AuthorizationHeaderExtractionError),
-    #[error("Error")]
-    InvalidVirtualKey, // Virtual key does not exist
-    #[error("Error")]
-    InvalidDeploymentName, // Deployment name does not exist
-    #[error("Error")]
-    InvalidVirtualKeyDeployment, // Deployment is not associated with the virtual key
-
-    #[error("Error")]
-    InternalServerError,
-    #[error(transparent)]
-    InconsistentGraphDataError(#[from] InconsistentGraphDataError), // Graph data is inconsistent - This can happen if a record is updated/deleted during the load process. Retrying the operation may resolve the issue.
-}
-
-
-#[derive(thiserror::Error, Debug, Clone)]
-pub enum InconsistentGraphDataError {
-    #[error("Error")]
-    InvalidProject,
-    #[error("Error")]
-    InvalidConnectionDeployments,
-    #[error("Error")]
-    InvalidConnection,
-}
-
-#[derive(thiserror::Error, Debug, Clone)]
-pub enum UserContextExtractionError {
-    #[error("Error")]
-    AuthSetCookieError,
-    #[error("Error")]
-    AuthDeleteCookieError,
-    #[error("Error")]
-    AuthTokenNotInCookie,
-    #[error("Error")]
-    AuthTokenWrongFormat,
-    #[error("Error")]
-    AuthDataAccessError,
-    #[error("Error")]
-    AuthUserNotFound,
-    #[error("Error")]
-    AuthTokenValidationFailed,
-    #[error("Error")]
-    AuthCannotSetTokenCookie,
-    #[error("Error")]
-    AuthInvalidAuthBearer,
-    #[error("Error")]
-    FailedToGenerateToken,
-    #[error("Error")]
-    UnableToFetchSessionToken,
-    #[error("Error")]
-    SessionTokenNotFound,
-    #[error("Error")]
-    AuthenticationNotProvided,
-}
-
-
-#[derive(thiserror::Error, Debug, Clone)]
-pub enum ProxyRequestError {
-    #[error("Request successful but returned {0}")]
-    ProxyReturnError(u16, serde_json::Value),
-    #[error("Error: {0}")]
-    ReqwestSerdeError(String),
-    #[error("Error: {0}")]
-    ReqwestError(String),
-    #[error("Error: {0}")]
-    SerdeError(String),
-    #[error("Error: {0}")]
-    DataAccessError(#[from] DataAccessError),
-}
-
-*/
-// TODO: Improve error handling
 impl IntoResponse for &ProxyError {
     fn into_response(self) -> Response {
         let resp = match self {
-            ProxyError::InvalidRequest(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+            ProxyError::InvalidRequest(e) => (axum::http::StatusCode::BAD_REQUEST, format!("Invalid payload. Reason: {}", e)).into_response(),
             ProxyError::ProxyReturnError(s, v) => match v {
                 ProxyErrorMessage::Text(v) => (*s, v.to_string()).into_response(),
                 ProxyErrorMessage::Json(v) => (*s, Json(v)).into_response()
             },
             ProxyError::ProxyReqwestError(s, e) => (*s, e.to_string()).into_response(),
-            ProxyError::SerdeJsonError(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
-            ProxyError::ReqwestError(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
-            ProxyError::InternalError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+            ProxyError::SerdeJsonError(e) => (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+            ProxyError::ReqwestError(e) => (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+            ProxyError::InternalError(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
         };
-
-        // Insert error into extensions for middleware access
-        //resp.extensions_mut().insert(self.clone());
 
         resp
     }
 }
 
-impl IntoResponse for LLMurError {
+impl IntoResponse for DataAccessError {
     fn into_response(self) -> Response {
         match self {
-            LLMurError::AuthenticationError(e) => (StatusCode::UNAUTHORIZED, e.to_string()).into_response(),
-            LLMurError::AuthorizationError(e) => (StatusCode::UNAUTHORIZED, e.to_string()).into_response(),
-            LLMurError::DataAccessError(e) => (StatusCode::UNAUTHORIZED, e.to_string()).into_response(),
-            LLMurError::GraphError(e) => (StatusCode::UNAUTHORIZED, e.to_string()).into_response(),
-            LLMurError::SetupError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
-            LLMurError::ProxyError(e) => e.into_response(),
+            DataAccessError::SqlxError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DataAccessError").into_response(),
+            DataAccessError::DbRecordConversionError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DataAccessError").into_response(),
+            DataAccessError::EncryptionError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DataAccessError").into_response(),
+            DataAccessError::InvalidTimeFormatError(e) => (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+            DataAccessError::HashError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DataAccessError").into_response(),
+            DataAccessError::CacheAccessError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DataAccessError").into_response(),
+            DataAccessError::ResourceNotFound => (axum::http::StatusCode::NOT_FOUND, "Not Found").into_response(),
+            DataAccessError::FailedToGetCreatedResource(_, _, _) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "FailedToGetCreatedResource").into_response(),
+            DataAccessError::CreatedResourceNotFound(_, _) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "CreatedResourceNotFound").into_response(),
         }
     }
-    // Conversion logic to a suitable response type, e.g., JSON error message or HTTP status
 }

@@ -4,7 +4,7 @@ use crate::data::graph::local_store::{GraphData, GraphDataId};
 use crate::data::request_log::RequestLogData;
 use crate::data::session_token::{SessionToken, SessionTokenId};
 use crate::data::utils::current_timestamp_ms;
-use crate::errors::{CacheAccessError, DataAccessError, SetupError};
+use crate::errors::{CacheAccessError, SetupError};
 use chrono::{DateTime, Utc};
 use redis::{
     AsyncCommands, ConnectionAddr, ConnectionInfo, FromRedisValue, ProtocolVersion,
