@@ -2,7 +2,7 @@ use crate::data::graph::Graph;
 use crate::errors::{GraphError, LLMurError};
 use crate::routes::chat_completions::chat_completions_route;
 use crate::routes::middleware::auth::auth_token_extraction_mw;
-use crate::routes::middleware::tracing::common_tracing_mw;
+use crate::routes::middleware::common::common_tracing_mw;
 use crate::routes::middleware::user_context::user_context_load_mw;
 use crate::routes::openai::controller::openai_route_controller_mw;
 use crate::LLMurState;
@@ -27,15 +27,8 @@ mod membership;
 mod chat_completions;
 
 mod macros;
-mod middleware;
+pub(crate) mod middleware;
 pub(crate) mod openai;
-
-pub(crate) fn all(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
-    Router::new()
-        .nest("/admin", admin_routes(state.clone()))
-        .nest("/v1", openai_v1_routes(state.clone()))
-        .with_state(state.clone())
-}
 
 pub(crate) fn admin_routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
     Router::new()
@@ -52,6 +45,7 @@ pub(crate) fn admin_routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .route("/graph/{key}/{deployment}", get(get_graph))
         // Add user context loading middleware - loads user context based on auth info
         .route_layer(from_fn_with_state(state.clone(), user_context_load_mw))
+        //.route_layer(from_fn_with_state(state.clone(), common_tracing_mw))
         .with_state(state.clone())
 }
 
@@ -69,8 +63,8 @@ pub(crate) fn openai_v1_routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>
                 ))
         )
         .with_state(state.clone())
-        .layer(from_fn(auth_token_extraction_mw))
-        .layer(from_fn(common_tracing_mw))
+        .route_layer(from_fn(auth_token_extraction_mw))
+        //.layer(from_fn_with_state(state.clone(), common_tracing_mw))
 }
 
 #[derive(Serialize)]

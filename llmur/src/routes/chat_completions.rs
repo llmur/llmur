@@ -1,4 +1,4 @@
-use crate::data::connection::ConnectionInfo;
+use crate::data::connection::{ConnectionId, ConnectionInfo};
 use crate::providers::openai::chat_completions::request::Request as ChatCompletionsRequest;
 use crate::providers::openai::chat_completions::response::Response as ChatCompletionsResponse;
 use crate::routes::openai::request::OpenAiRequestData;
@@ -7,6 +7,8 @@ use crate::LLMurState;
 use axum::extract::State;
 use axum::Extension;
 use std::sync::Arc;
+use std::time::Instant;
+use crate::metrics::RegisterProxyRequest;
 
 // Connection is passed via extension
 #[tracing::instrument(
@@ -19,11 +21,13 @@ use std::sync::Arc;
 pub(crate) async fn chat_completions_route(
     State(state): State<Arc<LLMurState>>,
     Extension(connection_info): Extension<ConnectionInfo>,
+    Extension(connection_id): Extension<ConnectionId>,
     Extension(request): Extension<Arc<OpenAiRequestData<ChatCompletionsRequest>>>,
 ) -> ProxyResponse<ChatCompletionsResponse> {
     println!("== Executing Chat Completions request");
+    let start = Instant::now();
 
-    match &connection_info {
+    let response = match &connection_info {
         ConnectionInfo::AzureOpenAiApiKey { api_key, api_endpoint, api_version, deployment_name } => {
             azure_openai_request::chat_completions(
                 &state.data.http_client,
@@ -43,7 +47,20 @@ pub(crate) async fn chat_completions_route(
                 request.payload.clone(),
             ).await
         }
-    }
+    };
+
+    state.metrics.register_proxy_request(
+        &request.graph.deployment.data.id,
+        &connection_id,
+        connection_info.get_provider_friendly_name().to_string(),
+        request.path.clone(),
+        response.result.as_ref().map(|r| r.get_input_tokens()).unwrap_or_default(),
+        response.result.as_ref().map(|r| r.get_output_tokens()).unwrap_or_default(),
+        start.elapsed().as_millis() as u64,
+        response.result.as_ref().map(|r| r.get_status_code()).ok()
+    );
+
+    response
 }
 
 mod azure_openai_request {

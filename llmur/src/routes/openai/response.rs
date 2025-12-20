@@ -13,13 +13,44 @@ pub struct ProxyResponse<T> {
 }
 
 pub enum ProviderResponse<T> {
-    DecodedResponse { data: T, status_code: reqwest::StatusCode },
-    JsonResponse { data: serde_json::Value, status_code: reqwest::StatusCode },
+    DecodedResponse {
+        data: T,
+        status_code: reqwest::StatusCode,
+    },
+    JsonResponse {
+        data: serde_json::Value,
+        status_code: reqwest::StatusCode,
+    },
+}
+impl<T> ProviderResponse<T>
+where
+    T: Serialize + ExposesUsage + Send + Clone + 'static + Sync,
+{
+    pub(crate) fn get_input_tokens(&self) -> Option<u64> {
+        match self {
+            ProviderResponse::DecodedResponse { data, .. } => Some(data.get_input_tokens()),
+            ProviderResponse::JsonResponse { .. } => None,
+        }
+    }
+
+    pub(crate) fn get_output_tokens(&self) -> Option<u64> {
+        match self {
+            ProviderResponse::DecodedResponse { data, .. } => Some(data.get_output_tokens()),
+            ProviderResponse::JsonResponse { .. } => None,
+        }
+    }
+
+    pub(crate) fn get_status_code(&self) -> reqwest::StatusCode {
+        match self {
+            ProviderResponse::DecodedResponse { status_code, .. } => status_code.clone(),
+            ProviderResponse::JsonResponse { status_code, .. } => status_code.clone(),
+        }
+    }
 }
 
 impl<T> ProxyResponse<T> {
     pub fn new(result: Result<ProviderResponse<T>, ProxyError>, start_ts: DateTime<Utc>) -> Self {
-        Self { 
+        Self {
             result,
             request_ts: start_ts,
             response_ts: Utc::now(),
@@ -41,17 +72,14 @@ where
                         (*status_code, axum::Json::<T>(data.clone())).into_response()
                     }
                     ProviderResponse::JsonResponse { data, status_code } => {
-                        (*status_code, axum::Json::<serde_json::Value>(data.clone())).into_response()
+                        (*status_code, axum::Json::<serde_json::Value>(data.clone()))
+                            .into_response()
                     }
                 }
             }
-            Err(error) => {
-                error.into_response()
-            }
+            Err(error) => error.into_response(),
         };
         resp.extensions_mut().insert(Arc::new(self));
         resp
     }
 }
-
-

@@ -65,6 +65,9 @@ where
                 .insert(connection.data.connection_info.clone());
         attempt_req
                 .extensions_mut()
+                .insert(connection.data.id.clone());
+        attempt_req
+                .extensions_mut()
                 .insert(request_data.clone());
 
             // Copy the RequestLogId to the new request
