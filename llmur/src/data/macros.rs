@@ -5,11 +5,11 @@
 macro_rules! default_get_fn {
     ($type:ty, $id_type:ty, $singular:ident) => {
         paste::paste! {
-            async fn [<__get_ $singular>](&self, id: &$id_type, application_secret: &Option<uuid::Uuid>) -> Result<Option<$type>, crate::errors::DataAccessError> {
+            async fn [<__get_ $singular>](&self, id: &$id_type, application_secret: &Option<uuid::Uuid>, metrics: &Option<std::sync::Arc<crate::metrics::Metrics>>) -> Result<Option<$type>, crate::errors::DataAccessError> {
                 // Hit the DB and convert the result
                 let maybe_value: Option<$type> = self
                     .database
-                    .[<get_ $singular>](&id.clone()) // Returns promise Option<DbXXXRecord>
+                    .[<get_ $singular>](metrics, &id.clone()) // Returns promise Option<DbXXXRecord>
                     .await?
                     .map(|v| v.convert(application_secret)) // Returns Option<Result<X,Y>>
                     .transpose()?;
@@ -24,11 +24,11 @@ macro_rules! default_get_fn {
 macro_rules! default_getm_fn {
     ($type:ty, $id_type:ty, $plural:ident) => {
         paste::paste! {
-            async fn [<__get_ $plural>](&self, ids: &std::collections::BTreeSet<$id_type>, application_secret: &Option<uuid::Uuid>) -> Result<std::collections::BTreeMap<$id_type, Option<$type>>, crate::errors::DataAccessError> {
+            async fn [<__get_ $plural>](&self, ids: &std::collections::BTreeSet<$id_type>, application_secret: &Option<uuid::Uuid>, metrics: &Option<std::sync::Arc<crate::metrics::Metrics>>) -> Result<std::collections::BTreeMap<$id_type, Option<$type>>, crate::errors::DataAccessError> {
                 // Hit the DB and convert the result
                 let result: std::collections::BTreeMap<$id_type, Option<$type>> = self
                     .database
-                    .[<get_ $plural>](&ids.iter().cloned().collect())
+                    .[<get_ $plural>](metrics, &ids.iter().cloned().collect())
                     .await? // Returns Result<BTreeMap<$id_type, Option<Obj>>, Error>
                     .into_iter()
                     .map(|(k, v)| {
@@ -52,9 +52,9 @@ macro_rules! default_create_fn {
         $( $param_name:ident : $param_ty:ty ),* $(,)?
     ) => {
         paste::paste! {
-            async fn [<__create_ $singular>](&self, $( $param_name: $param_ty ),* , application_secret: &Option<uuid::Uuid>) -> Result<$type, crate::errors::DataAccessError> {
-                let record_id = self.database.[<insert_ $singular>]($( $param_name ),*).await?;
-                let record = self.[<__get_ $singular>](&record_id, application_secret)
+            async fn [<__create_ $singular>](&self, $( $param_name: $param_ty ),* , application_secret: &Option<uuid::Uuid>, metrics: &Option<std::sync::Arc<crate::metrics::Metrics>>) -> Result<$type, crate::errors::DataAccessError> {
+                let record_id = self.database.[<insert_ $singular>](metrics, $( $param_name ),*).await?;
+                let record = self.[<__get_ $singular>](&record_id, application_secret, metrics)
                     .await
                     .map_err(|e| crate::errors::DataAccessError::FailedToGetCreatedResource(Box::new(e), stringify!($singular).to_string(), record_id.0))?
                     .ok_or(crate::errors::DataAccessError::CreatedResourceNotFound(stringify!($singular).to_string(), record_id.0))?;
@@ -72,10 +72,10 @@ macro_rules! default_search_fn {
         $plural:ident,
     ) => {
         paste::paste! {
-            async fn [<__search_ $plural>](&self, application_secret: &Option<uuid::Uuid>) -> Result<Vec<$type>, crate::errors::DataAccessError> {
+            async fn [<__search_ $plural>](&self, application_secret: &Option<uuid::Uuid>, metrics: &Option<std::sync::Arc<crate::metrics::Metrics>>) -> Result<Vec<$type>, crate::errors::DataAccessError> {
                 let values: Vec<$type> = self
                     .database
-                    .[<search_ $plural>]() // Returns promise Result<Vec<DbXXXRecord>, Error>
+                    .[<search_ $plural>](metrics) // Returns promise Result<Vec<DbXXXRecord>, Error>
                     .await?
                     .into_iter()
                     .map(|v| v.convert(application_secret)) // convert is defined and returns Result<$type, Error>
@@ -92,10 +92,10 @@ macro_rules! default_search_fn {
         $( $param_name:ident : $param_ty:ty ),+ $(,)?
     ) => {
         paste::paste! {
-            async fn [<__search_ $plural >](&self, $( $param_name: $param_ty ),+ , application_secret: &Option<uuid::Uuid>) -> Result<Vec<$type>, crate::errors::DataAccessError> {
+            async fn [<__search_ $plural >](&self, $( $param_name: $param_ty ),+, application_secret: &Option<uuid::Uuid>, metrics: &Option<std::sync::Arc<crate::metrics::Metrics>>) -> Result<Vec<$type>, crate::errors::DataAccessError> {
                 let values: Vec<$type> = self
                     .database
-                    .[<search_ $plural>]($( $param_name ),+) // Returns promise Result<Vec<DbXXXRecord>, Error>
+                    .[<search_ $plural>](metrics, $( $param_name ),+) // Returns promise Result<Vec<DbXXXRecord>, Error>
                     .await?
                     .into_iter()
                     .map(|v| v.convert(application_secret)) // convert is defined and returns Result<$type, Error>
@@ -111,8 +111,8 @@ macro_rules! default_search_fn {
 macro_rules! default_delete_fn {
     ($type:ty, $id_type:ty, $singular:ident) => {
         paste::paste! {
-            async fn [<__delete_ $singular>](&self, id: &$id_type) -> Result<u64, crate::errors::DataAccessError> {
-                let n = self.database.[<delete_ $singular>](id).await?;
+            async fn [<__delete_ $singular>](&self, id: &$id_type, metrics: &Option<std::sync::Arc<crate::metrics::Metrics>>) -> Result<u64, crate::errors::DataAccessError> {
+                let n = self.database.[<delete_ $singular>](metrics, id).await?;
 
                 Ok(n)
             }
@@ -183,17 +183,25 @@ macro_rules! default_db_insert_fn {
         $( $param_name:ident : $param_ty:ty ),* $(,)?
     ) => {
         paste::paste! {
-            pub(crate) async fn [<insert_ $singular>](&self, $( $param_name: $param_ty ),*) -> Result<$id_type, crate::errors::DataAccessError> {
-                let span = tracing::trace_span!(concat!("db.insert.", stringify!($singular)));
+            pub(crate) async fn [<insert_ $singular>](&self, metrics: &Option<std::sync::Arc<crate::metrics::Metrics>>, $( $param_name: $param_ty ),*) -> Result<$id_type, crate::errors::DataAccessError> {
+                use crate::metrics::RegisterDatabaseRequest;
+
+                let operation = concat!("db.insert.", stringify!($singular));
+                let span = tracing::trace_span!("database_operation", operation= %operation);
+
                 tracing::Instrument::instrument(
                     async move {
                         match self {
                             crate::data::Database::Postgres { pool } => {
+                                let start = std::time::Instant::now();
+
                                 let mut query = $pg_query_fn($( $param_name ),*);
                                 let sql = query.build_query_as::<$id_type>();
-                                let result = sql.fetch_one(pool).await?;
+                                let result = sql.fetch_one(pool).await;
 
-                                Ok(result)
+                                metrics.register_database_request(&operation, start.elapsed().as_millis() as u64, result.is_ok());
+
+                                Ok(result?)
                             }
                         }
                     }, span
@@ -212,17 +220,25 @@ macro_rules! default_db_search_fn {
         $pg_query_fn:path
     ) => {
         paste::paste! {
-            pub(crate) async fn [<search_ $plural>](&self) -> Result<Vec<$type>, crate::errors::DataAccessError> {
-                let span = tracing::trace_span!(concat!("db.search.", stringify!($plural)));
+            pub(crate) async fn [<search_ $plural>](&self, metrics: &Option<std::sync::Arc<crate::metrics::Metrics>>) -> Result<Vec<$type>, crate::errors::DataAccessError> {
+                use crate::metrics::RegisterDatabaseRequest;
+
+                let operation = concat!("db.search.", stringify!($plural));
+                let span = tracing::trace_span!("database_operation", operation= %operation);
+
                 tracing::Instrument::instrument(
                     async move {
                         match self {
                             crate::data::Database::Postgres { pool } => {
+                                let start = std::time::Instant::now();
+
                                 let mut query = $pg_query_fn();
                                 let sql = query.build_query_as::<$type>();
-                                let result = sql.fetch_all(pool).await?;
-        
-                                Ok(result)
+                                let result = sql.fetch_all(pool).await;
+
+                                metrics.register_database_request(&operation, start.elapsed().as_millis() as u64, result.is_ok());
+
+                                Ok(result?)
                             }
                         }
                     }, span
@@ -239,17 +255,25 @@ macro_rules! default_db_search_fn {
         $( $param_name:ident : $param_ty:ty ),+ $(,)?
     ) => {
         paste::paste! {
-            pub(crate) async fn [<search_ $plural>](&self, $( $param_name: $param_ty ),+) -> Result<Vec<$type>, crate::errors::DataAccessError> {
-                let span = tracing::trace_span!(concat!("db.search.", stringify!($plural)));
+            pub(crate) async fn [<search_ $plural>](&self, metrics: &Option<std::sync::Arc<crate::metrics::Metrics>>, $( $param_name: $param_ty ),+) -> Result<Vec<$type>, crate::errors::DataAccessError> {
+                use crate::metrics::RegisterDatabaseRequest;
+
+                let operation = concat!("db.search.", stringify!($plural));
+                let span = tracing::trace_span!("database_operation", operation= %operation);
+
                 tracing::Instrument::instrument(
                     async move {
                         match self {
                             crate::data::Database::Postgres { pool } => {
+                                let start = std::time::Instant::now();
+
                                 let mut query = $pg_query_fn($( $param_name ),*);
                                 let sql = query.build_query_as::<$type>();
-                                let result = sql.fetch_all(pool).await?;
+                                let result = sql.fetch_all(pool).await;
         
-                                Ok(result)
+                                metrics.register_database_request(&operation, start.elapsed().as_millis() as u64, result.is_ok());
+
+                                Ok(result?)
                             }
                         }
                     }, span
@@ -268,17 +292,25 @@ macro_rules! default_db_get_fn {
         $pg_query_fn:path
     ) => {
         paste::paste! {
-            pub(crate) async fn [<get_ $singular>](&self, id: &$id_type) -> Result<Option<$type>, crate::errors::DataAccessError> {
-                let span = tracing::trace_span!(concat!("db.get.", stringify!($singular)));
+            pub(crate) async fn [<get_ $singular>](&self, metrics: &Option<std::sync::Arc<crate::metrics::Metrics>>, id: &$id_type) -> Result<Option<$type>, crate::errors::DataAccessError> {
+                use crate::metrics::RegisterDatabaseRequest;
+
+                let operation = concat!("db.get.", stringify!($singular));
+                let span = tracing::trace_span!("database_operation", operation= %operation);
+
                 tracing::Instrument::instrument(
                     async move {
                         match self {
                             crate::data::Database::Postgres { pool } => {
+                                let start = std::time::Instant::now();
+
                                 let mut query = $pg_query_fn(id);
                                 let sql= query.build_query_as::<$type>();
-                                let result = sql.fetch_optional(pool).await?;
+                                let result = sql.fetch_optional(pool).await;
         
-                                Ok(result)
+                                metrics.register_database_request(&operation, start.elapsed().as_millis() as u64, result.is_ok());
+
+                                Ok(result?)
                             }
                         }
                     }, span
@@ -297,15 +329,25 @@ macro_rules! default_db_get_multiple_fn {
         $pg_query_fn:path
     ) => {
         paste::paste! {
-            pub(crate) async fn [<get_ $plural>](&self, ids: &Vec<$id_type>) -> Result<std::collections::BTreeMap<$id_type, Option<$type>>, crate::errors::DataAccessError> {
-                let span = tracing::trace_span!(concat!("db.get.", stringify!($plural)));
+            pub(crate) async fn [<get_ $plural>](&self, metrics: &Option<std::sync::Arc<crate::metrics::Metrics>>, ids: &Vec<$id_type>) -> Result<std::collections::BTreeMap<$id_type, Option<$type>>, crate::errors::DataAccessError> {
+                use crate::metrics::RegisterDatabaseRequest;
+
+                let operation = concat!("db.get.", stringify!($plural));
+                let span = tracing::trace_span!("database_operation", operation= %operation);
+
                 tracing::Instrument::instrument(
                     async move {
                         match self {
                             crate::data::Database::Postgres { pool } => {
+                                let start = std::time::Instant::now();
+
                                 let mut query = $pg_query_fn(ids);
                                 let sql= query.build_query_as::<$type>();
-                                let result = sql.fetch_all(pool).await?;
+                                let result = sql.fetch_all(pool).await;
+
+                                metrics.register_database_request(&operation, start.elapsed().as_millis() as u64, result.is_ok());
+
+                                let result = result?;
         
                                 // Create a map of found items using owned values
                                 let found_items: std::collections::BTreeMap<$id_type, $type> = result
@@ -336,17 +378,25 @@ macro_rules! default_db_delete_fn {
         $pg_query_fn:path
     ) => {
         paste::paste! {
-            pub(crate) async fn [<delete_ $singular>](&self, id: &$id_type) -> Result<u64, crate::errors::DataAccessError> {
-                let span = tracing::trace_span!(concat!("db.delete.", stringify!($singular)));
+            pub(crate) async fn [<delete_ $singular>](&self, metrics: &Option<std::sync::Arc<crate::metrics::Metrics>>, id: &$id_type) -> Result<u64, crate::errors::DataAccessError> {
+                use crate::metrics::RegisterDatabaseRequest;
+
+                let operation = concat!("db.delete.", stringify!($singular));
+                let span = tracing::trace_span!("database_operation", operation= %operation);
+
                 tracing::Instrument::instrument(
                     async move {
                         match self {
                             crate::data::Database::Postgres { pool } => {
+                                let start = std::time::Instant::now();
+
                                 let mut query = $pg_query_fn(id);
                                 let sql = query.build();
-                                let result = sql.execute(pool).await?;
-        
-                                Ok(result.rows_affected())
+                                let result = sql.execute(pool).await;
+
+                                metrics.register_database_request(&operation, start.elapsed().as_millis() as u64, result.is_ok());
+
+                                Ok(result?.rows_affected())
                             }
                         }
                     }, span

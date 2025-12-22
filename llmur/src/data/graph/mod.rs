@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::sync::Arc;
 use crate::data::connection::Connection;
 use crate::data::connection_deployment::{ConnectionDeployment, ConnectionDeploymentId};
 use crate::data::deployment::{Deployment, DeploymentId};
@@ -15,6 +16,7 @@ use uuid::Uuid;
 use futures::future::try_join_all;
 use tracing::{instrument, trace_span, Instrument};
 use crate::data::load_balancer::LoadBalancingStrategy;
+use crate::metrics::Metrics;
 
 pub(crate) mod usage_stats;
 pub(crate) mod local_store;
@@ -219,11 +221,11 @@ impl DataAccess {
     #[instrument(
         level="trace",
         name = "get.graph",
-        skip(self, api_key, application_secret)
+        skip(self, api_key, application_secret, metrics)
     )]
-    pub async fn get_graph(&self, api_key: &str, model_name: &str, skip_local_cache: bool, local_cache_ttl_ms: u32, application_secret: &Uuid, ts: &DateTime<Utc>) -> Result<Graph, GraphLoadError> {
+    pub async fn get_graph(&self, api_key: &str, model_name: &str, skip_local_cache: bool, local_cache_ttl_ms: u32, application_secret: &Uuid, ts: &DateTime<Utc>, metrics: &Option<Arc<Metrics>>) -> Result<Graph, GraphLoadError> {
         // Step 1: Get Graph Data
-        let graph_data = self.get_graph_data(api_key, model_name, skip_local_cache, &ts, local_cache_ttl_ms, application_secret).await?;
+        let graph_data = self.get_graph_data(api_key, model_name, skip_local_cache, &ts, local_cache_ttl_ms, application_secret, metrics).await?;
 
         let stats_span = trace_span!("get.graph.usage");
         let graph = async move {
@@ -295,9 +297,9 @@ impl DataAccess {
     #[instrument(
         level="trace",
         name = "get.graph.data",
-        skip(self, api_key, application_secret)
+        skip(self, api_key, application_secret, metrics)
     )]
-    async fn get_graph_data(&self, api_key: &str, model_name: &str, skip_local_cache: bool, now_utc: &DateTime<Utc>, local_cache_ttl_ms: u32, application_secret: &Uuid) -> Result<GraphData, GraphLoadError> {
+    async fn get_graph_data(&self, api_key: &str, model_name: &str, skip_local_cache: bool, now_utc: &DateTime<Utc>, local_cache_ttl_ms: u32, application_secret: &Uuid, metrics: &Option<Arc<Metrics>>) -> Result<GraphData, GraphLoadError> {
         let id = GraphDataId::new(model_name, api_key);
 
         if !skip_local_cache {
@@ -306,44 +308,44 @@ impl DataAccess {
             }
         }
 
-        let graph_data = self.get_graph_data_from_db(id, application_secret).await?;
+        let graph_data = self.get_graph_data_from_db(id, application_secret, metrics).await?;
 
         self.cache.set_local_graph(graph_data.clone());
 
         Ok(graph_data)
     }
 
-    async fn get_graph_data_from_db(&self, id: GraphDataId, application_secret: &Uuid) -> Result<GraphData, GraphLoadError> {
+    async fn get_graph_data_from_db(&self, id: GraphDataId, application_secret: &Uuid, metrics: &Option<Arc<Metrics>>) -> Result<GraphData, GraphLoadError> {
         println!("Loading Graph");
-        let virtual_key = self.get_virtual_key(&id.virtual_key_id, application_secret).await?
+        let virtual_key = self.get_virtual_key(&id.virtual_key_id, application_secret, metrics).await?
             .ok_or(GraphLoadError::InvalidVirtualKey)?;
         println!("Loaded virtual key");
 
-        let deployment: Deployment = self.search_deployments(&Some(id.model_name.to_string())).await?
+        let deployment: Deployment = self.search_deployments(&Some(id.model_name.to_string()), metrics).await?
             .first()
             .ok_or(GraphLoadError::InvalidDeploymentName)?
             .clone();
         println!("Loaded deployment");
 
-        let project = self.get_project(&virtual_key.project_id).await?
+        let project = self.get_project(&virtual_key.project_id, metrics).await?
             .ok_or(GraphLoadError::InconsistentGraphDataError(InconsistentGraphDataError::InvalidProject))?;
         println!("Loaded project");
 
-        let virtual_key_deployment = self.search_virtual_key_deployments(&Some(id.virtual_key_id.clone()), &Some(deployment.id.clone())).await?
+        let virtual_key_deployment = self.search_virtual_key_deployments(&Some(id.virtual_key_id.clone()), &Some(deployment.id.clone()), metrics).await?
             .first()
             .ok_or(GraphLoadError::InvalidVirtualKeyDeployment)?
             .clone();
         println!("Loaded virtual key deployment");
 
         // Load connection deployments - If any None values are found it is an inconsistency and should error out
-        let connection_deployments = self.get_connection_deployments(&deployment.connections).await?
+        let connection_deployments = self.get_connection_deployments(&deployment.connections, metrics).await?
             .into_values()
             .collect::<Option<Vec<ConnectionDeployment>>>()
             .ok_or(GraphLoadError::InconsistentGraphDataError(InconsistentGraphDataError::InvalidConnectionDeployments))?;
         println!("Loaded connection deployments");
 
         // Load connections - If any None values are found it is an inconsistency and should error out
-        let connections = self.get_connections(&connection_deployments.iter().map(|cd| cd.connection_id).collect(), application_secret).await?
+        let connections = self.get_connections(&connection_deployments.iter().map(|cd| cd.connection_id).collect(), application_secret, metrics).await?
             .into_values()
             .collect::<Option<Vec<Connection>>>()
             .ok_or(GraphLoadError::InconsistentGraphDataError(InconsistentGraphDataError::InvalidConnection))?;

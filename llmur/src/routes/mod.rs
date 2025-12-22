@@ -85,7 +85,7 @@ pub(crate) async fn get_graph(
 ) -> Result<Json<Graph>, LLMurError> {
     let graph: Result<Graph, GraphError> = state
         .data
-        .get_graph(&key, &deployment, false, 10000, &state.application_secret, &Utc::now())
+        .get_graph(&key, &deployment, false, 10000, &state.application_secret, &Utc::now(), &state.metrics)
         .await
         .map_err(|e| e.into());
     Ok(Json(graph?))

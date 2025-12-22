@@ -31,7 +31,7 @@ pub(crate) async fn create_session_token(
         password: password_clear
     } = payload;
 
-    let user = state.data.get_user_with_email(&email).await?.ok_or(AuthenticationError::UserEmailNotFound)?;
+    let user = state.data.get_user_with_email(&email, &state.metrics).await?.ok_or(AuthenticationError::UserEmailNotFound)?;
 
     let status = validate_password(
         &password_clear,
@@ -50,6 +50,7 @@ pub(crate) async fn create_session_token(
     let token = state.data.create_session_token(
         &token_id,
         &user.id,
+        &state.metrics
     ).await?;
 
     Ok(Json(GetSessionTokenResult {

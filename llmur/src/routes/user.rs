@@ -45,6 +45,7 @@ pub(crate) async fn create_user(
                 false,
                 &payload.role.unwrap_or(ApplicationRole::Member),
                 &state.application_secret,
+                &state.metrics
             ).await?;
 
             Ok(Json(user.into()))
@@ -71,7 +72,7 @@ pub(crate) async fn get_user(
 
     match user_context {
         UserContext::MasterUser => {
-            let user = state.data.get_user(&id).await?.ok_or(DataAccessError::ResourceNotFound)?;
+            let user = state.data.get_user(&id, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?;
             Ok(Json(user.into()))
         }
         UserContext::WebAppUser { user, .. } => {
@@ -119,10 +120,10 @@ pub(crate) async fn delete_user(
 
     let result = match user_context {
         UserContext::MasterUser => {
-            state.data.delete_user(&id).await?
+            state.data.delete_user(&id, &state.metrics).await?
         }
         UserContext::WebAppUser { user, .. } => {
-            if id == user.id { state.data.delete_user(&id).await? }
+            if id == user.id { state.data.delete_user(&id, &state.metrics).await? }
             else { Err(AuthorizationError::AccessDenied)? }
         }
     };

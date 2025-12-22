@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::membership::MembershipId;
 use crate::data::user::UserId;
@@ -12,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use sqlx::types::Json;
 use uuid::Uuid;
+use crate::metrics::Metrics;
 
 // region:    --- Main Model
 #[derive(Debug, Clone, sqlx::Type, PartialEq, Serialize, Deserialize)]
@@ -83,19 +85,19 @@ impl DataAccess {
     #[tracing::instrument(
         level="trace",
         name = "get.project",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn get_project(&self, id: &ProjectId) -> Result<Option<Project>, DataAccessError> {
-        self.__get_project(id, &None).await
+    pub async fn get_project(&self, id: &ProjectId, metrics: &Option<Arc<Metrics>>) -> Result<Option<Project>, DataAccessError> {
+        self.__get_project(id, &None, metrics).await
     }
 
     #[tracing::instrument(
         level="trace",
         name = "create.project",
-        skip(self, owner),
+        skip(self, owner, metrics),
         fields(
             owner = %owner.map(|id| id.0.to_string()).unwrap_or("None".to_string()),
         )
@@ -107,18 +109,19 @@ impl DataAccess {
         budget_limits: &Option<BudgetLimits>,
         request_limits: &Option<RequestLimits>,
         token_limits: &Option<TokenLimits>,
+        metrics: &Option<Arc<Metrics>>
     ) -> Result<Project, DataAccessError> {
         let project_id = match owner {
             None => {
                 self.database
-                    .insert_project(name, budget_limits, request_limits, token_limits)
+                    .insert_project(metrics, name, budget_limits, request_limits, token_limits)
                     .await?
             }
-            Some(user) => self.database.insert_project_with_owner(name, user, budget_limits, request_limits, token_limits).await?.0,
+            Some(user) => self.database.insert_project_with_owner(name, user, budget_limits, request_limits, token_limits, metrics).await?.0,
         };
 
         let record = self
-            .__get_project(&project_id, &None)
+            .__get_project(&project_id, &None, metrics)
             .await
             .map_err(|e| crate::errors::DataAccessError::FailedToGetCreatedResource(Box::new(e), "project".to_string(), project_id.0))?
             .ok_or(crate::errors::DataAccessError::CreatedResourceNotFound("project".to_string(), project_id.0))?;
@@ -130,13 +133,13 @@ impl DataAccess {
     #[tracing::instrument(
         level="trace",
         name = "delete.project",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn delete_project(&self, id: &ProjectId) -> Result<u64, DataAccessError> {
-        self.__delete_project(id).await
+    pub async fn delete_project(&self, id: &ProjectId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+        self.__delete_project(id, metrics).await
     }
 }
 
@@ -163,7 +166,8 @@ impl Database {
         owner: &UserId,
         budget_limits: &Option<BudgetLimits>,
         request_limits: &Option<RequestLimits>,
-        token_limits: &Option<TokenLimits>
+        token_limits: &Option<TokenLimits>,
+        metrics: &Option<Arc<Metrics>>
     ) -> Result<(ProjectId, MembershipId), DataAccessError> {
         match self {
             Database::Postgres { pool } => {

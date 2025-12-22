@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Execute, FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 use crate::data::graph::{ConnectionNode, Graph};
+use crate::metrics::Metrics;
 
 // region:    --- Main Model
 #[derive(
@@ -72,26 +73,26 @@ impl DataAccess {
     #[tracing::instrument(
         level="trace",
         name = "get.request_log",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn get_request_log(&self, id: &RequestLogId) -> Result<Option<RequestLog>, DataAccessError> {
-        self.__get_request_log(id, &None).await
+    pub async fn get_request_log(&self, id: &RequestLogId, metrics: &Option<Arc<Metrics>>) -> Result<Option<RequestLog>, DataAccessError> {
+        self.__get_request_log(id, &None, metrics).await
     }
 
 
     #[tracing::instrument(
         level="trace",
         name = "delete.project_invite_code",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn delete_request_log(&self, id: &RequestLogId) -> Result<u64, DataAccessError> {
-        self.__delete_request_log(id).await
+    pub async fn delete_request_log(&self, id: &RequestLogId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+        self.__delete_request_log(id, metrics).await
     }
 }
 
@@ -132,7 +133,7 @@ default_access_fns!(
 
 // region:    --- Database Access
 impl Database {
-    pub async fn insert_request_logs(&self, request_logs: &Vec<Arc<RequestLogData>>) -> Result<u64, DataAccessError> {
+    pub async fn insert_request_logs(&self, request_logs: &Vec<Arc<RequestLogData>>, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
         match self {
             Database::Postgres { pool } => {
                 let mut query = pg_insert_m(request_logs);

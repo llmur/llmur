@@ -37,6 +37,7 @@ pub(crate) async fn create_project_invite_code(
                 &payload.role.unwrap_or(ProjectRole::Guest),
                 &payload.validity,
                 &payload.code_length,
+                &state.metrics
             ).await?;
 
             Ok(Json(invite.into()))
@@ -87,7 +88,7 @@ pub(crate) async fn delete_project_invite_code(
 
     match user_context {
         UserContext::MasterUser => {
-            let result = state.data.delete_invite_code(&id).await?;
+            let result = state.data.delete_invite_code(&id, &state.metrics).await?;
 
             Ok(Json(StatusResponse {
                 success: result != 0,

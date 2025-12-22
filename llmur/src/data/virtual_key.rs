@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use sqlx::types::Json;
@@ -10,6 +11,7 @@ use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::project::ProjectId;
 use crate::data::virtual_key_deployment::VirtualKeyDeploymentId;
 use crate::errors::{DataAccessError, DbRecordConversionError};
+use crate::metrics::Metrics;
 
 // region:    --- Main Model
 #[derive(
@@ -85,8 +87,8 @@ impl_with_id_parameter_for_struct!(VirtualKey, VirtualKeyId);
 
 // region:    --- Data Access
 impl DataAccess {
-    pub async fn get_virtual_key(&self, id: &VirtualKeyId, application_secret: &Uuid) -> Result<Option<VirtualKey>, DataAccessError> {
-        self.__get_virtual_key(id, &Some(application_secret.clone())).await
+    pub async fn get_virtual_key(&self, id: &VirtualKeyId, application_secret: &Uuid, metrics: &Option<Arc<Metrics>>) -> Result<Option<VirtualKey>, DataAccessError> {
+        self.__get_virtual_key(id, &Some(application_secret.clone()), metrics).await
     }
 
     pub async fn create_virtual_key(
@@ -99,7 +101,8 @@ impl DataAccess {
         budget_limits: &Option<BudgetLimits>,
         request_limits: &Option<RequestLimits>,
         token_limits: &Option<TokenLimits>,
-        application_secret: &Uuid
+        application_secret: &Uuid,
+        metrics: &Option<Arc<Metrics>>
     ) -> Result<VirtualKey, DataAccessError> {
         let key = generate_random_api_key(key_suffix_length);
         let salt = Uuid::now_v7();
@@ -120,11 +123,12 @@ impl DataAccess {
             request_limits,
             token_limits,
             &Some(application_secret.clone()),
+            metrics
         ).await
     }
 
-    pub async fn delete_virtual_key(&self, id: &VirtualKeyId) -> Result<u64, DataAccessError> {
-        self.__delete_virtual_key(id).await
+    pub async fn delete_virtual_key(&self, id: &VirtualKeyId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+        self.__delete_virtual_key(id, metrics).await
     }
 }
 

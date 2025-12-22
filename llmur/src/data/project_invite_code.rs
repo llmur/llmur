@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::data::project::{ProjectId, ProjectRole};
 use crate::data::utils::{generate_random_alphanumeric_string, new_uuid_v5_from_string, parse_and_add_to_current_ts, ConvertInto};
 use crate::data::DataAccess;
@@ -7,6 +8,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
+use crate::metrics::Metrics;
 
 // region:    --- Main Model
 #[derive(
@@ -57,26 +59,26 @@ impl DataAccess {
     #[tracing::instrument(
         level="trace",
         name = "get.project_invite_code",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn get_invite_code(&self, id: &ProjectInviteCodeId) -> Result<Option<ProjectInviteCode>, DataAccessError> {
-        self.__get_project_invite_code(id, &None).await
+    pub async fn get_invite_code(&self, id: &ProjectInviteCodeId, metrics: &Option<Arc<Metrics>>) -> Result<Option<ProjectInviteCode>, DataAccessError> {
+        self.__get_project_invite_code(id, &None, metrics).await
     }
     
     #[tracing::instrument(
         level="trace",
         name = "create.project_invite_code",
-        skip(self, project_id, validity, code_length),
+        skip(self, project_id, validity, code_length, metrics),
         fields(
             project_id = %project_id.0,
             validity = %validity.clone().unwrap_or("Not set".to_string()),
             code_length = %code_length.unwrap_or(10)
         )
     )]
-    pub async fn create_invite_code(&self, project_id: &ProjectId, assign_role: &ProjectRole, validity: &Option<String>, code_length: &Option<usize>) -> Result<ProjectInviteCode, DataAccessError> {
+    pub async fn create_invite_code(&self, project_id: &ProjectId, assign_role: &ProjectRole, validity: &Option<String>, code_length: &Option<usize>, metrics: &Option<Arc<Metrics>>) -> Result<ProjectInviteCode, DataAccessError> {
         let code = &generate_random_alphanumeric_string(code_length.unwrap_or(10));
 
         let valid_until: Option<DateTime<Utc>> = if let Some(validity) = validity {
@@ -86,19 +88,19 @@ impl DataAccess {
             )
         } else { None };
 
-        self.__create_project_invite_code(project_id, &code, assign_role, &valid_until, &None).await
+        self.__create_project_invite_code(project_id, &code, assign_role, &valid_until, &None, metrics).await
     }
 
     #[tracing::instrument(
         level="trace",
         name = "delete.project_invite_code",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn delete_invite_code(&self, id: &ProjectInviteCodeId) -> Result<u64, DataAccessError> {
-        self.__delete_project_invite_code(id).await
+    pub async fn delete_invite_code(&self, id: &ProjectInviteCodeId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+        self.__delete_project_invite_code(id, metrics).await
     }
 }
 

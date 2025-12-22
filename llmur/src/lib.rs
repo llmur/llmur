@@ -26,13 +26,15 @@ pub struct LLMurState {
     pub metrics: Option<Arc<Metrics>>
 }
 
-pub fn router(access: DataAccess, application_secret: String, master_keys: Option<BTreeSet<String>>, meter: Option<Meter>) -> Router {
+pub fn router(state: Arc<LLMurState>/*, application_secret: String, master_keys: Option<BTreeSet<String>>, meter: Option<Meter>*/) -> Router {
+    /*
     let state: Arc<LLMurState> = Arc::new(LLMurState {
         data: Box::leak(Box::new(access)),
         application_secret: utils::new_uuid_v5_from_string(&application_secret),
         master_keys: master_keys.unwrap_or_default(),
         metrics: meter.map(|m| Arc::new(Metrics::new(m))),
     });
+     */
 
     Router::new()
         .nest("/admin", admin_routes(state.clone()))

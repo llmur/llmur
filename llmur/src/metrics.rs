@@ -5,7 +5,7 @@ use opentelemetry::metrics::{Counter, Histogram, Meter};
 use std::sync::Arc;
 use reqwest::StatusCode;
 
-pub(crate) struct Metrics {
+pub struct Metrics {
     // Metrics associated with all HTTP requests
     pub(crate) http_request_counter: Counter<u64>,
     pub(crate) http_request_duration: Histogram<u64>,
@@ -15,10 +15,14 @@ pub(crate) struct Metrics {
     pub(crate) proxy_request_duration: Histogram<u64>,
     pub(crate) proxy_request_input_tokens: Histogram<u64>,
     pub(crate) proxy_request_output_tokens: Histogram<u64>,
+
+    // Metrics associated with database requests
+    pub(crate) db_request_counter: Counter<u64>,
+    pub(crate) db_request_duration: Histogram<u64>,
 }
 
 impl Metrics {
-    pub(crate) fn new(meter: Meter) -> Self {
+    pub fn new(meter: Meter) -> Self {
         Metrics {
             http_request_counter: meter
                 .u64_counter("http_request_total")
@@ -67,10 +71,26 @@ impl Metrics {
                     500000.0, 750000.0,
                 ])
                 .build(),
+
+
+            db_request_counter: meter
+                .u64_counter("database_request_total")
+                .with_description("Number of requests that hit the database")
+                .build(),
+            db_request_duration: meter
+                .u64_histogram("database_request_duration")
+                .with_unit("ms")
+                .with_description("Database request duration time")
+                .with_boundaries(vec![
+                    0.0, 5.0, 10.0, 25.0, 50.0, 75.0, 100.0, 250.0, 500.0, 750.0, 1000.0, 2500.0,
+                    5000.0, 7500.0, 10000.0, 25000.0
+                ])
+                .build(),
         }
     }
 }
 
+// region:    --- RegisterHttpRequest
 pub(crate) trait RegisterHttpRequest {
     fn register_http_request(&self, path: String, method: String, elapsed: u64);
 }
@@ -85,6 +105,18 @@ impl RegisterHttpRequest for Metrics {
         self.http_request_duration.record(elapsed, &attributes);
     }
 }
+
+impl RegisterHttpRequest for Option<Arc<Metrics>> {
+    fn register_http_request(&self, path: String, method: String, elapsed: u64) {
+        if let Some(metrics) = self {
+            metrics.register_http_request(path, method, elapsed);
+        }
+    }
+}
+
+// endregion: --- RegisterHttpRequest
+
+// region:    --- RegisterProxyRequest
 
 pub(crate) trait RegisterProxyRequest {
     fn register_proxy_request(
@@ -115,9 +147,11 @@ impl RegisterProxyRequest for Metrics {
         let deployment_id_attr = KeyValue::new("deployment_id", deployment_id.0.to_string());
         let connection_id_attr = KeyValue::new("connection_id", connection_id.0.to_string());
         let provider_attr = KeyValue::new("provider", provider);
+        let path_attr = KeyValue::new("path", path);
+        let status_attr = KeyValue::new("status_code", status_code.unwrap_or(StatusCode::INTERNAL_SERVER_ERROR).as_u16().to_string());
 
-        let attributes = vec![deployment_id_attr, connection_id_attr, provider_attr];
-        
+        let attributes = vec![deployment_id_attr, connection_id_attr, provider_attr, path_attr, status_attr];
+
         self.proxy_request_counter.add(1, &attributes);
         self.proxy_request_duration.record(elapsed, &attributes);
         if let Some(input_tokens) = input_tokens {
@@ -125,14 +159,6 @@ impl RegisterProxyRequest for Metrics {
         }
         if let Some(output_tokens) = output_tokens {
             self.proxy_request_output_tokens.record(output_tokens, &attributes);
-        }
-    }
-}
-
-impl RegisterHttpRequest for Option<Arc<Metrics>> {
-    fn register_http_request(&self, path: String, method: String, elapsed: u64) {
-        if let Some(metrics) = self {
-            metrics.register_http_request(path, method, elapsed);
         }
     }
 }
@@ -163,3 +189,50 @@ impl RegisterProxyRequest for Option<Arc<Metrics>> {
         }
     }
 }
+// endregion: --- RegisterProxyRequest
+
+// region:    --- RegisterDatabaseRequest
+
+pub(crate) trait RegisterDatabaseRequest {
+    fn register_database_request(
+        &self,
+        operation: &str,
+        elapsed: u64,
+        success: bool
+    );
+}
+
+impl RegisterDatabaseRequest for Metrics {
+    fn register_database_request(
+        &self,
+        operation: &str,
+        elapsed: u64,
+        success: bool
+    ) {
+        let operation_attr = KeyValue::new("operation", operation.to_string());
+        let success_attr = KeyValue::new("success", success);
+        
+        let attributes = vec![operation_attr, success_attr];
+
+        self.db_request_counter.add(1, &attributes);
+        self.db_request_duration.record(elapsed, &attributes);
+    }
+}
+
+impl RegisterDatabaseRequest for Option<Arc<Metrics>> {
+    fn register_database_request(
+        &self,
+        operation: &str,
+        elapsed: u64,
+        success: bool
+    ) {
+        if let Some(metrics) = self {
+            metrics.register_database_request(
+                operation,
+                elapsed,
+                success
+            );
+        }
+    }
+}
+// endregion: --- RegisterDatabaseRequest

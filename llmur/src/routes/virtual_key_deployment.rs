@@ -33,7 +33,7 @@ pub(crate) async fn create_virtual_key_deployment(
     let user_context = ctx.require_authenticated_user()?;
     match user_context {
         UserContext::MasterUser => {
-            let result = state.data.create_virtual_key_deployment(&payload.virtual_key_id, &payload.deployment_id).await?;
+            let result = state.data.create_virtual_key_deployment(&payload.virtual_key_id, &payload.deployment_id, &state.metrics).await?;
             Ok(Json(result.into()))
         }
         UserContext::WebAppUser { user, .. } => {
@@ -56,7 +56,7 @@ pub(crate) async fn get_virtual_key_deployment(
 ) -> Result<Json<GetVirtualKeyDeploymentResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let vkd = state.data.get_virtual_key_deployment(&id).await?.ok_or(DataAccessError::ResourceNotFound)?;
+    let vkd = state.data.get_virtual_key_deployment(&id, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?;
 
     match user_context {
         UserContext::MasterUser => {
@@ -82,11 +82,11 @@ pub(crate) async fn delete_virtual_key_deployment(
 ) -> Result<Json<StatusResponse>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let vkd = state.data.get_virtual_key_deployment(&id).await?.ok_or(DataAccessError::ResourceNotFound)?; // TODO
+    let vkd = state.data.get_virtual_key_deployment(&id, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?; // TODO
 
     match user_context {
         UserContext::MasterUser => {
-            let result = state.data.delete_virtual_key_deployment(&vkd.id).await?;
+            let result = state.data.delete_virtual_key_deployment(&vkd.id, &state.metrics).await?;
             Ok(Json(StatusResponse {
                 success: result != 0,
                 message: None,

@@ -42,7 +42,7 @@ pub(crate) async fn create_project(
     let user_context = ctx.require_authenticated_user()?;
     match user_context {
         UserContext::MasterUser => {
-            let result = state.data.create_project(&payload.name, &None, &payload.budget_limits, &payload.request_limits, &payload.token_limits).await;
+            let result = state.data.create_project(&payload.name, &None, &payload.budget_limits, &payload.request_limits, &payload.token_limits, &state.metrics).await;
             let project = result?;
             Ok(Json(project.into()))
         }
@@ -51,7 +51,7 @@ pub(crate) async fn create_project(
                 return Err(AuthorizationError::AccessDenied.into());
             }
 
-            let project = state.data.create_project(&payload.name, &Some(user.id), &payload.budget_limits, &payload.request_limits, &payload.token_limits).await?;
+            let project = state.data.create_project(&payload.name, &Some(user.id), &payload.budget_limits, &payload.request_limits, &payload.token_limits, &state.metrics).await?;
 
             Ok(Json(project.into()))
         }
@@ -72,7 +72,7 @@ pub(crate) async fn get_project(
 ) -> Result<Json<GetProjectResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let project = state.data.get_project(&id).await?.ok_or(DataAccessError::ResourceNotFound)?;
+    let project = state.data.get_project(&id, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?;
 
     match user_context {
         UserContext::MasterUser => {
@@ -107,11 +107,11 @@ pub(crate) async fn delete_project(
 ) -> Result<Json<StatusResponse>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let project = state.data.get_project(&id).await?.ok_or(DataAccessError::ResourceNotFound)?;
+    let project = state.data.get_project(&id, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?;
 
     match user_context {
         UserContext::MasterUser => {
-            let result = state.data.delete_project(&project.id).await?;
+            let result = state.data.delete_project(&project.id, &state.metrics).await?;
             Ok(Json(StatusResponse {
                 success: result != 0,
                 message: None,
