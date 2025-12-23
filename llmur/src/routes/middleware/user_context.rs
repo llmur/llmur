@@ -1,5 +1,6 @@
+use std::collections::BTreeMap;
 use crate::data::session_token::SessionToken;
-use crate::data::user::User;
+use crate::data::user::{ApplicationRole, User};
 use crate::errors::{AuthenticationError, AuthorizationError, LLMurError};
 use crate::LLMurState;
 use axum::extract::{Request, State};
@@ -9,6 +10,8 @@ use axum::response::Response;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use crate::data::membership::{Membership, MembershipId};
+use crate::data::project::{ProjectId, ProjectRole};
 
 #[derive(Clone, Debug)]
 pub enum UserContext {
@@ -59,6 +62,74 @@ impl UserContext {
     pub fn unauthenticated() -> UserContextExtractionResult {
         Err(Arc::new(AuthenticationError::Unauthenticated))
     }
+}
+
+impl UserContext {
+    // region:    --- Authorization Helpers
+
+    /// Check if user has admin access to a project
+    pub(crate) async fn has_project_admin_access(
+        &self,
+        state: Arc<LLMurState>,
+        project_id: &ProjectId,
+    ) -> Result<bool, LLMurError> {
+        match self {
+            UserContext::MasterUser => Ok(true),
+            UserContext::WebAppUser { user, .. } => {
+                if user.role == ApplicationRole::Admin {
+                    return Ok(true);
+                }
+
+                let memberships: BTreeMap<MembershipId, Membership> = state
+                    .data
+                    .get_memberships(&user.memberships, &state.metrics)
+                    .await?
+                    .into_iter()
+                    .filter_map(|(k, v)| v.map(|val| (k, val)))
+                    .collect();
+
+                Ok(memberships
+                    .values()
+                    .find(|&v| v.project_id == *project_id)
+                    .map(|membership| membership.role == ProjectRole::Admin)
+                    .unwrap_or(false))
+            }
+        }
+    }
+
+    /// Check if user has developer or admin access to a project
+    pub(crate) async fn has_project_developer_access(
+        &self,
+        state: Arc<LLMurState>,
+        project_id: &ProjectId,
+    ) -> Result<bool, LLMurError> {
+        match self {
+            UserContext::MasterUser => Ok(true),
+            UserContext::WebAppUser { user, .. } => {
+                if user.role == ApplicationRole::Admin {
+                    return Ok(true);
+                }
+
+                let memberships: BTreeMap<MembershipId, Membership> = state
+                    .data
+                    .get_memberships(&user.memberships, &state.metrics)
+                    .await?
+                    .into_iter()
+                    .filter_map(|(k, v)| v.map(|val| (k, val)))
+                    .collect();
+
+                Ok(memberships
+                    .values()
+                    .find(|&v| v.project_id == *project_id)
+                    .map(|membership| {
+                        membership.role == ProjectRole::Admin
+                            || membership.role == ProjectRole::Developer
+                    })
+                    .unwrap_or(false))
+            }
+        }
+    }
+    // endregion: --- Authorization Helpers
 }
 
 pub(crate) trait AuthorizationManager {

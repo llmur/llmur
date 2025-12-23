@@ -33,66 +33,28 @@ pub(crate) async fn create_key(
     Json(payload): Json<CreateVirtualKeyPayload>,
 ) -> Result<Json<GetVirtualKeyResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
-    match user_context {
-        UserContext::MasterUser => {
-            let key = state
-                .data
-                .create_virtual_key(
-                    32,
-                    &payload.alias,
-                    &payload.description,
-                    false,
-                    &payload.project_id,
-                    &payload.budget_limits,
-                    &payload.request_limits,
-                    &payload.token_limits,
-                    &state.application_secret,
-                    &state.metrics,
-                )
-                .await?;
 
-            Ok(Json(key.into()))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            // Allow if the user is a service admin
-            if user.role == ApplicationRole::Admin || {
-                // Or if the user is an admin of the project
-                let memberships: BTreeMap<MembershipId, Membership> = state
-                    .data
-                    .get_memberships(&user.memberships, &state.metrics)
-                    .await?
-                    .into_iter()
-                    .filter_map(|(k, v)| v.map(|val| (k, val)))
-                    .collect();
-
-                memberships
-                    .values()
-                    .find(|&v| v.project_id == payload.project_id)
-                    .map(|membership| membership.role == ProjectRole::Admin)
-                    .unwrap_or(false)
-            } {
-                let key = state
-                    .data
-                    .create_virtual_key(
-                        32,
-                        &payload.alias,
-                        &payload.description,
-                        false,
-                        &payload.project_id,
-                        &payload.budget_limits,
-                        &payload.request_limits,
-                        &payload.token_limits,
-                        &state.application_secret,
-                        &state.metrics,
-                    )
-                    .await?;
-
-                Ok(Json(key.into()))
-            } else {
-                Err(AuthorizationError::AccessDenied)?
-            }
-        }
+    if !user_context.has_project_admin_access(state.clone(), &payload.project_id).await? {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    let key = state
+        .data
+        .create_virtual_key(
+            32,
+            &payload.alias,
+            &payload.description,
+            false,
+            &payload.project_id,
+            &payload.budget_limits,
+            &payload.request_limits,
+            &payload.token_limits,
+            &state.application_secret,
+            &state.metrics,
+        )
+        .await?;
+
+    Ok(Json(key.into()))
 }
 
 #[tracing::instrument(
@@ -115,35 +77,11 @@ pub(crate) async fn get_key(
         .await?
         .ok_or(DataAccessError::ResourceNotFound)?;
 
-    match user_context {
-        UserContext::MasterUser => Ok(Json(key.into())),
-        UserContext::WebAppUser { user, .. } => {
-            // Allow if the user is a service admin
-            if user.role == ApplicationRole::Admin || {
-                // Or if the user is an admin or developer of the project that the key belongs to
-                let memberships: BTreeMap<MembershipId, Membership> = state
-                    .data
-                    .get_memberships(&user.memberships, &state.metrics)
-                    .await?
-                    .into_iter()
-                    .filter_map(|(k, v)| v.map(|val| (k, val)))
-                    .collect();
-
-                memberships
-                    .values()
-                    .find(|&v| v.project_id == key.project_id)
-                    .map(|membership| {
-                        membership.role == ProjectRole::Admin
-                            || membership.role == ProjectRole::Developer
-                    })
-                    .unwrap_or(false)
-            } {
-                Ok(Json(key.into()))
-            } else {
-                Err(AuthorizationError::AccessDenied)?
-            }
-        }
+    if !user_context.has_project_developer_access(state.clone(), &key.project_id).await? {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    Ok(Json(key.into()))
 }
 
 #[tracing::instrument(
@@ -166,48 +104,19 @@ pub(crate) async fn delete_key(
         .await?
         .ok_or(DataAccessError::ResourceNotFound)?;
 
-    match user_context {
-        UserContext::MasterUser => {
-            let result = state
-                .data
-                .delete_virtual_key(&key.id, &state.metrics)
-                .await?;
-            Ok(Json(StatusResponse {
-                success: result != 0,
-                message: None,
-            }))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            // Allow if the user is a service admin
-            if user.role == ApplicationRole::Admin || {
-                // Or if the user is an admin of the project that the key belongs to
-                let memberships: BTreeMap<MembershipId, Membership> = state
-                    .data
-                    .get_memberships(&user.memberships, &state.metrics)
-                    .await?
-                    .into_iter()
-                    .filter_map(|(k, v)| v.map(|val| (k, val)))
-                    .collect();
-
-                memberships
-                    .values()
-                    .find(|&v| v.project_id == key.project_id)
-                    .map(|membership| membership.role == ProjectRole::Admin)
-                    .unwrap_or(false)
-            } {
-                let result = state
-                    .data
-                    .delete_virtual_key(&key.id, &state.metrics)
-                    .await?;
-                Ok(Json(StatusResponse {
-                    success: result != 0,
-                    message: None,
-                }))
-            } else {
-                Err(AuthorizationError::AccessDenied)?
-            }
-        }
+    if !user_context.has_project_admin_access(state.clone(), &key.project_id).await? {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    let result = state
+        .data
+        .delete_virtual_key(&key.id, &state.metrics)
+        .await?;
+
+    Ok(Json(StatusResponse {
+        success: result != 0,
+        message: None,
+    }))
 }
 
 // endregion: --- Routes
