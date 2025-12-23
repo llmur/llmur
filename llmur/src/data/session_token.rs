@@ -147,9 +147,11 @@ default_database_access_fns!(
 );
 // region:      --- Postgres Queries
 
+#[allow(unused)]
 pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
-    todo!()
+    unimplemented!()
 }
+
 pub(crate) fn pg_insert<'a>(id: &'a SessionTokenId, user_id: &'a UserId, expires_at: &'a DateTime<Utc>) -> QueryBuilder<'a, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         INSERT INTO session_tokens
@@ -181,9 +183,12 @@ pub(crate) fn pg_get(id: &SessionTokenId) -> QueryBuilder<Postgres> {
     // Return builder
     query
 }
+
+#[allow(unused)]
 pub(crate) fn pg_getm(ids: &Vec<SessionTokenId>) -> QueryBuilder<Postgres> {
-    todo!()
+    unimplemented!()
 }
+
 pub(crate) fn pg_delete(id: &SessionTokenId) -> QueryBuilder<Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         DELETE FROM session_tokens

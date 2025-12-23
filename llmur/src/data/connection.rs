@@ -264,9 +264,11 @@ default_database_access_fns!(
     search => { }
 );
 // region:      --- Postgres Queries
+#[allow(unused)]
 pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
-    todo!()
+    unimplemented!()
 }
+
 pub(crate) fn pg_insert<'a>(
     connection_info: &'a DbConnectionInfoColumn,
     budget_limits: &'a Option<BudgetLimits>,

@@ -121,8 +121,9 @@ default_database_access_fns!(
 );
 // region:      --- Postgres Queries
 
+#[allow(unused)]
 pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
-    todo!()
+    unimplemented!()
 }
 
 pub(crate) fn pg_insert<'a>(project_id: &'a ProjectId, user_id: &'a UserId, project_role: &'a ProjectRole) -> QueryBuilder<'a, Postgres> {
@@ -169,8 +170,9 @@ pub(crate) fn pg_get(id: &MembershipId) -> QueryBuilder<Postgres> {
     query
 }
 
+#[allow(unused)]
 pub(crate) fn pg_getm(ids: &Vec<MembershipId>) -> QueryBuilder<Postgres> {
-    todo!()
+    unimplemented!()
 }
 
 // endregion:   --- Postgres Queries

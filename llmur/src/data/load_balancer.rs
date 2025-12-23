@@ -32,7 +32,7 @@ impl DataAccess {
             strategy = ?graph.deployment.data.strategy
         )
     )]
-    pub fn get_next_connection<'a>(&self, graph: &'a Graph) -> Result<&'a ConnectionNode, GraphError> {
+    pub(crate) fn get_next_connection<'a>(&self, graph: &'a Graph) -> Result<&'a ConnectionNode, GraphError> {
         if graph.connections.is_empty() {
             return Err(GraphError::NoConnectionAvailable(MissingConnectionReason::DeploymentConnectionsNotSetup));
         }

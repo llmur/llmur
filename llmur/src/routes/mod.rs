@@ -73,7 +73,7 @@ pub(crate) struct StatusResponse {
 }
 
 #[derive(Deserialize)]
-struct Params {
+pub(crate) struct Params {
     key: String,
     deployment: String,
 }

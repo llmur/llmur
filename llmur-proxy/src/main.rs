@@ -1,31 +1,14 @@
 use crate::configuration::Configuration;
 use crate::utils::AsyncInto;
-use axum::{Router, ServiceExt};
+use axum::Router;
 use clap::Parser;
 use clap_derive::Parser;
-use llmur::data::DataAccess;
-use opentelemetry::logs::LoggerProvider;
-use opentelemetry::trace::TracerProvider;
-use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
-use opentelemetry_sdk::trace::{SdkTracerProvider, TraceError};
 use std::io::Error;
 use std::sync::Arc;
-use clap::parser::ValueSource::EnvVariable;
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
-use tracing_subscriber::EnvFilter;
 
-use opentelemetry_otlp::{LogExporter, MetricExporter, SpanExporter, WithExportConfig};
-use opentelemetry_sdk::logs::SdkLoggerProvider;
-use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
-use opentelemetry_sdk::propagation::TraceContextPropagator;
-use opentelemetry_sdk::{
-    Resource, runtime,
-    trace::{RandomIdGenerator, Sampler},
-};
 use tracing::{info, info_span};
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
 use llmur::LLMurState;
 
 mod configuration;

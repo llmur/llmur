@@ -209,8 +209,9 @@ default_database_access_fns!(
     search => { }
 );
 // region:      --- Postgres Queries
+#[allow(unused)]
 pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
-    todo!()
+    unimplemented!()
 }
 
 pub(crate) fn pg_get(id: &ProjectId) -> QueryBuilder<Postgres> {
@@ -231,8 +232,9 @@ pub(crate) fn pg_get(id: &ProjectId) -> QueryBuilder<Postgres> {
     query
 }
 
-pub(crate) fn pg_getm(ids: &Vec<ProjectId>) -> QueryBuilder<Postgres> {
-    todo!()
+#[allow(unused)]
+pub(crate) fn pg_getm(_ids: &Vec<ProjectId>) -> QueryBuilder<Postgres> {
+    unimplemented!()
 }
 
 pub(crate) fn pg_delete(id: &ProjectId) -> QueryBuilder<Postgres> {

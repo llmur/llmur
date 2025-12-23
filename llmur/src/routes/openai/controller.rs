@@ -3,7 +3,6 @@ use crate::errors::{GraphError, LLMurError, MissingConnectionReason, ProxyError}
 use crate::providers::{ExposesDeployment, ExposesUsage};
 use crate::routes::openai::request::OpenAiRequestData;
 use crate::routes::openai::response::{ProviderResponse, ProxyResponse};
-use std::collections::BTreeMap;
 
 use crate::data::request_log::{RequestLogData, RequestLogId};
 use axum::extract::FromRequest;
@@ -163,7 +162,7 @@ where
                 method: request_data_arc.method.clone(),
                 path: request_data_arc.path.clone(),
             },
-            ProviderResponse::JsonResponse { data, status_code } => RequestLogData {
+            ProviderResponse::JsonResponse { status_code, .. } => RequestLogData {
                 id: request_id,
                 attempt_number: attempt_number as i16,
                 graph: request_data_arc.graph.clone(),
@@ -246,25 +245,26 @@ where
     Ok(())
 }
 
+/*
 pub(crate) fn generate_usage_increments_map<I>(
-    data: Arc<OpenAiRequestData<I>>,
-    used_connection: Arc<ConnectionNode>,
+data: Arc<OpenAiRequestData<I>>,
+used_connection: Arc<ConnectionNode>,
 ) -> Result<(), ()>
 where
-    I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
+I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
 {
-    let mut map: BTreeMap<String, String> = BTreeMap::new();
+let mut map: BTreeMap<String, String> = BTreeMap::new();
 
-    todo!()
-    /*
-    let mut keys = Vec::with_capacity((self.connections.len() * 3 * 4) + (3 * 3 * 4));
-    keys.extend(MetricsUsageStats::<VirtualKey>::generate_all_keys(&self.virtual_key.id, now_utc));
-    keys.extend(MetricsUsageStats::<Deployment>::generate_all_keys(&self.deployment.id, now_utc));
-    keys.extend(MetricsUsageStats::<Project>::generate_all_keys(&self.project.id, now_utc));
-    keys.extend(MetricsUsageStats::<Connection>::generate_all_keys_for_vector(
-        self.connections.iter().map(|c| &c.id).collect(),
-        now_utc
-    ));
-    keys
-    */
+todo!()
+
+let mut keys = Vh_capacity((self.connections.len() * 3 * 4) + (3 * 3 * 4));
+keys.extend(MetricsUsageStats::<VirtualKey>::generate_all_keys(&self.virtual_key.id, now_utc));
+keys.extend(MetricsUsageStats::<Deployment>::generate_all_keys(&self.deployment.id, now_utc));
+keys.extend(MetricsUsageStats::<Project>::generate_all_keys(&self.project.id, now_utc));
+keys.extend(MetricsUsageStats::<Connection>::generate_all_keys_for_vector(
+    self.connections.iter().map(|c| &c.id).collect(),
+    now_utc
+));
+keys
 }
+*/

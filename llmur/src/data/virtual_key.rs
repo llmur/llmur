@@ -174,6 +174,7 @@ default_database_access_fns!(
 );
 // region:      --- Postgres Queries
 
+#[allow(unused)]
 pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
     todo!()
 }
@@ -210,14 +211,6 @@ pub(crate) fn pg_get(id: &VirtualKeyId) -> QueryBuilder<Postgres> {
 }
 
 pub(crate) fn pg_getm(ids: &Vec<VirtualKeyId>) -> QueryBuilder<Postgres> {
-
-    /*
-    -- Limits
-    maximum_requests_per_minute INTEGER NULL,
-    maximum_tokens_per_minute INTEGER NULL,
-    maximum_budget INTEGER NULL,
-    budget_rate budget_rate NOT NULL DEFAULT 'monthly',
-    */
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             vk.id,

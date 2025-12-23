@@ -181,20 +181,24 @@ default_database_access_fns!(
 );
 // region:      --- Postgres Queries
 
+#[allow(unused)]
 pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
-    todo!()
+    unimplemented!()
 }
 
+#[allow(unused)]
 pub(crate) fn pg_get(id: &RequestLogId) -> QueryBuilder<Postgres> {
-    todo!()
+    unimplemented!()
 }
 
+#[allow(unused)]
 pub(crate) fn pg_getm(ids: &Vec<RequestLogId>) -> QueryBuilder<Postgres> {
-    todo!()
+    unimplemented!()
 }
 
+#[allow(unused)]
 pub(crate) fn pg_delete(id: &RequestLogId) -> QueryBuilder<Postgres> {
-    todo!()
+    unimplemented!()
 }
 
 pub(crate) fn pg_insert_m(
@@ -256,6 +260,7 @@ pub(crate) fn pg_insert_m(
     query
 }
 
+#[allow(unused)]
 pub(crate) fn pg_insert<'a>(
     id: &'a RequestLogId,
     virtual_key_id: &'a VirtualKeyId,
@@ -282,7 +287,7 @@ pub(crate) fn pg_insert<'a>(
     virtual_key_alias: &'a str,
 
 ) -> QueryBuilder<'a, Postgres> {
-    unreachable!();
+    unimplemented!();
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         INSERT INTO request_logs
         (
@@ -440,25 +445,25 @@ impl_with_id_parameter_for_struct!(DbRequestLogRecord, RequestLogId);
 // region:    --- Helpers
 // Used to simplify the payload of batch request method
 #[derive(Clone, Debug)]
-pub struct RequestLogData {
-    pub id: RequestLogId,
-    pub attempt_number: i16,
+pub(crate) struct RequestLogData {
+    pub(crate) id: RequestLogId,
+    pub(crate) attempt_number: i16,
 
-    pub graph: Graph,
-    pub selected_connection_node: ConnectionNode,
+    pub(crate) graph: Graph,
+    pub(crate) selected_connection_node: ConnectionNode,
 
-    pub input_tokens: Option<i64>,
-    pub output_tokens: Option<i64>,
+    pub(crate) input_tokens: Option<i64>,
+    pub(crate) output_tokens: Option<i64>,
 
-    pub cost: Option<f64>,
+    pub(crate) cost: Option<f64>,
 
-    pub http_status_code: i16,
-    pub error: Option<String>,
+    pub(crate) http_status_code: i16,
+    pub(crate) error: Option<String>,
 
-    pub request_ts: DateTime<Utc>,
-    pub response_ts: DateTime<Utc>,
+    pub(crate) request_ts: DateTime<Utc>,
+    pub(crate) response_ts: DateTime<Utc>,
 
-    pub method: String,
-    pub path: String
+    pub(crate) method: String,
+    pub(crate) path: String
 }
 // endregion: --- Helpers
