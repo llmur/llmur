@@ -32,19 +32,17 @@ pub(crate) async fn create_deployment(
     Json(payload): Json<CreateDeploymentPayload>,
 ) -> Result<Json<GetDeploymentResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
-    match user_context {
-        UserContext::MasterUser => {
-            let result = state
-                .data
-                .create_deployment(&payload.name, &payload.access.unwrap_or(DeploymentAccess::Private), &payload.strategy.unwrap_or(LoadBalancingStrategy::RoundRobin), &payload.budget_limits, &payload.request_limits, &payload.token_limits, &state.metrics)
-                .await?;
-            Ok(Json(result.into()))
-        }
-        UserContext::WebAppUser { user, .. } => {
 
-            return Err(AuthorizationError::AccessDenied)?
-        }
+    if !user_context.has_admin_access() {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    let result = state
+        .data
+        .create_deployment(&payload.name, &payload.access.unwrap_or(DeploymentAccess::Private), &payload.strategy.unwrap_or(LoadBalancingStrategy::RoundRobin), &payload.budget_limits, &payload.request_limits, &payload.token_limits, &state.metrics)
+        .await?;
+
+    Ok(Json(result.into()))
 }
 
 #[tracing::instrument(
@@ -59,18 +57,15 @@ pub(crate) async fn get_deployment(
     State(state): State<Arc<LLMurState>>,
     Path(id): Path<DeploymentId>,
 ) -> Result<Json<GetDeploymentResult>, LLMurError> {
-    let user_context = ctx.require_authenticated_user()?;
+    let _ = ctx.require_authenticated_user()?;
 
-    let deployment = state.data.get_deployment(&id, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?;
+    let deployment = state
+        .data
+        .get_deployment(&id, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
 
-    match user_context {
-        UserContext::MasterUser => {
-            Ok(Json(deployment.into()))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            Err(AuthorizationError::AccessDenied)?
-        }
-    }
+    Ok(Json(deployment.into()))
 }
 
 #[tracing::instrument(
@@ -87,20 +82,25 @@ pub(crate) async fn delete_deployment(
 ) -> Result<Json<StatusResponse>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let deployment = state.data.get_deployment(&id, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?;
-
-    match user_context {
-        UserContext::MasterUser => {
-            let result = state.data.delete_deployment(&deployment.id, &state.metrics).await?;
-            Ok(Json(StatusResponse {
-                success: result != 0,
-                message: None,
-            }))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            Err(AuthorizationError::AccessDenied)?
-        }
+    if !user_context.has_admin_access() {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    let deployment = state
+        .data
+        .get_deployment(&id, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    let result = state
+        .data
+        .delete_deployment(&deployment.id, &state.metrics)
+        .await?;
+
+    Ok(Json(StatusResponse {
+        success: result != 0,
+        message: None,
+    }))
 }
 // endregion: --- Routes
 
