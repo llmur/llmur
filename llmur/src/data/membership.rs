@@ -143,7 +143,7 @@ pub(crate) fn pg_insert<'a>(project_id: &'a ProjectId, user_id: &'a UserId, proj
     query
 }
 
-pub(crate) fn pg_delete(id: &MembershipId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_delete(id: &'_ MembershipId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         DELETE FROM memberships
         WHERE id="
@@ -154,7 +154,7 @@ pub(crate) fn pg_delete(id: &MembershipId) -> QueryBuilder<Postgres> {
     query
 }
 
-pub(crate) fn pg_get(id: &MembershipId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_get(id: &'_ MembershipId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
           id,
@@ -171,7 +171,7 @@ pub(crate) fn pg_get(id: &MembershipId) -> QueryBuilder<Postgres> {
 }
 
 #[allow(unused)]
-pub(crate) fn pg_getm(ids: &Vec<MembershipId>) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_getm(ids: &'_ Vec<MembershipId>) -> QueryBuilder<'_, Postgres> {
     unimplemented!()
 }
 

@@ -207,7 +207,7 @@ default_database_access_fns!(
     }
 );
 // region:      --- Postgres Queries
-pub(crate) fn pg_search(name: &Option<String>) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_search(name: &'_ Option<String>) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             d.id,
@@ -234,7 +234,7 @@ pub(crate) fn pg_search(name: &Option<String>) -> QueryBuilder<Postgres> {
     query
 }
 
-pub(crate) fn pg_get(id: &DeploymentId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_get(id: &'_ DeploymentId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             d.id,
@@ -259,7 +259,7 @@ pub(crate) fn pg_get(id: &DeploymentId) -> QueryBuilder<Postgres> {
     query
 }
 
-pub(crate) fn pg_getm(ids: &Vec<DeploymentId>) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_getm(ids: &'_ Vec<DeploymentId>) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             d.id,
@@ -288,7 +288,7 @@ pub(crate) fn pg_getm(ids: &Vec<DeploymentId>) -> QueryBuilder<Postgres> {
     query
 }
 
-pub(crate) fn pg_delete(id: &DeploymentId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_delete(id: &'_ DeploymentId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
         "
         DELETE FROM deployments

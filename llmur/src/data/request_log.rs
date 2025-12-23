@@ -187,23 +187,23 @@ pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
 }
 
 #[allow(unused)]
-pub(crate) fn pg_get(id: &RequestLogId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_get(id: &'_ RequestLogId) -> QueryBuilder<'_, Postgres> {
     unimplemented!()
 }
 
 #[allow(unused)]
-pub(crate) fn pg_getm(ids: &Vec<RequestLogId>) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_getm(ids: &Vec<RequestLogId>) -> QueryBuilder<'_, Postgres> {
     unimplemented!()
 }
 
 #[allow(unused)]
-pub(crate) fn pg_delete(id: &RequestLogId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_delete(id: &'_ RequestLogId) -> QueryBuilder<'_, Postgres> {
     unimplemented!()
 }
 
 pub(crate) fn pg_insert_m(
-    request_logs: &Vec<Arc<RequestLogData>>,
-) -> QueryBuilder<Postgres> {
+    request_logs: &'_ Vec<Arc<RequestLogData>>,
+) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         INSERT INTO request_logs
         (

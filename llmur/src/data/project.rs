@@ -214,7 +214,7 @@ pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
     unimplemented!()
 }
 
-pub(crate) fn pg_get(id: &ProjectId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_get(id: &'_ ProjectId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
         "
         SELECT
@@ -233,11 +233,11 @@ pub(crate) fn pg_get(id: &ProjectId) -> QueryBuilder<Postgres> {
 }
 
 #[allow(unused)]
-pub(crate) fn pg_getm(_ids: &Vec<ProjectId>) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_getm(_ids: &'_ Vec<ProjectId>) -> QueryBuilder<'_, Postgres> {
     unimplemented!()
 }
 
-pub(crate) fn pg_delete(id: &ProjectId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_delete(id: &'_ ProjectId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
         "
         DELETE FROM projects

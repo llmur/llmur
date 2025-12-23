@@ -174,7 +174,7 @@ pub(crate) fn pg_search<'a>(virtual_key_id: &'a Option<VirtualKeyId>, deployment
     // Build query
     query
 }
-pub(crate) fn pg_get(id: &VirtualKeyDeploymentId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_get(id: &'_ VirtualKeyDeploymentId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             id,
@@ -191,7 +191,7 @@ pub(crate) fn pg_get(id: &VirtualKeyDeploymentId) -> QueryBuilder<Postgres> {
     query
 }
 
-pub(crate) fn pg_getm(ids: &Vec<VirtualKeyDeploymentId>) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_getm(ids: &'_ Vec<VirtualKeyDeploymentId>) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             id,
@@ -212,7 +212,7 @@ pub(crate) fn pg_getm(ids: &Vec<VirtualKeyDeploymentId>) -> QueryBuilder<Postgre
     query
 }
 
-pub(crate) fn pg_delete(id: &VirtualKeyDeploymentId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_delete(id: &'_ VirtualKeyDeploymentId) -> QueryBuilder<Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         DELETE FROM virtual_keys_deployments_map
         WHERE id="

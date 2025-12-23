@@ -198,7 +198,7 @@ pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
     unimplemented!()
 }
 
-pub(crate) fn pg_get(id: &UserId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_get(id: &'_ UserId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             u.id,
@@ -225,11 +225,11 @@ pub(crate) fn pg_get(id: &UserId) -> QueryBuilder<Postgres> {
 }
 
 #[allow(unused)]
-pub(crate) fn pg_getm(ids: &Vec<UserId>) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_getm(ids: &'_ Vec<UserId>) -> QueryBuilder<'_, Postgres> {
     unimplemented!()
 }
 
-pub(crate) fn pg_delete(id: &UserId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_delete(id: &'_ UserId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         DELETE FROM users
         WHERE id="
@@ -279,7 +279,7 @@ pub(crate) fn pg_insert<'a>(
 }
 
 
-fn pg_get_user_with_email_query(email: &str) -> QueryBuilder<Postgres> {
+fn pg_get_user_with_email_query(email: &'_ str) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             u.id,

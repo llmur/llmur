@@ -180,7 +180,7 @@ pub(crate) fn pg_search<'a>(connection_id: &'a Option<ConnectionId>, deployment_
     // Build query
     query
 }
-pub(crate) fn pg_get(id: &ConnectionDeploymentId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_get(id: &'_ ConnectionDeploymentId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             id,
@@ -199,7 +199,7 @@ pub(crate) fn pg_get(id: &ConnectionDeploymentId) -> QueryBuilder<Postgres> {
 }
 
 
-pub(crate) fn pg_getm(ids: &Vec<ConnectionDeploymentId>) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_getm(ids: &'_ Vec<ConnectionDeploymentId>) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             id,
@@ -221,7 +221,7 @@ pub(crate) fn pg_getm(ids: &Vec<ConnectionDeploymentId>) -> QueryBuilder<Postgre
     query
 }
 
-pub(crate) fn pg_delete(id: &ConnectionDeploymentId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_delete(id: &'_ ConnectionDeploymentId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         DELETE FROM deployments_connections_map
         WHERE id="

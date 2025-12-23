@@ -179,7 +179,7 @@ pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
     todo!()
 }
 
-pub(crate) fn pg_get(id: &VirtualKeyId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_get(id: &'_ VirtualKeyId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             vk.id,
@@ -210,7 +210,7 @@ pub(crate) fn pg_get(id: &VirtualKeyId) -> QueryBuilder<Postgres> {
     query
 }
 
-pub(crate) fn pg_getm(ids: &Vec<VirtualKeyId>) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_getm(ids: &'_ Vec<VirtualKeyId>) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             vk.id,
@@ -241,7 +241,7 @@ pub(crate) fn pg_getm(ids: &Vec<VirtualKeyId>) -> QueryBuilder<Postgres> {
     query
 }
 
-pub(crate) fn pg_delete(id: &VirtualKeyId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_delete(id: &'_ VirtualKeyId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         DELETE FROM virtual_keys
         WHERE id="

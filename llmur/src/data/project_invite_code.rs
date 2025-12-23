@@ -140,7 +140,7 @@ pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
     unimplemented!()
 }
 
-pub(crate) fn pg_get(invite_id: &ProjectInviteCodeId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_get(invite_id: &'_ ProjectInviteCodeId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
     SELECT
         id,
@@ -160,11 +160,11 @@ pub(crate) fn pg_get(invite_id: &ProjectInviteCodeId) -> QueryBuilder<Postgres> 
 }
 
 #[allow(unused)]
-pub(crate) fn pg_getm(ids: &Vec<ProjectInviteCodeId>) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_getm(ids: &'_ Vec<ProjectInviteCodeId>) -> QueryBuilder<'_, Postgres> {
     unimplemented!()
 }
 
-pub(crate) fn pg_delete(invite_id: &ProjectInviteCodeId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_delete(invite_id: &'_ ProjectInviteCodeId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         DELETE FROM project_invites
         WHERE id = "

@@ -316,7 +316,7 @@ pub(crate) fn pg_insert<'a>(
     // Return builder
     query
 }
-pub(crate) fn pg_get(id: &ConnectionId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_get(id: &'_ ConnectionId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
         "
         SELECT
@@ -330,7 +330,7 @@ pub(crate) fn pg_get(id: &ConnectionId) -> QueryBuilder<Postgres> {
     // Return builder
     query
 }
-pub(crate) fn pg_getm(ids: &Vec<ConnectionId>) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_getm(ids: &'_ Vec<ConnectionId>) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
         "
         SELECT
@@ -347,7 +347,7 @@ pub(crate) fn pg_getm(ids: &Vec<ConnectionId>) -> QueryBuilder<Postgres> {
 
     query
 }
-pub(crate) fn pg_delete(id: &ConnectionId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_delete(id: &'_ ConnectionId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
         "
         DELETE FROM connections

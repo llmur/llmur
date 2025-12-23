@@ -171,7 +171,7 @@ pub(crate) fn pg_insert<'a>(id: &'a SessionTokenId, user_id: &'a UserId, expires
     // Return builder
     query
 }
-pub(crate) fn pg_get(id: &SessionTokenId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_get(id: &'_ SessionTokenId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT id, user_id, expires_at, revoked, created_at, updated_at
         FROM session_tokens
@@ -185,11 +185,11 @@ pub(crate) fn pg_get(id: &SessionTokenId) -> QueryBuilder<Postgres> {
 }
 
 #[allow(unused)]
-pub(crate) fn pg_getm(ids: &Vec<SessionTokenId>) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_getm(ids: &'_ Vec<SessionTokenId>) -> QueryBuilder<'_, Postgres> {
     unimplemented!()
 }
 
-pub(crate) fn pg_delete(id: &SessionTokenId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_delete(id: &'_ SessionTokenId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         DELETE FROM session_tokens
         WHERE id="
