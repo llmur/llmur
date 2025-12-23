@@ -181,6 +181,16 @@ impl UserContext {
             UserContext::WebAppUser { user, .. } => user.role == ApplicationRole::Admin
         }
     }
+    
+    /// Check if it's a Master User
+    pub(crate) fn is_master_user(
+        &self
+    ) -> bool {
+        match self {
+            UserContext::MasterUser => true,
+            UserContext::WebAppUser { .. } => false
+        }
+    }
 
     /// Retrieve the user id - None if it's a Master Key
     pub(crate) fn get_user_id(

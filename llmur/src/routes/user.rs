@@ -34,25 +34,22 @@ pub(crate) async fn create_user(
 ) -> Result<Json<GetUserResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    match user_context {
-        UserContext::MasterUser => {
-            let user = state.data.create_user(
-                &payload.email,
-                &payload.name,
-                &payload.password,
-                false,
-                false,
-                &payload.role.unwrap_or(ApplicationRole::Member),
-                &state.application_secret,
-                &state.metrics
-            ).await?;
-
-            Ok(Json(user.into()))
-        }
-        UserContext::WebAppUser { .. } => {
-            Err(AuthorizationError::AccessDenied)?
-        }
+    if !user_context.is_master_user() {
+        return Err(AuthorizationError::AccessDenied)?
     }
+
+    let user = state.data.create_user(
+        &payload.email,
+        &payload.name,
+        &payload.password,
+        false,
+        false,
+        &payload.role.unwrap_or(ApplicationRole::Member),
+        &state.application_secret,
+        &state.metrics
+    ).await?;
+
+    Ok(Json(user.into()))
 }
 
 #[tracing::instrument(
@@ -75,7 +72,7 @@ pub(crate) async fn get_user(
             Ok(Json(user.into()))
         }
         UserContext::WebAppUser { user, .. } => {
-            if user.id == id.into() || user.role == ApplicationRole::Admin {
+            if user.id == id || user.role == ApplicationRole::Admin {
                 Ok(Json(user.into()))
             }
             else { Err(AuthorizationError::AccessDenied)? }
