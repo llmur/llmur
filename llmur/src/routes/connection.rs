@@ -1,18 +1,15 @@
 use crate::data::connection::{AzureOpenAiApiVersion, Connection, ConnectionId, ConnectionInfo};
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
-use crate::data::user::ApplicationRole;
 use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
-use crate::routes::StatusResponse;
 use crate::routes::middleware::user_context::{
-    AuthorizationManager, UserContext, UserContextExtractionResult,
+    AuthorizationManager, UserContextExtractionResult,
 };
-use crate::{LLMurState, impl_from_vec_result};
+use crate::routes::StatusResponse;
+use crate::{impl_from_vec_result, LLMurState};
 use axum::extract::{Path, State};
 use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 // region:    --- Routes
@@ -30,65 +27,62 @@ pub(crate) async fn create_connection(
     State(state): State<Arc<LLMurState>>,
     Json(payload): Json<CreateConnectionPayload>,
 ) -> Result<Json<GetConnectionResult>, LLMurError> {
-    let connections = state.data;
-
-    let method: Pin<Box<dyn Future<Output = Result<Connection, DataAccessError>> + Send>> =
-        match &payload {
-            CreateConnectionPayload::AzureOpenAi {
-                deployment_name,
-                api_endpoint,
-                api_key,
-                api_version,
-                budget_limits,
-                request_limits,
-                token_limits,
-            } => Box::pin(connections.create_azure_openai_connection(
-                deployment_name,
-                api_endpoint,
-                api_key,
-                api_version,
-                budget_limits,
-                request_limits,
-                token_limits,
-                &state.application_secret,
-                &state.metrics,
-            )),
-            CreateConnectionPayload::OpenAi {
-                model,
-                api_endpoint,
-                api_key,
-                budget_limits,
-                request_limits,
-                token_limits,
-            } => Box::pin(connections.create_openai_v1_connection(
-                model,
-                api_endpoint,
-                api_key,
-                budget_limits,
-                request_limits,
-                token_limits,
-                &state.application_secret,
-                &state.metrics,
-            )),
-        };
-
     let user_context = ctx.require_authenticated_user()?;
 
-    match user_context {
-        UserContext::MasterUser => {
-            let result = method.await?;
-            Ok(Json(result.into()))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            if user.role != ApplicationRole::Admin {
-                Err(AuthorizationError::AccessDenied)?
-            }
-
-            let result = method.await?;
-
-            Ok(Json(result.into()))
-        }
+    if !user_context.has_admin_access() {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    let result = match &payload {
+        CreateConnectionPayload::AzureOpenAi {
+            deployment_name,
+            api_endpoint,
+            api_key,
+            api_version,
+            budget_limits,
+            request_limits,
+            token_limits,
+        } => {
+            state
+                .data
+                .create_azure_openai_connection(
+                    deployment_name,
+                    api_endpoint,
+                    api_key,
+                    api_version,
+                    budget_limits,
+                    request_limits,
+                    token_limits,
+                    &state.application_secret,
+                    &state.metrics,
+                )
+                .await?
+        }
+        CreateConnectionPayload::OpenAi {
+            model,
+            api_endpoint,
+            api_key,
+            budget_limits,
+            request_limits,
+            token_limits,
+        } => {
+            state
+                .data
+                .create_openai_v1_connection(
+                    model,
+                    api_endpoint,
+                    api_key,
+                    budget_limits,
+                    request_limits,
+                    token_limits,
+                    &state.application_secret,
+                    &state.metrics,
+                )
+                .await?
+        }
+    };
+
+    Ok(Json(result.into()))
 }
 
 #[tracing::instrument(
@@ -105,28 +99,17 @@ pub(crate) async fn get_connection(
 ) -> Result<Json<GetConnectionResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    match user_context {
-        UserContext::MasterUser => {
-            let connection = state
-                .data
-                .get_connection(&id, &state.application_secret, &state.metrics)
-                .await?
-                .ok_or(DataAccessError::ResourceNotFound)?;
-            Ok(Json(connection.into()))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            if user.role == ApplicationRole::Admin {
-                let connection = state
-                    .data
-                    .get_connection(&id, &state.application_secret, &state.metrics)
-                    .await?
-                    .ok_or(DataAccessError::ResourceNotFound)?;
-                Ok(Json(connection.into()))
-            } else {
-                Err(AuthorizationError::AccessDenied)?
-            }
-        }
+    if !user_context.has_admin_access() {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    let connection = state
+        .data
+        .get_connection(&id, &state.application_secret, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    Ok(Json(connection.into()))
 }
 
 #[tracing::instrument(
@@ -143,25 +126,25 @@ pub(crate) async fn delete_connection(
 ) -> Result<Json<StatusResponse>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let result = match user_context {
-        UserContext::MasterUser => state.data.delete_connection(&id, &state.metrics).await?,
-        UserContext::WebAppUser { user, .. } => {
-            if user.role == ApplicationRole::Admin {
-                state.data.delete_connection(&id, &state.metrics).await?
-            } else {
-                Err(AuthorizationError::AccessDenied)?
-            }
-        }
-    };
-
-    if result == 0 {
-        Err(DataAccessError::ResourceNotFound)?
-    } else {
-        Ok(Json(StatusResponse {
-            success: true,
-            message: Some(format!("Connection {} deleted successfully", &id)),
-        }))
+    if !user_context.has_admin_access() {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    let connection = state
+        .data
+        .get_connection(&id, &state.application_secret, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    let result = state
+        .data
+        .delete_connection(&connection.id, &state.metrics)
+        .await?;
+
+    Ok(Json(StatusResponse {
+        success: result != 0,
+        message: None,
+    }))
 }
 
 // endregion: --- Routes
