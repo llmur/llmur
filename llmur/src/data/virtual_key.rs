@@ -5,7 +5,7 @@ use sqlx::{FromRow, Postgres, QueryBuilder};
 use sqlx::types::Json;
 use uuid::Uuid;
 use crate::data::utils::{decrypt, encrypt, generate_random_api_key, new_uuid_v5_from_string, ConvertInto};
-use crate::{default_access_fns, default_database_access_fns, impl_local_store_accessors, impl_locally_stored, impl_structured_id_utils, impl_with_id_parameter_for_struct};
+use crate::{default_access_fns, default_database_access_fns, impl_structured_id_utils, impl_with_id_parameter_for_struct};
 use crate::data::DataAccess;
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::project::ProjectId;

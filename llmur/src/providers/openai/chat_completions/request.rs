@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
-use crate::providers::ExposesDeployment;
 use crate::providers::openai::chat_completions::message::Message;
 use crate::providers::openai::chat_completions::stop::Stop;
 use crate::providers::openai::chat_completions::stream::StreamOptions;
 use crate::providers::openai::chat_completions::tool::{Tool, ToolChoice};
+use crate::providers::ExposesDeployment;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -73,7 +73,6 @@ impl ExposesDeployment for Request {
 }
 
 pub mod to_self {
-    use serde::Deserialize;
     use crate::providers::openai::chat_completions::request::Request;
     use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
 

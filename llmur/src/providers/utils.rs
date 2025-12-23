@@ -3,8 +3,8 @@ use crate::providers::{TransformationContext, TransformationLoss, Transformer};
 use crate::routes::openai::response::ProviderResponse;
 use log::debug;
 use reqwest::header::HeaderMap;
-use reqwest::{Client, StatusCode};
-use serde_json::{from_value, json, Error};
+use reqwest::{Client};
+use serde_json::{from_value};
 use std::fmt::Debug;
 
 #[tracing::instrument(

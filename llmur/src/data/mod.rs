@@ -7,17 +7,15 @@ use crate::data::utils::current_timestamp_ms;
 use crate::errors::{CacheAccessError, SetupError};
 use chrono::{DateTime, Utc};
 use redis::{
-    AsyncCommands, ConnectionAddr, ConnectionInfo, FromRedisValue, ProtocolVersion,
-    RedisConnectionInfo, RedisWrite, ToRedisArgs,
+    AsyncCommands, ConnectionAddr, ConnectionInfo, ProtocolVersion,
+    RedisConnectionInfo,
 };
 use reqwest::Client;
-use serde::Serialize;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::PgPoolOptions;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::task::JoinHandle;

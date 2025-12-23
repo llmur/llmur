@@ -5,15 +5,11 @@ use crate::routes::openai::request::OpenAiRequestData;
 use crate::routes::openai::response::{ProviderResponse, ProxyResponse};
 use std::collections::BTreeMap;
 
-use crate::data::request_log::{RequestLog, RequestLogData, RequestLogId};
+use crate::data::request_log::{RequestLogData, RequestLogId};
 use axum::extract::FromRequest;
 use axum::{body::Body, extract::State, http::Request, middleware::Next};
-use chrono::{DateTime, Utc};
 
-use crate::data::connection::Connection;
 use crate::data::graph::{ConnectionNode, NodeLimitsChecker};
-use crate::data::project::Project;
-use crate::data::virtual_key::VirtualKey;
 use log::debug;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -126,9 +122,14 @@ where
     I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
 {
     println!("Executing OpenAI-compatible request");
-    let request_id = request.extensions().get::<RequestLogId>().cloned().ok_or(
-        ProxyError::InternalError("Missing RequestLogId in request extensions".to_string()),
-    )?;
+    let request_id =
+        request
+            .extensions()
+            .get::<RequestLogId>()
+            .cloned()
+            .ok_or(ProxyError::InternalError(
+                "Missing RequestLogId in request extensions".to_string(),
+            ))?;
     let request_data = OpenAiRequestData::<I>::from_request(request, &state).await?;
 
     Ok((Arc::new(request_id), Arc::new(request_data)))
@@ -146,43 +147,37 @@ where
     O: Serialize + ExposesUsage + Send + 'static + Sync,
 {
     match &result_arc.result {
-        Ok(inner) => {
-             match inner {
-                 ProviderResponse::DecodedResponse { data, status_code } => {
-                     RequestLogData {
-                         id: request_id,
-                         attempt_number: attempt_number as i16,
-                         graph: request_data_arc.graph.clone(),
-                         selected_connection_node,
-                         input_tokens: Some(data.get_input_tokens() as i64),
-                         output_tokens: Some(data.get_output_tokens() as i64),
-                         cost: None,
-                         http_status_code: status_code.as_u16() as i16,
-                         error: None,
-                         request_ts: result_arc.request_ts,
-                         response_ts: result_arc.response_ts,
-                         method: request_data_arc.method.clone(),
-                         path: request_data_arc.path.clone(),
-                     }
-                 }
-                 ProviderResponse::JsonResponse { data, status_code } => {
-                     RequestLogData {
-                         id: request_id,
-                         attempt_number: attempt_number as i16,
-                         graph: request_data_arc.graph.clone(),
-                         selected_connection_node,
-                         input_tokens: None,
-                         output_tokens: None,
-                         cost: None,
-                         http_status_code: status_code.as_u16() as i16,
-                         error: None,
-                         request_ts: result_arc.request_ts,
-                         response_ts: result_arc.response_ts,
-                         method: request_data_arc.method.clone(),
-                         path: request_data_arc.path.clone(),
-                     }
-                 }
-             }
+        Ok(inner) => match inner {
+            ProviderResponse::DecodedResponse { data, status_code } => RequestLogData {
+                id: request_id,
+                attempt_number: attempt_number as i16,
+                graph: request_data_arc.graph.clone(),
+                selected_connection_node,
+                input_tokens: Some(data.get_input_tokens() as i64),
+                output_tokens: Some(data.get_output_tokens() as i64),
+                cost: None,
+                http_status_code: status_code.as_u16() as i16,
+                error: None,
+                request_ts: result_arc.request_ts,
+                response_ts: result_arc.response_ts,
+                method: request_data_arc.method.clone(),
+                path: request_data_arc.path.clone(),
+            },
+            ProviderResponse::JsonResponse { data, status_code } => RequestLogData {
+                id: request_id,
+                attempt_number: attempt_number as i16,
+                graph: request_data_arc.graph.clone(),
+                selected_connection_node,
+                input_tokens: None,
+                output_tokens: None,
+                cost: None,
+                http_status_code: status_code.as_u16() as i16,
+                error: None,
+                request_ts: result_arc.request_ts,
+                response_ts: result_arc.response_ts,
+                method: request_data_arc.method.clone(),
+                path: request_data_arc.path.clone(),
+            },
         },
         Err(error) => RequestLogData {
             id: request_id,

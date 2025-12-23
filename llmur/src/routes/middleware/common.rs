@@ -1,15 +1,13 @@
-use std::sync::Arc;
-use std::time::Instant;
-use axum::body::Body;
-use tracing::Instrument;
-use uuid::Uuid;
 use crate::data::request_log::RequestLogId;
+use crate::metrics::RegisterHttpRequest;
+use crate::LLMurState;
+use axum::body::Body;
 use axum::extract::{Request, State};
-use axum::http;
 use axum::response::Response;
 use chrono::Utc;
-use crate::LLMurState;
-use crate::metrics::RegisterHttpRequest;
+use std::sync::Arc;
+use std::time::Instant;
+use uuid::Uuid;
 //static X_REQUEST_ID: HeaderName = HeaderName::from_static("X-LLMur-Request-Id");
 
 // Common tracing middleware that can be applied to all routes - adds request ID and tracing span

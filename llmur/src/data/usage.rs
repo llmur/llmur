@@ -1,19 +1,18 @@
-use crate::data::connection::{Connection, ConnectionId};
+use crate::data::connection::{ConnectionId};
 use crate::data::deployment::DeploymentId;
-use crate::data::graph::local_store::GraphData;
 use crate::data::graph::usage_stats::{
-    ConnectionUsageStats, DeploymentUsageStats, MetricsUsageStats, PeriodStats, ProjectUsageStats,
+    ConnectionUsageStats, DeploymentUsageStats, MetricsUsageStats, ProjectUsageStats,
     StatValue, VirtualKeyUsageStats,
 };
 use crate::data::project::ProjectId;
-use crate::data::request_log::{RequestLogData, pg_insert_m};
+use crate::data::request_log::RequestLogData;
 use crate::data::virtual_key::VirtualKeyId;
-use crate::data::{Cache, DataAccess, Database, ExternalCache, connection};
+use crate::data::{Cache, DataAccess, Database, ExternalCache};
 use crate::errors::{CacheAccessError, DataAccessError};
 use chrono::{DateTime, Datelike, TimeZone, Timelike, Utc};
 use redis::Pipeline;
 use redis::aio::MultiplexedConnection;
-use sqlx::{Execute, FromRow, Postgres, QueryBuilder};
+use sqlx::{FromRow, Postgres, QueryBuilder};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tracing::Instrument;

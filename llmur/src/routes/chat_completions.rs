@@ -1,4 +1,5 @@
 use crate::data::connection::{ConnectionId, ConnectionInfo};
+use crate::metrics::RegisterProxyRequest;
 use crate::providers::openai::chat_completions::request::Request as ChatCompletionsRequest;
 use crate::providers::openai::chat_completions::response::Response as ChatCompletionsResponse;
 use crate::routes::openai::request::OpenAiRequestData;
@@ -8,7 +9,6 @@ use axum::extract::State;
 use axum::Extension;
 use std::sync::Arc;
 use std::time::Instant;
-use crate::metrics::RegisterProxyRequest;
 
 // Connection is passed via extension
 #[tracing::instrument(
@@ -73,7 +73,6 @@ mod azure_openai_request {
     use crate::routes::openai::response::ProxyResponse;
     use chrono::Utc;
     use reqwest::header::HeaderMap;
-    use std::sync::Arc;
 
     #[tracing::instrument(
         name = "proxy.azure.openai.chat_completions",
@@ -145,9 +144,7 @@ mod openai_v1_request {
     use crate::routes::openai::response::ProxyResponse;
     use chrono::Utc;
     use reqwest::header::HeaderMap;
-    use std::sync::Arc;
-
-
+    
     #[tracing::instrument(
         name = "proxy.openai.v1.chat_completions",
         skip(client, api_key, payload)

@@ -2,7 +2,6 @@ use crate::data::graph::Graph;
 use crate::errors::{GraphError, LLMurError};
 use crate::routes::chat_completions::chat_completions_route;
 use crate::routes::middleware::auth::auth_token_extraction_mw;
-use crate::routes::middleware::common::common_tracing_mw;
 use crate::routes::middleware::user_context::user_context_load_mw;
 use crate::routes::openai::controller::openai_route_controller_mw;
 use crate::LLMurState;

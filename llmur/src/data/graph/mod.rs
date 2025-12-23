@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::sync::Arc;
 use crate::data::connection::Connection;
 use crate::data::connection_deployment::{ConnectionDeployment, ConnectionDeploymentId};
@@ -15,7 +14,6 @@ use serde::Serialize;
 use uuid::Uuid;
 use futures::future::try_join_all;
 use tracing::{instrument, trace_span, Instrument};
-use crate::data::load_balancer::LoadBalancingStrategy;
 use crate::metrics::Metrics;
 
 pub(crate) mod usage_stats;

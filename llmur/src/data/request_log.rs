@@ -9,7 +9,7 @@ use crate::data::{DataAccess, Database};
 use crate::errors::{DataAccessError, DbRecordConversionError};
 use crate::{default_access_fns, default_database_access_fns, impl_structured_id_utils, impl_with_id_parameter_for_struct};
 use serde::{Deserialize, Serialize};
-use sqlx::{Execute, FromRow, Postgres, QueryBuilder};
+use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 use crate::data::graph::{ConnectionNode, Graph};
 use crate::metrics::Metrics;

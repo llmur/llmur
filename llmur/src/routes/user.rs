@@ -1,14 +1,13 @@
-use std::sync::Arc;
-use axum::{Extension, Json, Router};
-use axum::extract::{Path, State};
-use axum::routing::{delete, get, post};
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
-use crate::{impl_from_vec_result, LLMurState};
 use crate::data::user::{ApplicationRole, User, UserId};
+use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
 use crate::routes::StatusResponse;
+use crate::{impl_from_vec_result, LLMurState};
+use axum::extract::{Path, State};
+use axum::routing::{delete, get, post};
+use axum::{Extension, Json, Router};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 // region:    --- Routes
 pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {

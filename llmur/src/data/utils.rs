@@ -1,14 +1,12 @@
-use std::str::FromStr;
 use uuid::Uuid;
 
 use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
+use chrono::{Duration, Utc};
 use hex::{decode, encode};
 use rand::{distributions::Alphanumeric, Rng};
 use sha2::{Digest, Sha256};
-use chrono::{Duration, Utc};
 
-use lazy_regex::regex_captures;
 use crate::errors::{DbRecordConversionError, DecryptionError, EncryptionError, InvalidTimeFormatError};
 
 pub trait ConvertInto<T>: Sized {

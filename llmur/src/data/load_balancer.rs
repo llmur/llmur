@@ -2,7 +2,7 @@ use crate::data::connection::ConnectionId;
 use crate::data::deployment::DeploymentId;
 use crate::data::graph::{ConnectionNode, Graph};
 use crate::data::{DataAccess, LocallyStoredValue};
-use crate::errors::{DataAccessError, GraphError, MissingConnectionReason};
+use crate::errors::{GraphError, MissingConnectionReason};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, PartialOrd, sqlx::Type)]

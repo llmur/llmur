@@ -1,16 +1,14 @@
 //! # LLMUR
 
-use std::option::Option;
-use std::collections::BTreeSet;
-use std::sync::Arc;
-use axum::middleware::from_fn_with_state;
-use axum::Router;
-use opentelemetry::metrics::Meter;
-use uuid::Uuid;
-use data::DataAccess;
-use crate::data::utils;
 use crate::metrics::Metrics;
 use crate::routes::{admin_routes, openai_v1_routes};
+use axum::middleware::from_fn_with_state;
+use axum::Router;
+use data::DataAccess;
+use std::collections::BTreeSet;
+use std::option::Option;
+use std::sync::Arc;
+use uuid::Uuid;
 
 pub mod providers;
 pub mod data;
