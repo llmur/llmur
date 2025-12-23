@@ -141,7 +141,7 @@ impl DataAccess {
         application_secret: &Uuid, 
         metrics: &Option<Arc<Metrics>>
     ) -> Result<BTreeMap<ConnectionId, Option<Connection>>, DataAccessError> {
-        self.__get_connections(ids, &Some(application_secret.clone()), metrics)
+        self.__get_connections(ids, &Some(*application_secret), metrics)
             .await
     }
 
@@ -266,6 +266,7 @@ default_database_access_fns!(
 // region:      --- Postgres Queries
 #[allow(unused)]
 pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
+    
     unimplemented!()
 }
 

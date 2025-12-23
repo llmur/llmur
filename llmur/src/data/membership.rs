@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use crate::data::project::{ProjectId, ProjectRole};
 use crate::data::user::UserId;
@@ -63,6 +64,18 @@ impl DataAccess {
     )]
     pub async fn get_membership(&self, id: &MembershipId, metrics: &Option<Arc<Metrics>>) -> Result<Option<Membership>, DataAccessError> {
         self.__get_membership(id, &None, metrics).await
+    }
+
+    #[tracing::instrument(
+        level="trace",
+        name = "get.membership",
+        skip(self, ids, metrics),
+        fields(
+            ids = ?ids.iter().map(|id| id.0).collect::<Vec<Uuid>>()
+        )
+    )]
+    pub async fn get_memberships(&self, ids: &BTreeSet<MembershipId>, metrics: &Option<Arc<Metrics>>) -> Result<BTreeMap<MembershipId, Option<Membership>>, DataAccessError> {
+        self.__get_memberships(ids, &None, metrics).await
     }
 
     #[tracing::instrument(
@@ -170,9 +183,25 @@ pub(crate) fn pg_get(id: &'_ MembershipId) -> QueryBuilder<'_, Postgres> {
     query
 }
 
-#[allow(unused)]
 pub(crate) fn pg_getm(ids: &'_ Vec<MembershipId>) -> QueryBuilder<'_, Postgres> {
-    unimplemented!()
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
+        SELECT
+          id,
+          user_id,
+          project_id,
+          role
+        FROM memberships
+        WHERE id IN ( ",
+    );
+    // Push ids
+    let mut separated = query.separated(", ");
+    for id in ids.iter() {
+        separated.push_bind(id);
+    }
+    separated.push_unseparated(") ");
+
+    query
 }
 
 // endregion:   --- Postgres Queries

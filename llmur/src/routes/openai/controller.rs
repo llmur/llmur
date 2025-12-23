@@ -6,7 +6,7 @@ use crate::routes::openai::response::{ProviderResponse, ProxyResponse};
 
 use crate::data::request_log::{RequestLogData, RequestLogId};
 use axum::extract::FromRequest;
-use axum::{body::Body, extract::State, http::Request, middleware::Next};
+use axum::{extract::State, http::Request, middleware::Next};
 
 use crate::data::graph::{ConnectionNode, NodeLimitsChecker};
 use log::debug;
@@ -18,7 +18,7 @@ use tracing::Instrument;
 #[tracing::instrument(name = "controller", skip(state, request, next))]
 pub(crate) async fn openai_route_controller_mw<I, O>(
     State(state): State<Arc<LLMurState>>,
-    request: Request<Body>,
+    request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<axum::response::Response, LLMurError>
 where
@@ -54,13 +54,13 @@ where
             connection.data.connection_info
         );
 
-        let mut attempt_req = Request::new(Body::empty());
+        let mut attempt_req = Request::new(axum::body::Body::empty());
         attempt_req
                 .extensions_mut()
                 .insert(connection.data.connection_info.clone());
         attempt_req
                 .extensions_mut()
-                .insert(connection.data.id.clone());
+                .insert(connection.data.id);
         attempt_req
                 .extensions_mut()
                 .insert(request_data.clone());
@@ -114,7 +114,7 @@ where
 }
 
 async fn load_request_details<I>(
-    request: Request<Body>,
+    request: Request<axum::body::Body>,
     state: Arc<LLMurState>,
 ) -> Result<(Arc<RequestLogId>, Arc<OpenAiRequestData<I>>), LLMurError>
 where
