@@ -2,7 +2,7 @@ use crate::data::deployment::DeploymentId;
 use crate::data::virtual_key::VirtualKeyId;
 use crate::data::virtual_key_deployment::{VirtualKeyDeployment, VirtualKeyDeploymentId};
 use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
-use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
+use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
 use crate::routes::StatusResponse;
 use crate::{impl_from_vec_result, LLMurState};
 use axum::extract::{Path, State};
