@@ -30,15 +30,13 @@ pub(crate) async fn create_connection_deployment(
     Json(payload): Json<CreateConnectionDeploymentPayload>,
 ) -> Result<Json<GetConnectionDeploymentResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
-    match user_context {
-        UserContext::MasterUser => {
-            let result = state.data.create_connection_deployment(&payload.connection_id, &payload.deployment_id, payload.weight.unwrap_or(1), &state.metrics).await?;
-            Ok(Json(result.into()))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            Err(AuthorizationError::AccessDenied)?
-        }
+
+    if !user_context.has_admin_access() {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    let result = state.data.create_connection_deployment(&payload.connection_id, &payload.deployment_id, payload.weight.unwrap_or(1), &state.metrics).await?;
+    Ok(Json(result.into()))
 }
 
 #[tracing::instrument(
@@ -55,16 +53,17 @@ pub(crate) async fn get_connection_deployment(
 ) -> Result<Json<GetConnectionDeploymentResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let cd = state.data.get_connection_deployment(&id, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?;
-
-    match user_context {
-        UserContext::MasterUser => {
-            Ok(Json(cd.into()))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            Err(AuthorizationError::AccessDenied)?
-        }
+    if !user_context.has_admin_access() {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    let cd = state
+        .data
+        .get_connection_deployment(&id, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    Ok(Json(cd.into()))
 }
 
 #[tracing::instrument(
@@ -81,20 +80,17 @@ pub(crate) async fn delete_connection_deployment(
 ) -> Result<Json<StatusResponse>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
+    if !user_context.has_admin_access() {
+        return Err(AuthorizationError::AccessDenied)?;
+    }
+
     let cd = state.data.get_connection_deployment(&id, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?; // TODO
 
-    match user_context {
-        UserContext::MasterUser => {
-            let result = state.data.delete_connection_deployment(&cd.id, &state.metrics).await?;
-            Ok(Json(StatusResponse {
-                success: result != 0,
-                message: None,
-            }))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            Err(AuthorizationError::AccessDenied)?
-        }
-    }
+    let result = state.data.delete_connection_deployment(&cd.id, &state.metrics).await?;
+    Ok(Json(StatusResponse {
+        success: result != 0,
+        message: None,
+    }))
 }
 // endregion: --- Routes
 
