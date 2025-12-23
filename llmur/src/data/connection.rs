@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use uuid::Uuid;
+use crate::metrics::Metrics;
 
 // region:    --- Main Model
 #[derive(Debug, Clone, sqlx::Type, PartialEq, Serialize, Deserialize)]
@@ -111,7 +113,7 @@ impl DataAccess {
     #[tracing::instrument(
         level="trace",
         name = "get.connection",
-        skip(self, id, application_secret),
+        skip(self, id, application_secret, metrics),
         fields(
             id = %id.0
         )
@@ -119,16 +121,17 @@ impl DataAccess {
     pub async fn get_connection(
         &self,
         id: &ConnectionId,
-        application_secret: &Uuid,
+        application_secret: &Uuid, 
+        metrics: &Option<Arc<Metrics>>
     ) -> Result<Option<Connection>, DataAccessError> {
-        self.__get_connection(id, &Some(application_secret.clone()))
+        self.__get_connection(id, &Some(application_secret.clone()), metrics)
             .await
     }
 
     #[tracing::instrument(
         level="trace",
         name = "get.connections",
-        skip(self, ids, application_secret),
+        skip(self, ids, application_secret, metrics),
         fields(
             ids = ?ids.iter().map(|id| id.0).collect::<Vec<Uuid>>()
         )
@@ -136,10 +139,10 @@ impl DataAccess {
     pub async fn get_connections(
         &self,
         ids: &BTreeSet<ConnectionId>,
-        application_secret: &Uuid,
+        application_secret: &Uuid, 
+        metrics: &Option<Arc<Metrics>>
     ) -> Result<BTreeMap<ConnectionId, Option<Connection>>, DataAccessError> {
-        let v = ids.iter().map(|id| &id.0).collect::<Vec<_>>();
-        self.__get_connections(ids, &Some(application_secret.clone()))
+        self.__get_connections(ids, &Some(application_secret.clone()), metrics)
             .await
     }
 
@@ -147,7 +150,7 @@ impl DataAccess {
     #[tracing::instrument(
         level="trace",
         name = "create.connection",
-        skip(self, api_key, application_secret),
+        skip(self, api_key, application_secret, metrics),
         fields(
             provider = "azure/openai"
         )
@@ -161,7 +164,8 @@ impl DataAccess {
         budget_limits: &Option<BudgetLimits>,
         request_limits: &Option<RequestLimits>,
         token_limits: &Option<TokenLimits>,
-        application_secret: &Uuid,
+        application_secret: &Uuid, 
+        metrics: &Option<Arc<Metrics>>
     ) -> Result<Connection, DataAccessError> {
         let salt = Uuid::now_v7();
         let encrypted_api_key = encrypt(api_key, &salt, application_secret)?;
@@ -174,14 +178,14 @@ impl DataAccess {
             salt,
         };
 
-        self.__create_connection(&connection_info, budget_limits, request_limits, token_limits, &Some(application_secret.clone()))
+        self.__create_connection(&connection_info, budget_limits, request_limits, token_limits, &Some(application_secret.clone()), metrics)
             .await
     }
 
     #[tracing::instrument(
         level="trace",
         name = "create.connection",
-        skip(self, api_key, application_secret),
+        skip(self, api_key, application_secret, metrics),
         fields(
             provider = "openai/v1"
         )
@@ -194,7 +198,8 @@ impl DataAccess {
         budget_limits: &Option<BudgetLimits>,
         request_limits: &Option<RequestLimits>,
         token_limits: &Option<TokenLimits>,
-        application_secret: &Uuid,
+        application_secret: &Uuid, 
+        metrics: &Option<Arc<Metrics>>
     ) -> Result<Connection, DataAccessError> {
         let salt = Uuid::now_v7();
         let encrypted_api_key = encrypt(api_key, &salt, application_secret)?;
@@ -212,6 +217,7 @@ impl DataAccess {
             request_limits,
             token_limits,
             &Some(application_secret.clone()),
+            metrics
         )
         .await
     }
@@ -219,13 +225,13 @@ impl DataAccess {
     #[tracing::instrument(
         level="trace",
         name = "delete.connection",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn delete_connection(&self, id: &ConnectionId) -> Result<u64, DataAccessError> {
-        self.__delete_connection(id).await
+    pub async fn delete_connection(&self, id: &ConnectionId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+        self.__delete_connection(id, metrics).await
     }
 }
 

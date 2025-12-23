@@ -9,13 +9,15 @@ use opentelemetry::trace::TracerProvider;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use opentelemetry_sdk::trace::{SdkTracerProvider, TraceError};
 use std::io::Error;
+use std::sync::Arc;
 use clap::parser::ValueSource::EnvVariable;
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
-use opentelemetry_otlp::{LogExporter, SpanExporter, WithExportConfig};
+use opentelemetry_otlp::{LogExporter, MetricExporter, SpanExporter, WithExportConfig};
 use opentelemetry_sdk::logs::SdkLoggerProvider;
+use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::{
     Resource, runtime,
@@ -24,9 +26,11 @@ use opentelemetry_sdk::{
 use tracing::{info, info_span};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+use llmur::LLMurState;
 
 mod configuration;
 mod utils;
+mod otel;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -46,23 +50,10 @@ async fn main() -> Result<(), Error> {
 
     let configuration: Configuration = Configuration::from_yaml_file(&args.configuration);
 
-    let (tracer_provider) = init_tracing_subscriber(
-        "llmur",
-        &otlp_endpoint,
-        &configuration.log_level.clone().unwrap_or(
-            std::env::var("LLMUR_LOG_LEVEL")
-                .unwrap_or("info".into()),
-        )
-    );
-
-    let data_access: DataAccess = configuration.clone().into_async().await;
+    let state: LLMurState = configuration.clone().into_async().await;
 
     let router: Router = llmur::router(
-        data_access,
-        configuration.application_secret,
-        configuration
-            .master_keys
-            .map(|keys| keys.into_iter().collect()),
+        Arc::new(state),
     );
 
     let router: Router = router.layer(TraceLayer::new_for_http().make_span_with(
@@ -93,49 +84,12 @@ async fn main() -> Result<(), Error> {
         .await
         .unwrap();
 
-    let _ = tracer_provider.shutdown();
+    //let _ = tracer_provider.shutdown();
+    //let _ = meter_provider.shutdown();
 
     Ok(())
 }
 
-// Initialize OpenTelemetry tracer
-fn init_tracer(service_name: &str, otlp_endpoint: &str) -> SdkTracerProvider {
-    let exporter = SpanExporter::builder()
-        .with_tonic()
-        .with_endpoint(otlp_endpoint)
-        .build()
-        .expect("Failed to create span exporter");
-
-    let service_name_resource = Resource::builder()
-        .with_service_name(service_name.to_string())
-        .build();
-
-    let provider = SdkTracerProvider::builder()
-        .with_batch_exporter(exporter)
-        .with_resource(service_name_resource)
-        .build();
-
-    opentelemetry::global::set_tracer_provider(provider.clone());
-    provider
-}
-
-// Initialize tracing subscriber with OpenTelemetry
-fn init_tracing_subscriber(service_name: &str, otlp_endpoint: &str, log_level: &str) -> (SdkTracerProvider) {
-    let tracer_provider = init_tracer(service_name, otlp_endpoint);
-
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new(
-            log_level.to_string(),
-        ))
-        .with(tracing_subscriber::fmt::layer())
-        .with(
-            tracing_opentelemetry::layer()
-                .with_tracer(tracer_provider.tracer(service_name.to_string())),
-        )
-        .init();
-
-    (tracer_provider)
-}
 
 /*
 pub fn init_tracing(service_name: &str, otlp_endpoint: &str) {

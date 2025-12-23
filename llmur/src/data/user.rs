@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -8,6 +9,7 @@ use crate::data::{DataAccess, Database};
 use crate::data::membership::MembershipId;
 use crate::data::password::hash_password;
 use crate::errors::{DataAccessError, DbRecordConversionError};
+use crate::metrics::Metrics;
 
 // region:    --- Main Model
 #[derive(Debug, Clone, sqlx::Type, PartialEq, Serialize, Deserialize)]
@@ -77,22 +79,22 @@ impl DataAccess {
     #[tracing::instrument(
         level="trace",
         name = "get.user",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn get_user(&self, id: &UserId) -> Result<Option<User>, DataAccessError> {
-        self.__get_user(id, &None).await
+    pub async fn get_user(&self, id: &UserId, metrics: &Option<Arc<Metrics>>) -> Result<Option<User>, DataAccessError> {
+        self.__get_user(id, &None, metrics).await
     }
    
     #[tracing::instrument(
         level="trace",
         name = "get.user",
-        skip(self)
+        skip(self, metrics)
     )]
-    pub async fn get_user_with_email(&self, email: &str) -> Result<Option<User>, DataAccessError> {
-        let maybe_value: Option<User> = self.database.get_user_with_email(email).await?
+    pub async fn get_user_with_email(&self, email: &str, metrics: &Option<Arc<Metrics>>) -> Result<Option<User>, DataAccessError> {
+        let maybe_value: Option<User> = self.database.get_user_with_email(email, metrics).await?
             .map(|v| v.convert(&None)) // Returns Option<Result<X,Y>>
             .transpose()?;
 
@@ -102,9 +104,9 @@ impl DataAccess {
     #[tracing::instrument(
         level="trace",
         name = "create.user",
-        skip(self, name, password, email_verified, blocked, application_secret)
+        skip(self, name, password, email_verified, blocked, application_secret, metrics)
     )]
-    pub async fn create_user(&self, email: &str, name: &Option<String>, password: &str, email_verified: bool, blocked: bool, application_role: &ApplicationRole, application_secret: &Uuid) -> Result<User, DataAccessError>{
+    pub async fn create_user(&self, email: &str, name: &Option<String>, password: &str, email_verified: bool, blocked: bool, application_role: &ApplicationRole, application_secret: &Uuid, metrics: &Option<Arc<Metrics>>) -> Result<User, DataAccessError>{
         let salt = Uuid::now_v7();
         let hashed_password = hash_password(password.to_string(), salt.clone(), application_secret.clone()).await?;
         let name: &str = name
@@ -119,19 +121,19 @@ impl DataAccess {
                     .unwrap_or("user") // Default to "user" if needed
             });
 
-        self.__create_user(email, name, &hashed_password, email_verified, blocked, &salt, application_role, &None).await
+        self.__create_user(email, name, &hashed_password, email_verified, blocked, &salt, application_role, &None, metrics).await
     }
 
     #[tracing::instrument(
         level="trace",
         name = "delete.user",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn delete_user(&self, id: &UserId) -> Result<u64, DataAccessError> {
-        self.__delete_user(id).await
+    pub async fn delete_user(&self, id: &UserId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+        self.__delete_user(id, metrics).await
     }
 }
 
@@ -158,9 +160,9 @@ impl Database {
     #[tracing::instrument(
         level="trace",
         name = "db.get.user",
-        skip(self)
+        skip(self, metrics)
     )]
-    pub(crate) async fn get_user_with_email(&self, email: &str) -> Result<Option<DbUserRecord>, DataAccessError> {
+    pub(crate) async fn get_user_with_email(&self, email: &str, metrics: &Option<Arc<Metrics>>) -> Result<Option<DbUserRecord>, DataAccessError> {
         match self {
             Database::Postgres { pool } => {
                 let mut query = pg_get_user_with_email_query(email);

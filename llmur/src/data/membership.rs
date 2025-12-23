@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::data::project::{ProjectId, ProjectRole};
 use crate::data::user::UserId;
 use crate::data::utils::{new_uuid_v5_from_string, ConvertInto};
@@ -7,6 +8,7 @@ use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 use crate::data::DataAccess;
 use crate::errors::{DataAccessError, DbRecordConversionError};
+use crate::metrics::Metrics;
 // region:    --- Main Model
 
 #[derive(
@@ -54,39 +56,39 @@ impl DataAccess {
     #[tracing::instrument(
         level="trace",
         name = "get.membership",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn get_membership(&self, id: &MembershipId) -> Result<Option<Membership>, DataAccessError> {
-        self.__get_membership(id, &None).await
+    pub async fn get_membership(&self, id: &MembershipId, metrics: &Option<Arc<Metrics>>) -> Result<Option<Membership>, DataAccessError> {
+        self.__get_membership(id, &None, metrics).await
     }
 
     #[tracing::instrument(
         level="trace",
         name = "create.membership",
-        skip(self, user_id, project_id),
+        skip(self, user_id, project_id, metrics),
         fields(
             user_id = %user_id.0,
             project_id = %project_id.0
         )
     )]
-    pub async fn create_membership(&self, user_id: &UserId, project_id: &ProjectId, role: &ProjectRole) -> Result<Membership, DataAccessError>{
-        self.__create_membership(project_id, user_id, role, &None).await
+    pub async fn create_membership(&self, user_id: &UserId, project_id: &ProjectId, role: &ProjectRole, metrics: &Option<Arc<Metrics>>) -> Result<Membership, DataAccessError>{
+        self.__create_membership(project_id, user_id, role, &None, metrics).await
     }
 
 
     #[tracing::instrument(
         level="trace",
         name = "delete.membership",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn delete_membership(&self, id: &MembershipId) -> Result<u64, DataAccessError> {
-        self.__delete_membership(id).await
+    pub async fn delete_membership(&self, id: &MembershipId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+        self.__delete_membership(id, metrics).await
     }
 }
 

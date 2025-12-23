@@ -22,6 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::{select, sync::mpsc, time::interval};
+use crate::metrics::Metrics;
 
 pub(crate) mod commons;
 pub(crate) mod macros;
@@ -135,7 +136,7 @@ impl DataAccessBuilder {
     }
 
     // Finalize
-    pub fn build(self) -> Result<DataAccess, SetupError> {
+    pub fn build(self, metrics: Option<Arc<Metrics>>,) -> Result<DataAccess, SetupError> {
         let database = self.database.ok_or(SetupError::MissingDatabase)?;
         let cache = Arc::new(self.cache.unwrap_or(Cache::local_only()));
         let http_client = self.http_client.unwrap_or_else(Client::new);
@@ -150,6 +151,7 @@ impl DataAccessBuilder {
             request_log_rx,
             Duration::from_millis(750),
             500,
+            metrics
         );
         spawn_usage_writer(cache.clone(), usage_log_rx, Duration::from_millis(50), 10);
 
@@ -457,6 +459,7 @@ fn spawn_request_log_writer(
     rx: mpsc::Receiver<Arc<RequestLogData>>,
     flush_every: Duration,
     max_batch: usize,
+    metrics: Option<Arc<Metrics>>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut rx = rx;
@@ -471,7 +474,7 @@ fn spawn_request_log_writer(
                     if !batch.is_empty() {
                         println!("### request log tick flush triggered with {} events", batch.len());
                         let to_write = std::mem::take(&mut batch);
-                        if let Err(e) = database.insert_request_logs(&to_write).await {
+                        if let Err(e) = database.insert_request_logs(&to_write, &metrics).await {
                             println!("### request log tick flush failed {:?}", e);
                         }
                     }
@@ -482,7 +485,7 @@ fn spawn_request_log_writer(
                             batch.push(ev);
                             if batch.len() >= max_batch {
                                 let to_write = std::mem::take(&mut batch);
-                                if let Err(e) = database.insert_request_logs(&to_write).await {
+                                if let Err(e) = database.insert_request_logs(&to_write, &metrics).await {
                                     println!("### request log size flush failed");
                                 }
                             }
@@ -490,7 +493,7 @@ fn spawn_request_log_writer(
                         None => {
                             if !batch.is_empty() {
                                 println!("### request log shutdown flush triggered with {} events", batch.len());
-                                let _ = database.insert_request_logs(&batch).await;
+                                let _ = database.insert_request_logs(&batch, &metrics).await;
                             }
                             break;
                         }

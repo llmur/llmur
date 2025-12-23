@@ -12,7 +12,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use uuid::Uuid;
+use crate::metrics::Metrics;
 
 // region:    --- Main Model
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, PartialOrd, sqlx::Type)]
@@ -69,12 +71,6 @@ impl Deployment {
         token_limits: TokenLimits,
         connections: BTreeSet<ConnectionDeploymentId>,
     ) -> Self {
-        let concatenated_connections = connections
-            .iter()
-            .map(|foo| foo.to_string())
-            .collect::<Vec<String>>()
-            .join(":");
-
         Deployment {
             id,
             name,
@@ -97,22 +93,23 @@ impl DataAccess {
     #[tracing::instrument(
         level="trace",
         name = "get.deployment",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
     pub async fn get_deployment(
         &self,
-        id: &DeploymentId,
+        id: &DeploymentId, 
+        metrics: &Option<Arc<Metrics>>
     ) -> Result<Option<Deployment>, DataAccessError> {
-        self.__get_deployment(id, &None).await
+        self.__get_deployment(id, &None, metrics).await
     }
 
     #[tracing::instrument(
         level="trace",
         name = "get.deployments",
-        skip(self, ids),
+        skip(self, ids, metrics),
         fields(
             ids = ?ids.iter().map(|id| id.0).collect::<Vec<Uuid>>()
         )
@@ -120,14 +117,15 @@ impl DataAccess {
     pub async fn get_deployments(
         &self,
         ids: &BTreeSet<DeploymentId>,
+        metrics: &Option<Arc<Metrics>>
     ) -> Result<BTreeMap<DeploymentId, Option<Deployment>>, DataAccessError> {
-        self.__get_deployments(ids, &None).await
+        self.__get_deployments(ids, &None, metrics).await
     }
 
     #[tracing::instrument(
         level="trace",
         name = "search.deployments",
-        skip(self, name),
+        skip(self, name, metrics),
         fields(
             id = %name.clone().unwrap_or("*".to_string()),
         )
@@ -135,14 +133,15 @@ impl DataAccess {
     pub async fn search_deployments(
         &self,
         name: &Option<String>,
+        metrics: &Option<Arc<Metrics>>
     ) -> Result<Vec<Deployment>, DataAccessError> {
-        self.__search_deployments(name, &None).await
+        self.__search_deployments(name, &None, metrics).await
     }
 
     #[tracing::instrument(
         level="trace",
         name = "create.deployment",
-        skip(self)
+        skip(self, metrics)
     )]
     pub async fn create_deployment(
         &self,
@@ -152,20 +151,21 @@ impl DataAccess {
         budget_limits: &Option<BudgetLimits>,
         request_limits: &Option<RequestLimits>,
         token_limits: &Option<TokenLimits>,
+        metrics: &Option<Arc<Metrics>>
     ) -> Result<Deployment, DataAccessError> {
-        self.__create_deployment(name, access, strategy, budget_limits, request_limits, token_limits, &None).await
+        self.__create_deployment(name, access, strategy, budget_limits, request_limits, token_limits, &None, metrics).await
     }
 
     #[tracing::instrument(
         level="trace",
         name = "delete.deployment",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn delete_deployment(&self, id: &DeploymentId) -> Result<u64, DataAccessError> {
-        self.__delete_deployment(id).await
+    pub async fn delete_deployment(&self, id: &DeploymentId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+        self.__delete_deployment(id, metrics).await
     }
 }
 

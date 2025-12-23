@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -8,6 +9,7 @@ use crate::data::DataAccess;
 use crate::data::deployment::{Deployment, DeploymentId};
 use crate::data::virtual_key::VirtualKeyId;
 use crate::errors::{DataAccessError, DbRecordConversionError};
+use crate::metrics::Metrics;
 
 // region:    --- Main Model
 #[derive(
@@ -53,64 +55,64 @@ impl DataAccess {
     #[tracing::instrument(
         level="trace",
         name = "get.virtual_key_deployment",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn get_virtual_key_deployment(&self, id: &VirtualKeyDeploymentId) -> Result<Option<VirtualKeyDeployment>, DataAccessError> {
-        self.__get_virtual_key_deployment(id, &None).await
+    pub async fn get_virtual_key_deployment(&self, id: &VirtualKeyDeploymentId, metrics: &Option<Arc<Metrics>>) -> Result<Option<VirtualKeyDeployment>, DataAccessError> {
+        self.__get_virtual_key_deployment(id, &None, metrics).await
     }
 
     #[tracing::instrument(
         level="trace",
         name = "get.virtual_key_deployments",
-        skip(self, ids),
+        skip(self, ids, metrics),
         fields(
             ids = ?ids.iter().map(|id| id.0).collect::<Vec<Uuid>>()
         )
     )]
-    pub async fn get_virtual_key_deployments(&self, ids: &BTreeSet<VirtualKeyDeploymentId>) -> Result<BTreeMap<VirtualKeyDeploymentId, Option<VirtualKeyDeployment>>, DataAccessError> {
-        self.__get_virtual_key_deployments(ids, &None).await
+    pub async fn get_virtual_key_deployments(&self, ids: &BTreeSet<VirtualKeyDeploymentId>, metrics: &Option<Arc<Metrics>>) -> Result<BTreeMap<VirtualKeyDeploymentId, Option<VirtualKeyDeployment>>, DataAccessError> {
+        self.__get_virtual_key_deployments(ids, &None, metrics).await
     }
 
     #[tracing::instrument(
         level="trace",
         name = "create.virtual_key_deployments",
-        skip(self),
+        skip(self, metrics),
         fields(
             virtual_key_id = %virtual_key_id.0, 
             deployment_id = %deployment_id.0
         )
     )]
-    pub async fn create_virtual_key_deployment(&self, virtual_key_id: &VirtualKeyId, deployment_id: &DeploymentId) -> Result<VirtualKeyDeployment, DataAccessError> {
+    pub async fn create_virtual_key_deployment(&self, virtual_key_id: &VirtualKeyId, deployment_id: &DeploymentId, metrics: &Option<Arc<Metrics>>) -> Result<VirtualKeyDeployment, DataAccessError> {
         //self.cache.delete_cached_virtual_key(virtual_key_id).await;
-        self.__create_virtual_key_deployment(virtual_key_id, deployment_id, &None).await
+        self.__create_virtual_key_deployment(virtual_key_id, deployment_id, &None, metrics).await
     }
     
     #[tracing::instrument(
         level="trace",
         name = "delete.virtual_key_deployment",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn delete_virtual_key_deployment(&self, id: &VirtualKeyDeploymentId) -> Result<u64, DataAccessError> {
-        self.__delete_virtual_key_deployment(id).await
+    pub async fn delete_virtual_key_deployment(&self, id: &VirtualKeyDeploymentId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+        self.__delete_virtual_key_deployment(id, metrics).await
     }
 
     #[tracing::instrument(
         level="trace",
         name = "search.virtual_key_deployment",
-        skip(self, virtual_key_id, deployment_id),
+        skip(self, virtual_key_id, deployment_id, metrics),
         fields(
             virtual_key_id = %virtual_key_id.map(|id| id.0.to_string()).unwrap_or("*".to_string()),
             deployment_id = %deployment_id.map(|id| id.0.to_string()).unwrap_or("*".to_string()),
         )
     )]
-    pub async fn search_virtual_key_deployments(&self, virtual_key_id: &Option<VirtualKeyId>, deployment_id: &Option<DeploymentId>) -> Result<Vec<VirtualKeyDeployment>, DataAccessError> {
-        self.__search_virtual_key_deployments(virtual_key_id, deployment_id, &None).await
+    pub async fn search_virtual_key_deployments(&self, virtual_key_id: &Option<VirtualKeyId>, deployment_id: &Option<DeploymentId>, metrics: &Option<Arc<Metrics>>) -> Result<Vec<VirtualKeyDeployment>, DataAccessError> {
+        self.__search_virtual_key_deployments(virtual_key_id, deployment_id, &None, metrics).await
     }
 
 }

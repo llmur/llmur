@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use crate::data::connection::ConnectionId;
 use crate::data::deployment::DeploymentId;
 use crate::data::utils::{new_uuid_v5_from_string, ConvertInto};
@@ -10,6 +11,7 @@ use crate::data::DataAccess;
 use crate::data::virtual_key::VirtualKeyId;
 use crate::data::virtual_key_deployment::VirtualKeyDeployment;
 use crate::errors::{DataAccessError, DbRecordConversionError};
+use crate::metrics::Metrics;
 
 // region:    --- Main Model
 #[derive(
@@ -58,65 +60,65 @@ impl DataAccess {
     #[tracing::instrument(
         level="trace",
         name = "get.connection_deployment_map",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn get_connection_deployment(&self, id: &ConnectionDeploymentId) -> Result<Option<ConnectionDeployment>, DataAccessError> {
-        self.__get_connection_deployment(id, &None).await
+    pub async fn get_connection_deployment(&self, id: &ConnectionDeploymentId, metrics: &Option<Arc<Metrics>>) -> Result<Option<ConnectionDeployment>, DataAccessError> {
+        self.__get_connection_deployment(id, &None, metrics).await
     }
 
     #[tracing::instrument(
         level="trace",
         name = "get.connection_deployment_maps",
-        skip(self, ids),
+        skip(self, ids, metrics),
         fields(
             ids = ?ids.iter().map(|id| id.0).collect::<Vec<Uuid>>()
         )
     )]
-    pub async fn get_connection_deployments(&self, ids: &BTreeSet<ConnectionDeploymentId>) -> Result<BTreeMap<ConnectionDeploymentId, Option<ConnectionDeployment>>, DataAccessError> {
-        self.__get_connection_deployments(ids, &None).await
+    pub async fn get_connection_deployments(&self, ids: &BTreeSet<ConnectionDeploymentId>, metrics: &Option<Arc<Metrics>>) -> Result<BTreeMap<ConnectionDeploymentId, Option<ConnectionDeployment>>, DataAccessError> {
+        self.__get_connection_deployments(ids, &None, metrics).await
     }
 
     #[tracing::instrument(
         level="trace",
         name = "create.connection_deployment_map",
-        skip(self),
+        skip(self, metrics),
         fields(
             connection_id = %connection_id.0, 
             deployment_id = %deployment_id.0
         )
     )]
-    pub async fn create_connection_deployment(&self, connection_id: &ConnectionId, deployment_id: &DeploymentId, weight: i16) -> Result<ConnectionDeployment, DataAccessError> {
+    pub async fn create_connection_deployment(&self, connection_id: &ConnectionId, deployment_id: &DeploymentId, weight: i16, metrics: &Option<Arc<Metrics>>) -> Result<ConnectionDeployment, DataAccessError> {
         //self.cache.delete_cached_deployment(deployment_id).await;
-        self.__create_connection_deployment(connection_id, deployment_id, weight, &None).await
+        self.__create_connection_deployment(connection_id, deployment_id, weight, &None, metrics).await
     }
 
     #[tracing::instrument(
         level="trace",
         name = "delete.connection_deployment_map",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn delete_connection_deployment(&self, id: &ConnectionDeploymentId) -> Result<u64, DataAccessError> {
-        self.__delete_connection_deployment(id).await
+    pub async fn delete_connection_deployment(&self, id: &ConnectionDeploymentId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+        self.__delete_connection_deployment(id, metrics).await
     }
 
 
     #[tracing::instrument(
         level="trace",
         name = "search.connection_deployment_maps",
-        skip(self, connection_id, deployment_id),
+        skip(self, connection_id, deployment_id, metrics),
         fields(
             connection_id = %connection_id.map(|id| id.0.to_string()).unwrap_or("*".to_string()),
             deployment_id = %deployment_id.map(|id| id.0.to_string()).unwrap_or("*".to_string()),
         )
     )]
-    pub async fn search_connection_deployments(&self, connection_id: &Option<ConnectionId>, deployment_id: &Option<DeploymentId>) -> Result<Vec<ConnectionDeployment>, DataAccessError> {
-        self.__search_connection_deployments(connection_id, deployment_id, &None).await
+    pub async fn search_connection_deployments(&self, connection_id: &Option<ConnectionId>, deployment_id: &Option<DeploymentId>, metrics: &Option<Arc<Metrics>>) -> Result<Vec<ConnectionDeployment>, DataAccessError> {
+        self.__search_connection_deployments(connection_id, deployment_id, &None, metrics).await
     }
 }
 

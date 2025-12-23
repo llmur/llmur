@@ -43,7 +43,8 @@ pub(crate) async fn create_key(
                 &payload.budget_limits,
                 &payload.request_limits,
                 &payload.token_limits,
-                &state.application_secret).await?;
+                &state.application_secret,
+                &state.metrics).await?;
 
 
             Ok(Json(key.into()))
@@ -68,7 +69,7 @@ pub(crate) async fn get_key(
 ) -> Result<Json<GetVirtualKeyResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let key = state.data.get_virtual_key(&id, &state.application_secret).await?.ok_or(DataAccessError::ResourceNotFound)?;
+    let key = state.data.get_virtual_key(&id, &state.application_secret, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?;
 
     match user_context {
         UserContext::MasterUser => {
@@ -94,11 +95,11 @@ pub(crate) async fn delete_key(
 ) -> Result<Json<StatusResponse>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let key = state.data.get_virtual_key(&id, &state.application_secret).await?.ok_or(DataAccessError::ResourceNotFound)?;
+    let key = state.data.get_virtual_key(&id, &state.application_secret, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?;
 
     match user_context {
         UserContext::MasterUser => {
-            let result = state.data.delete_virtual_key(&key.id).await?;
+            let result = state.data.delete_virtual_key(&key.id, &state.metrics).await?;
             Ok(Json(StatusResponse {
                 success: result != 0,
                 message: None,

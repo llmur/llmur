@@ -69,7 +69,7 @@ where
                 // TODO: Pass the correct TS - TS of the actual request
                 app_state
                     .data
-                    .get_graph(&api_key, deployment, false, 10_000, &app_state.application_secret, &Utc::now())
+                    .get_graph(&api_key, deployment, false, 10_000, &app_state.application_secret, &Utc::now(), &app_state.metrics)
                     .await
                     .map_err(GraphError::from)?
             }

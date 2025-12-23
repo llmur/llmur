@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::data::user::UserId;
 use crate::data::utils::{new_uuid_v5_from_string, parse_and_add_to_current_ts, ConvertInto};
 use crate::{default_access_fns, default_database_access_fns, impl_local_store_accessors, impl_locally_stored, impl_structured_id_utils, impl_with_id_parameter_for_struct};
@@ -9,6 +10,7 @@ use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 use crate::data::DataAccess;
 use crate::errors::{DataAccessError, DbRecordConversionError, InvalidTimeFormatError};
+use crate::metrics::Metrics;
 
 // region:    --- Main Model
 #[derive(
@@ -77,42 +79,42 @@ impl DataAccess {
     #[tracing::instrument(
         level="trace",
         name = "get.session_token",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn get_session_token(&self, id: &SessionTokenId) -> Result<Option<SessionToken>, DataAccessError> {
-        self.__get_session_token(id, &None).await // TODO : Parameterise
+    pub async fn get_session_token(&self, id: &SessionTokenId, metrics: &Option<Arc<Metrics>>) -> Result<Option<SessionToken>, DataAccessError> {
+        self.__get_session_token(id, &None, metrics).await // TODO : Parameterise
     }
 
 
     #[tracing::instrument(
         level="trace",
         name = "create.session_token",
-        skip(self, id, user_id),
+        skip(self, id, user_id, metrics),
         fields(
             user_id = %user_id.0
         )
     )]
-    pub async fn create_session_token(&self, id: &SessionTokenId, user_id: &UserId) -> Result<SessionToken, DataAccessError> {
+    pub async fn create_session_token(&self, id: &SessionTokenId, user_id: &UserId, metrics: &Option<Arc<Metrics>>) -> Result<SessionToken, DataAccessError> {
         let seconds = parse_and_add_to_current_ts("30d")?; // Should never fail - Still better handle it
         let expires_at = chrono::DateTime::from_timestamp(seconds, 0).ok_or(InvalidTimeFormatError::TimestampOutOfRange(seconds))?;
 
-        self.__create_session_token(id, user_id, &expires_at, &None).await
+        self.__create_session_token(id, user_id, &expires_at, &None, metrics).await
     }
 
 
     #[tracing::instrument(
         level="trace",
         name = "delete.session_token",
-        skip(self, id),
+        skip(self, id, metrics),
         fields(
             id = %id.0
         )
     )]
-    pub async fn delete_session_token(&self, id: &SessionTokenId) -> Result<u64, DataAccessError> {
-        self.__delete_session_token(id).await
+    pub async fn delete_session_token(&self, id: &SessionTokenId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+        self.__delete_session_token(id, metrics).await
     }
 }
 

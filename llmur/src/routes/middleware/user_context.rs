@@ -35,7 +35,7 @@ impl UserContext {
         let session_token_id = SessionToken::generate_id(session_token_str, &state.application_secret).into();
 
         let token = state.data
-            .get_session_token(&session_token_id)
+            .get_session_token(&session_token_id, &state.metrics)
             .await
             .map_err(|_| AuthenticationError::UnableToFetchSessionToken)?
             .ok_or(AuthenticationError::InvalidSessionToken)?;
@@ -43,7 +43,7 @@ impl UserContext {
         // TODO: Check if session was revoked or expired
 
         let user = state.data
-            .get_user(&token.user_id)
+            .get_user(&token.user_id, &state.metrics)
             .await
             .map_err(|_| AuthenticationError::UnableToFetchTokenUser)?
             .ok_or(AuthenticationError::TokenUserNotFound)?;

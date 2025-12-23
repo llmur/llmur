@@ -36,6 +36,7 @@ pub(crate) async fn create_membership(
                 &payload.user_id,
                 &payload.project_id,
                 &payload.role.unwrap_or(ProjectRole::Guest),
+                &state.metrics,
             ).await?;
 
             Ok(Json(membership.into()))
@@ -62,7 +63,7 @@ pub(crate) async fn get_membership(
 
     match user_context {
         UserContext::MasterUser => {
-            let membership = state.data.get_membership(&id).await?.ok_or(DataAccessError::ResourceNotFound)?;
+            let membership = state.data.get_membership(&id, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?;
             Ok(Json(membership.into()))
         }
         UserContext::WebAppUser { user, .. } => {
@@ -86,11 +87,11 @@ pub(crate) async fn delete_membership(
 ) -> Result<Json<StatusResponse>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let membership = state.data.get_membership(&id).await?.ok_or(DataAccessError::ResourceNotFound)?;
+    let membership = state.data.get_membership(&id, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?;
 
     match user_context {
         UserContext::MasterUser => {
-            let result = state.data.delete_membership(&membership.id).await?;
+            let result = state.data.delete_membership(&membership.id, &state.metrics).await?;
             Ok(Json(StatusResponse {
                 success: result != 0,
                 message: None,
