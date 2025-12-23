@@ -1,43 +1,57 @@
-use std::collections::BTreeMap;
-use crate::data::session_token::SessionToken;
-use crate::data::user::{ApplicationRole, User};
-use crate::errors::{AuthenticationError, AuthorizationError, LLMurError};
 use crate::LLMurState;
+use crate::data::membership::{Membership, MembershipId};
+use crate::data::project::{ProjectId, ProjectRole};
+use crate::data::session_token::SessionToken;
+use crate::data::user::{ApplicationRole, User, UserId};
+use crate::errors::{AuthenticationError, AuthorizationError, LLMurError};
 use axum::extract::{Request, State};
 use axum::http::HeaderValue;
 use axum::middleware::Next;
 use axum::response::Response;
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use crate::data::membership::{Membership, MembershipId};
-use crate::data::project::{ProjectId, ProjectRole};
 
 #[derive(Clone, Debug)]
 pub enum UserContext {
     MasterUser,
     WebAppUser {
         session_token: SessionToken,
-        user: User
+        user: User,
     },
 }
 
 pub type UserContextExtractionResult = Result<UserContext, Arc<AuthenticationError>>;
 
 impl UserContext {
-    pub fn resolve_from_key_header(state: Arc<LLMurState>, header: &HeaderValue) -> UserContextExtractionResult {
-        let key_str = header.to_str().map_err(|_| AuthenticationError::InvalidAuthBearer)?;
+    pub fn resolve_from_key_header(
+        state: Arc<LLMurState>,
+        header: &HeaderValue,
+    ) -> UserContextExtractionResult {
+        let key_str = header
+            .to_str()
+            .map_err(|_| AuthenticationError::InvalidAuthBearer)?;
 
         if state.master_keys.contains(key_str) {
             Ok(UserContext::MasterUser)
-        } else { Err(Arc::new(AuthenticationError::InvalidAuthBearer)) }
+        } else {
+            Err(Arc::new(AuthenticationError::InvalidAuthBearer))
+        }
     }
 
-    pub async fn resolve_from_session_header(state: Arc<LLMurState>, header: &HeaderValue) -> UserContextExtractionResult {
-        let session_token_str = header.to_str().map_err(|_| AuthenticationError::InvalidAuthBearer)?;
-        let session_token_id = SessionToken::generate_id(session_token_str, &state.application_secret).into();
+    pub async fn resolve_from_session_header(
+        state: Arc<LLMurState>,
+        header: &HeaderValue,
+    ) -> UserContextExtractionResult {
+        let session_token_str = header
+            .to_str()
+            .map_err(|_| AuthenticationError::InvalidAuthBearer)?;
+        let session_token_id =
+            SessionToken::generate_id(session_token_str, &state.application_secret).into();
 
-        let token = state.data
+        let token = state
+            .data
             .get_session_token(&session_token_id, &state.metrics)
             .await
             .map_err(|_| AuthenticationError::UnableToFetchSessionToken)?
@@ -45,18 +59,17 @@ impl UserContext {
 
         // TODO: Check if session was revoked or expired
 
-        let user = state.data
+        let user = state
+            .data
             .get_user(&token.user_id, &state.metrics)
             .await
             .map_err(|_| AuthenticationError::UnableToFetchTokenUser)?
             .ok_or(AuthenticationError::TokenUserNotFound)?;
 
-        Ok(
-            UserContext::WebAppUser {
-                session_token: token,
-                user
-            }
-        )
+        Ok(UserContext::WebAppUser {
+            session_token: token,
+            user,
+        })
     }
 
     pub fn unauthenticated() -> UserContextExtractionResult {
@@ -129,6 +142,55 @@ impl UserContext {
             }
         }
     }
+
+    /// Check if user is a member of a project
+    pub(crate) async fn has_project_member_access(
+        &self,
+        state: Arc<LLMurState>,
+        project_id: &ProjectId,
+    ) -> Result<bool, LLMurError> {
+        match self {
+            UserContext::MasterUser => Ok(true),
+            UserContext::WebAppUser { user, .. } => {
+                if user.role == ApplicationRole::Admin {
+                    return Ok(true);
+                }
+
+                let memberships: BTreeMap<MembershipId, Membership> = state
+                    .data
+                    .get_memberships(&user.memberships, &state.metrics)
+                    .await?
+                    .into_iter()
+                    .filter_map(|(k, v)| v.map(|val| (k, val)))
+                    .collect();
+
+                Ok(memberships
+                    .values()
+                    .any(|v| v.project_id == *project_id)
+                )
+            }
+        }
+    }
+    
+    /// Check if user has admin permissions. Either an Application Admin or a Master User
+    pub(crate) fn has_admin_access(
+        &self
+    ) -> bool {
+        match self {
+            UserContext::MasterUser => true,
+            UserContext::WebAppUser { user, .. } => user.role == ApplicationRole::Admin
+        }
+    }
+
+    /// Retrieve the user id - None if it's a Master Key
+    pub(crate) fn get_user_id(
+        &self
+    ) -> Option<UserId> {
+        match self {
+            UserContext::MasterUser => None,
+            UserContext::WebAppUser { user, .. } => Some(user.id),
+        }
+    }
     // endregion: --- Authorization Helpers
 }
 
@@ -140,20 +202,20 @@ pub(crate) trait AuthorizationManager {
 impl AuthorizationManager for UserContextExtractionResult {
     fn require_master_user(self) -> Result<UserContext, LLMurError> {
         match self {
-            Ok(ctx) => {
-                match ctx {
-                    UserContext::MasterUser => { Ok(ctx) }
-                    UserContext::WebAppUser { .. } => { Err(AuthorizationError::AccessDenied)? }
-                }
-            }
-            Err(_) => { Err(AuthorizationError::AccessDenied)? }
+            Ok(ctx) => match ctx {
+                UserContext::MasterUser => Ok(ctx),
+                UserContext::WebAppUser { .. } => Err(AuthorizationError::AccessDenied)?,
+            },
+            Err(_) => Err(AuthorizationError::AccessDenied)?,
         }
     }
 
     fn require_authenticated_user(self) -> Result<UserContext, LLMurError> {
         match self {
-            Ok(c) => {Ok(c)}
-            Err(e/*: Arc<AuthenticationError>*/) => { todo!("How can I do this") /*impl From<AuthenticationError> for LLMurError*/}
+            Ok(c) => Ok(c),
+            Err(e /*: Arc<AuthenticationError>*/) => {
+                todo!("How can I do this") /*impl From<AuthenticationError> for LLMurError*/
+            }
         }
     }
 }
@@ -182,4 +244,3 @@ pub(crate) fn user_context_load_mw(
         next.run(request).await
     })
 }
-

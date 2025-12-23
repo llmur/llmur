@@ -15,18 +15,9 @@ use crate::routes::StatusResponse;
 pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
     Router::new()
         // Project routes
-        //.route("/", get(list_projects))
         .route("/", post(create_project))
         .route("/{id}", get(get_project))
         .route("/{id}", delete(delete_project))
-        //.route("/:id", put(update_project))
-        // Project membership routes
-        //.route("/:id/memberships", get(get_project_memberships))
-        //.route("/:id/memberships", post(create_project_membership))
-        // Project invite codes routes
-        //.route("/:id/invite_codes", get(get_project_invite_codes))
-        //.route("/:id/invite_codes", post(create_project_invite_code))
-
         .with_state(state.clone())
 }
 
@@ -40,22 +31,17 @@ pub(crate) async fn create_project(
     Json(payload): Json<CreateProjectPayload>,
 ) -> Result<Json<GetProjectResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
-    match user_context {
-        UserContext::MasterUser => {
-            let result = state.data.create_project(&payload.name, &None, &payload.budget_limits, &payload.request_limits, &payload.token_limits, &state.metrics).await;
-            let project = result?;
-            Ok(Json(project.into()))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            if user.role != ApplicationRole::Admin {
-                return Err(AuthorizationError::AccessDenied.into());
-            }
 
-            let project = state.data.create_project(&payload.name, &Some(user.id), &payload.budget_limits, &payload.request_limits, &payload.token_limits, &state.metrics).await?;
-
-            Ok(Json(project.into()))
-        }
+    if !user_context.has_admin_access() {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    let project = state
+        .data
+        .create_project(&payload.name, &user_context.get_user_id(), &payload.budget_limits, &payload.request_limits, &payload.token_limits, &state.metrics)
+        .await?;
+
+    Ok(Json(project.into()))
 }
 
 #[tracing::instrument(
@@ -72,25 +58,17 @@ pub(crate) async fn get_project(
 ) -> Result<Json<GetProjectResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let project = state.data.get_project(&id, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?;
-
-    match user_context {
-        UserContext::MasterUser => {
-            Ok(Json(project.into()))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            /*
-            if user.role == ApplicationRole::Admin || !user.memberships.is_disjoint(&project.memberships){
-                return Ok(Json(ProjectData {
-                    id: project.id,
-                    name: project.name,
-                }))
-            }
-             */
-
-            Err(AuthorizationError::AccessDenied)?
-        }
+    if !user_context.has_project_member_access(state.clone(), &id).await? {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    let project = state
+        .data
+        .get_project(&id, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    Ok(Json(project.into()))
 }
 
 #[tracing::instrument(
@@ -107,39 +85,21 @@ pub(crate) async fn delete_project(
 ) -> Result<Json<StatusResponse>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let project = state.data.get_project(&id, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?;
+    let project = state
+        .data
+        .get_project(&id, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
 
-    match user_context {
-        UserContext::MasterUser => {
-            let result = state.data.delete_project(&project.id, &state.metrics).await?;
-            Ok(Json(StatusResponse {
-                success: result != 0,
-                message: None,
-            }))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            // TODO
-            /*
-            let maybe_membership = state.data.memberships()
-                .search_memberships(&None, &Some(id))
-                .await?
-                .iter()
-                .find(|&mem| mem.user_id == user.id)
-                .cloned();
-
-            if let Some(membership) = maybe_membership {
-                if membership.role == ProjectRole::Admin {
-                    let result = state.data.projects().delete_project(&id).await?;
-                    return Ok(Json(StatusResponse {
-                        success: result != 0,
-                        message: None,
-                    }))
-                }
-            }
-            */
-            Err(AuthorizationError::AccessDenied)?
-        }
+    if !user_context.has_project_admin_access(state.clone(), &id).await? {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    let result = state.data.delete_project(&project.id, &state.metrics).await?;
+    Ok(Json(StatusResponse {
+        success: result != 0,
+        message: None,
+    }))
 }
 
 
