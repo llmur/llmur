@@ -1,7 +1,8 @@
-use std::collections::BTreeMap;
 use crate::data::deployment::{Deployment, DeploymentAccess, DeploymentId};
+use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
+use crate::data::load_balancer::LoadBalancingStrategy;
 use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
-use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
+use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
 use crate::routes::StatusResponse;
 use crate::{impl_from_vec_result, LLMurState};
 use axum::extract::{Path, State};
@@ -9,9 +10,6 @@ use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
-use crate::data::load_balancer::LoadBalancingStrategy;
-use crate::data::membership::{Membership, MembershipId};
 
 // region:    --- Routes
 pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
