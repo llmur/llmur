@@ -212,7 +212,7 @@ pub(crate) fn pg_getm(ids: &'_ Vec<VirtualKeyDeploymentId>) -> QueryBuilder<'_, 
     query
 }
 
-pub(crate) fn pg_delete(id: &'_ VirtualKeyDeploymentId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_delete(id: &'_ VirtualKeyDeploymentId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         DELETE FROM virtual_keys_deployments_map
         WHERE id="

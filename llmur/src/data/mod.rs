@@ -252,7 +252,7 @@ impl Cache {
             },
         })?;
 
-        let mut con = client
+        let con = client
             .get_multiplexed_async_connection()
             .await?;
 
@@ -483,7 +483,7 @@ fn spawn_request_log_writer(
                             batch.push(ev);
                             if batch.len() >= max_batch {
                                 let to_write = std::mem::take(&mut batch);
-                                if let Err(e) = database.insert_request_logs(&to_write, &metrics).await {
+                                if let Err(_e) = database.insert_request_logs(&to_write, &metrics).await {
                                     println!("### request log size flush failed");
                                 }
                             }

@@ -80,23 +80,13 @@ pub(crate) async fn create_connection(
             Ok(Json(result.into()))
         }
         UserContext::WebAppUser { user, .. } => {
-            /*
             if user.role != ApplicationRole::Admin {
-                return Err(LLMurError::NotAuthorized)
+                Err(AuthorizationError::AccessDenied)?
             }
-
-            println!("Creating connection");
 
             let result = method.await?;
 
-            println!("Connection: {:?}", result.id());
-
-            Ok(Json(StatusResponse {
-                success: true,
-                message: Some(format!("Connection {} created successfully", result.id())),
-            }))
-             */
-            Err(AuthorizationError::AccessDenied)?
+            Ok(Json(result.into()))
         }
     }
 }
