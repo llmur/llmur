@@ -31,15 +31,23 @@ pub(crate) async fn create_virtual_key_deployment(
     Json(payload): Json<CreateVirtualKeyDeploymentPayload>,
 ) -> Result<Json<GetVirtualKeyDeploymentResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
-    match user_context {
-        UserContext::MasterUser => {
-            let result = state.data.create_virtual_key_deployment(&payload.virtual_key_id, &payload.deployment_id, &state.metrics).await?;
-            Ok(Json(result.into()))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            Err(AuthorizationError::AccessDenied)?
-        }
+
+    let virtual_key = state
+        .data
+        .get_virtual_key(&payload.virtual_key_id, &state.application_secret ,&state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    if !user_context.has_project_admin_access(state.clone(), &virtual_key.project_id).await? {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    let result = state
+        .data
+        .create_virtual_key_deployment(&payload.virtual_key_id, &payload.deployment_id, &state.metrics)
+        .await?;
+
+    Ok(Json(result.into()))
 }
 
 #[tracing::instrument(
@@ -56,16 +64,23 @@ pub(crate) async fn get_virtual_key_deployment(
 ) -> Result<Json<GetVirtualKeyDeploymentResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let vkd = state.data.get_virtual_key_deployment(&id, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?;
+    let vkd = state
+        .data
+        .get_virtual_key_deployment(&id, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
 
-    match user_context {
-        UserContext::MasterUser => {
-            Ok(Json(vkd.into()))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            Err(AuthorizationError::AccessDenied)?
-        }
+    let virtual_key = state
+        .data
+        .get_virtual_key(&vkd.virtual_key_id, &state.application_secret ,&state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    if !user_context.has_project_developer_access(state.clone(), &virtual_key.project_id).await? {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    Ok(Json(vkd.into()))
 }
 
 #[tracing::instrument(
@@ -82,20 +97,31 @@ pub(crate) async fn delete_virtual_key_deployment(
 ) -> Result<Json<StatusResponse>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let vkd = state.data.get_virtual_key_deployment(&id, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?; // TODO
+    let vkd = state
+        .data
+        .get_virtual_key_deployment(&id, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
 
-    match user_context {
-        UserContext::MasterUser => {
-            let result = state.data.delete_virtual_key_deployment(&vkd.id, &state.metrics).await?;
-            Ok(Json(StatusResponse {
-                success: result != 0,
-                message: None,
-            }))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            Err(AuthorizationError::AccessDenied)?
-        }
+    let virtual_key = state
+        .data
+        .get_virtual_key(&vkd.virtual_key_id, &state.application_secret ,&state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    if !user_context.has_project_admin_access(state.clone(), &virtual_key.project_id).await? {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    let result = state
+        .data
+        .delete_virtual_key_deployment(&vkd.id, &state.metrics)
+        .await?;
+
+    Ok(Json(StatusResponse {
+        success: result != 0,
+        message: None,
+    }))
 }
 
 // endregion: --- Routes
