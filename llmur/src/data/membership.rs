@@ -10,8 +10,8 @@ use uuid::Uuid;
 use crate::data::DataAccess;
 use crate::errors::{DataAccessError, DbRecordConversionError};
 use crate::metrics::Metrics;
-// region:    --- Main Model
 
+// region:    --- Main Model
 #[derive(
     Debug,
     Clone,
@@ -103,6 +103,20 @@ impl DataAccess {
     pub async fn delete_membership(&self, id: &MembershipId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
         self.__delete_membership(id, metrics).await
     }
+
+
+    #[tracing::instrument(
+        level="trace",
+        name = "search.memberships",
+        skip(self, project_id, user_id, metrics),
+        fields(
+            user_id = %user_id.map(|id| id.0.to_string()).unwrap_or("*".to_string()),
+            project_id = %project_id.map(|id| id.0.to_string()).unwrap_or("*".to_string())
+        )
+    )]
+    pub async fn search_memberships(&self, user_id: &Option<UserId>, project_id: &Option<ProjectId>, metrics: &Option<Arc<Metrics>>) -> Result<Vec<Membership>, DataAccessError> {
+        self.__search_memberships(user_id, project_id, &None, metrics).await
+    }
 }
 
 default_access_fns!(
@@ -115,7 +129,10 @@ default_access_fns!(
             user_id: &UserId,
             project_role: &ProjectRole
         },
-        search => {}
+        search => {
+            user_id: &Option<UserId>,
+            project_id: &Option<ProjectId>
+        }
     );
 // endregion: --- Data Access
 
@@ -130,13 +147,34 @@ default_database_access_fns!(
         user_id: &UserId,
         project_role: &ProjectRole
     },
-    search => { }
+    search => {
+        user_id: &Option<UserId>,
+        project_id: &Option<ProjectId>
+    }
 );
 // region:      --- Postgres Queries
 
 #[allow(unused)]
-pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
-    unimplemented!()
+pub(crate) fn pg_search<'a>(user_id: &'a Option<UserId>, project_id: &'a Option<ProjectId>) -> QueryBuilder<'a, Postgres> {
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+        SELECT
+          id,
+          user_id,
+          project_id,
+          role
+        FROM memberships
+        WHERE 1=1 "
+    );
+    if let Some(project_id) = project_id {
+        query.push(" AND project_id=");
+        query.push(project_id);
+    }
+    if let Some(user_id) = user_id {
+        query.push(" AND user_id=");
+        query.push(user_id);
+    }
+    // Build query
+    query
 }
 
 pub(crate) fn pg_insert<'a>(project_id: &'a ProjectId, user_id: &'a UserId, project_role: &'a ProjectRole) -> QueryBuilder<'a, Postgres> {
