@@ -145,6 +145,19 @@ impl DataAccess {
             .await
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "search.connections",
+        skip(self, application_secret, metrics)
+    )]
+    pub async fn search_connections(
+        &self,
+        application_secret: &Uuid,
+        metrics: &Option<Arc<Metrics>>
+    ) -> Result<Vec<Connection>, DataAccessError> {
+        self.__search_connections(&Some(*application_secret), metrics)
+            .await
+    }
 
     #[tracing::instrument(
         level="trace",
@@ -266,8 +279,15 @@ default_database_access_fns!(
 // region:      --- Postgres Queries
 #[allow(unused)]
 pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
-    
-    unimplemented!()
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
+        SELECT
+            id, connection_info, budget_limits, request_limits, token_limits
+            FROM connections",
+    );
+
+    // Return builder
+    query
 }
 
 pub(crate) fn pg_insert<'a>(

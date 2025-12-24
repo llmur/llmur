@@ -16,6 +16,7 @@ use std::sync::Arc;
 pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
     Router::new()
         .route("/", post(create_connection))
+        .route("/", get(list_connections))
         .route("/{id}", get(get_connection))
         .route("/{id}", delete(delete_connection))
         .with_state(state.clone())
@@ -147,6 +148,32 @@ pub(crate) async fn delete_connection(
     }))
 }
 
+
+#[tracing::instrument(
+    name = "handler.search.connections",
+    skip(state, ctx)
+)]
+pub(crate) async fn list_connections(
+    Extension(ctx): Extension<UserContextExtractionResult>,
+    State(state): State<Arc<LLMurState>>
+) -> Result<Json<ListConnectionsResult>, LLMurError> {
+    let user_context = ctx.require_authenticated_user()?;
+    
+    if !user_context.has_admin_access() {
+        return Err(AuthorizationError::AccessDenied)?;
+    }
+
+    let result = state
+        .data
+        .search_connections(&state.application_secret, &state.metrics)
+        .await?
+        .into_iter()
+        .map(Into::<GetConnectionResult>::into)
+        .collect::<Vec<GetConnectionResult>>()
+        .into();
+
+    Ok(Json(result))
+}
 // endregion: --- Routes
 
 // region:    --- Data Models

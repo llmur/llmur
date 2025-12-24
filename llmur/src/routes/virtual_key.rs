@@ -117,7 +117,7 @@ pub(crate) async fn delete_key(
 }
 
 #[tracing::instrument(
-    name = "handler.search.virtual_key",
+    name = "handler.search.virtual_keys",
     skip(state, ctx, params)
 )]
 pub(crate) async fn search_keys(
