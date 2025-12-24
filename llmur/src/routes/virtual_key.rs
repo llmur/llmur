@@ -172,6 +172,7 @@ pub(crate) struct SearchVirtualKeyQueryParams {
 pub(crate) struct GetVirtualKeyResult {
     pub(crate) id: VirtualKeyId,
     pub(crate) key: String,
+    pub(crate) description: Option<String>,
     pub(crate) alias: String,
     pub(crate) blocked: bool,
     pub(crate) project_id: ProjectId,
@@ -190,6 +191,7 @@ impl From<VirtualKey> for GetVirtualKeyResult {
         GetVirtualKeyResult {
             id: value.id,
             key: value.key,
+            description: value.description,
             alias: value.alias,
             blocked: value.blocked,
             project_id: value.project_id,

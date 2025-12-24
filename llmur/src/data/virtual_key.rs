@@ -40,6 +40,7 @@ impl VirtualKeyId {
 pub struct VirtualKey {
     pub id: VirtualKeyId,
     pub key: String,
+    pub description: Option<String>,
     pub alias: String,
     pub blocked: bool,
     pub project_id: ProjectId,
@@ -70,6 +71,7 @@ impl VirtualKey {
         VirtualKey {
             id,
             key: decrypted_key,
+            description,
             alias,
             blocked,
             project_id,
