@@ -42,8 +42,8 @@ pub(crate) async fn create_user(
         &payload.email,
         &payload.name,
         &payload.password,
-        false,
-        false,
+        payload.email_verified.unwrap_or(false),
+        payload.blocked.unwrap_or(false),
         &payload.role.unwrap_or(ApplicationRole::Member),
         &state.application_secret,
         &state.metrics
@@ -140,6 +140,7 @@ pub(crate) struct CreateUserPayload {
     pub(crate) password: String,
     pub(crate) name: Option<String>,
     pub(crate) blocked: Option<bool>,
+    pub(crate) email_verified: Option<bool>,
     pub(crate) role: Option<ApplicationRole>
 }
 

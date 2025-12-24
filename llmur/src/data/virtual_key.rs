@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Postgres, QueryBuilder};
@@ -9,7 +9,7 @@ use crate::{default_access_fns, default_database_access_fns, impl_structured_id_
 use crate::data::DataAccess;
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::project::ProjectId;
-use crate::data::virtual_key_deployment::VirtualKeyDeploymentId;
+use crate::data::virtual_key_deployment::{VirtualKeyDeployment, VirtualKeyDeploymentId};
 use crate::errors::{DataAccessError, DbRecordConversionError};
 use crate::metrics::Metrics;
 
@@ -129,6 +129,19 @@ impl DataAccess {
 
     pub async fn delete_virtual_key(&self, id: &VirtualKeyId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
         self.__delete_virtual_key(id, metrics).await
+    }
+
+
+    #[tracing::instrument(
+        level="trace",
+        name = "get.virtual_keys",
+        skip(self, ids, metrics, application_secret),
+        fields(
+            ids = ?ids.iter().map(|id| id.0).collect::<Vec<Uuid>>()
+        )
+    )]
+    pub async fn get_virtual_keys(&self, ids: &BTreeSet<VirtualKeyId>, application_secret: &Uuid, metrics: &Option<Arc<Metrics>>) -> Result<BTreeMap<VirtualKeyId, Option<VirtualKey>>, DataAccessError> {
+        self.__get_virtual_keys(ids, &Some(*application_secret), metrics).await
     }
 }
 

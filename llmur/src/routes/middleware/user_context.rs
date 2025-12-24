@@ -1,9 +1,9 @@
-use crate::LLMurState;
 use crate::data::membership::{Membership, MembershipId};
 use crate::data::project::{ProjectId, ProjectRole};
 use crate::data::session_token::SessionToken;
 use crate::data::user::{ApplicationRole, User, UserId};
-use crate::errors::{AuthenticationError, AuthorizationError, LLMurError};
+use crate::errors::{AuthenticationError, LLMurError};
+use crate::LLMurState;
 use axum::extract::{Request, State};
 use axum::http::HeaderValue;
 use axum::middleware::Next;
@@ -17,7 +17,7 @@ use std::sync::Arc;
 pub enum UserContext {
     MasterUser,
     WebAppUser {
-        session_token: SessionToken,
+        _session_token: SessionToken,
         user: User,
     },
 }
@@ -67,7 +67,7 @@ impl UserContext {
             .ok_or(AuthenticationError::TokenUserNotFound)?;
 
         Ok(UserContext::WebAppUser {
-            session_token: token,
+            _session_token: token,
             user,
         })
     }
@@ -171,7 +171,7 @@ impl UserContext {
             }
         }
     }
-    
+
     /// Check if user has admin permissions. Either an Application Admin or a Master User
     pub(crate) fn has_admin_access(
         &self
@@ -181,7 +181,7 @@ impl UserContext {
             UserContext::WebAppUser { user, .. } => user.role == ApplicationRole::Admin
         }
     }
-    
+
     /// Check if it's a Master User
     pub(crate) fn is_master_user(
         &self
@@ -205,26 +205,16 @@ impl UserContext {
 }
 
 pub(crate) trait AuthorizationManager {
-    fn require_master_user(self) -> Result<UserContext, LLMurError>;
     fn require_authenticated_user(self) -> Result<UserContext, LLMurError>;
 }
 
 impl AuthorizationManager for UserContextExtractionResult {
-    fn require_master_user(self) -> Result<UserContext, LLMurError> {
-        match self {
-            Ok(ctx) => match ctx {
-                UserContext::MasterUser => Ok(ctx),
-                UserContext::WebAppUser { .. } => Err(AuthorizationError::AccessDenied)?,
-            },
-            Err(_) => Err(AuthorizationError::AccessDenied)?,
-        }
-    }
 
     fn require_authenticated_user(self) -> Result<UserContext, LLMurError> {
         match self {
             Ok(c) => Ok(c),
-            Err(e /*: Arc<AuthenticationError>*/) => {
-                todo!("How can I do this") /*impl From<AuthenticationError> for LLMurError*/
+            Err(e ) => {
+                Err(LLMurError::from(e))
             }
         }
     }
