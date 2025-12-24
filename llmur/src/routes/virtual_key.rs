@@ -7,7 +7,7 @@ use crate::routes::middleware::user_context::{
 };
 use crate::routes::StatusResponse;
 use crate::{impl_from_vec_result, LLMurState};
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,7 @@ use std::sync::Arc;
 pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
     Router::new()
         .route("/", post(create_key))
-        //.route("/", get(search_keys))
+        .route("/", get(search_keys))
         .route("/{id}", get(get_key))
         .route("/{id}", delete(delete_key))
         .with_state(state.clone())
@@ -116,6 +116,39 @@ pub(crate) async fn delete_key(
     }))
 }
 
+#[tracing::instrument(
+    name = "handler.search.virtual_key",
+    skip(state, ctx, params)
+)]
+pub(crate) async fn search_keys(
+    Extension(ctx): Extension<UserContextExtractionResult>,
+    State(state): State<Arc<LLMurState>>,
+    Query(params): Query<Option<SearchVirtualKeyQueryParams>>,
+) -> Result<Json<ListVirtualKeysResult>, LLMurError> {
+    let user_context = ctx.require_authenticated_user()?;
+
+    let project_id = params.as_ref().and_then(|p| p.project_id);
+
+    if let Some(project_id) = project_id {
+        if !user_context.has_project_developer_access(state.clone(), &project_id).await? {
+            return Err(AuthorizationError::AccessDenied)?;
+        }
+    } else if !user_context.has_admin_access() {
+        return Err(AuthorizationError::AccessDenied)?;
+    }
+
+    let result = state
+        .data
+        .search_virtual_keys(&project_id, &state.application_secret, &state.metrics)
+        .await?
+        .into_iter()
+        .map(Into::<GetVirtualKeyResult>::into)
+        .collect::<Vec<GetVirtualKeyResult>>()
+        .into();
+
+    Ok(Json(result))
+}
+
 // endregion: --- Routes
 
 // region:    --- Data Models
@@ -128,6 +161,11 @@ pub(crate) struct CreateVirtualKeyPayload {
     pub(crate) budget_limits: Option<BudgetLimits>,
     pub(crate) request_limits: Option<RequestLimits>,
     pub(crate) token_limits: Option<TokenLimits>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct SearchVirtualKeyQueryParams {
+    pub(crate) project_id: Option<ProjectId>,
 }
 
 #[derive(Serialize)]

@@ -9,7 +9,7 @@ use crate::{default_access_fns, default_database_access_fns, impl_structured_id_
 use crate::data::DataAccess;
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::project::ProjectId;
-use crate::data::virtual_key_deployment::{VirtualKeyDeployment, VirtualKeyDeploymentId};
+use crate::data::virtual_key_deployment::{VirtualKeyDeploymentId};
 use crate::errors::{DataAccessError, DbRecordConversionError};
 use crate::metrics::Metrics;
 
@@ -143,6 +143,18 @@ impl DataAccess {
     pub async fn get_virtual_keys(&self, ids: &BTreeSet<VirtualKeyId>, application_secret: &Uuid, metrics: &Option<Arc<Metrics>>) -> Result<BTreeMap<VirtualKeyId, Option<VirtualKey>>, DataAccessError> {
         self.__get_virtual_keys(ids, &Some(*application_secret), metrics).await
     }
+
+    #[tracing::instrument(
+        level="trace",
+        name = "search.virtual_keys",
+        skip(self, project_id, metrics, application_secret),
+        fields(
+            project_id = %project_id.map(|id| id.0.to_string()).unwrap_or("*".to_string())
+        )
+    )]
+    pub async fn search_virtual_keys(&self, project_id: &Option<ProjectId>, application_secret: &Uuid, metrics: &Option<Arc<Metrics>>) -> Result<Vec<VirtualKey>, DataAccessError> {
+        self.__search_virtual_keys(project_id, &Some(*application_secret), metrics).await
+    }
 }
 
 default_access_fns!(
@@ -162,7 +174,9 @@ default_access_fns!(
             request_limits: &Option<RequestLimits>,
             token_limits: &Option<TokenLimits>
         },
-        search => {}
+        search => {
+            project_id: &Option<ProjectId>
+        }
     );
 // endregion: --- Data Access
 
@@ -183,13 +197,43 @@ default_database_access_fns!(
         request_limits: &Option<RequestLimits>,
         token_limits: &Option<TokenLimits>
     },
-    search => { }
+    search => {
+        project_id: &Option<ProjectId>
+    }
 );
 // region:      --- Postgres Queries
 
-#[allow(unused)]
-pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
-    todo!()
+pub(crate) fn pg_search(project_id: &'_ Option<ProjectId>) -> QueryBuilder<'_ , Postgres> {
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+        SELECT
+            vk.id,
+            vk.alias,
+            vk.description,
+
+            vk.salt,
+            vk.encrypted_key,
+            vk.blocked,
+            vk.project_id,
+
+            vk.budget_limits,
+            vk.request_limits,
+            vk.token_limits,
+
+            COALESCE(array_agg(DISTINCT vkd.id) FILTER (WHERE vkd.id IS NOT NULL), '{}'::uuid[]) AS deployments
+        FROM
+            virtual_keys vk
+        LEFT JOIN virtual_keys_deployments_map vkd ON vkd.virtual_key_id = vk.id "
+    );
+
+    // Push project id if set
+    if let Some(project_id) = project_id {
+        query.push(" WHERE vk.project_id = ");
+        query.push_bind(project_id);
+    }
+
+    query.push(" GROUP BY vk.id, vk.alias, vk.description, vk.salt, vk.encrypted_key, vk.blocked, vk.project_id");
+    // Build query
+    query
 }
 
 pub(crate) fn pg_get(id: &'_ VirtualKeyId) -> QueryBuilder<'_, Postgres> {
