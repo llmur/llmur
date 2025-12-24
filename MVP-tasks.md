@@ -6,7 +6,7 @@
 - [x] Load balancer
 - [x] Error handling
 - [x] Tracing
-- [ ] Metrics
+- [x] Metrics
 - [ ] User Guide
 - [ ] Technical Documentation
 - [ ] Integration Tests
