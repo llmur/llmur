@@ -96,7 +96,7 @@ where
         .await?;
 
     let mut response = result;
-    let mut maybe_error = response.extensions_mut().remove::<LLMurError>();
+    let maybe_error = response.extensions_mut().remove::<LLMurError>();
 
     // If status is OK and Upstream did not emit an error
     if response.status().is_success() && maybe_error.is_none() {

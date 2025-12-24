@@ -23,6 +23,13 @@ pub enum LLMurError {
     GraphError(#[from] GraphError),
     #[error(transparent)]
     ProxyError(#[from] ProxyError),
+    #[error("Service unhealthy")]
+    UnhealthyState(UnhealthyStateReason),
+}
+
+#[derive(Debug)]
+pub enum UnhealthyStateReason {
+    PoisonedLock,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -293,6 +300,7 @@ impl IntoResponse for LLMurError {
                 GraphError::UsageExceededError(_) => (axum::http::StatusCode::TOO_MANY_REQUESTS, "Too many requests").into_response(),
             },
             LLMurError::ProxyError(e) => e.into_response(),
+            LLMurError::UnhealthyState(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Service unhealthy. Reason: {:?}", e)).into_response(),
         }
     }
 }

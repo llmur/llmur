@@ -44,7 +44,6 @@ pub(crate) fn admin_routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .route("/graph/{key}/{deployment}", get(get_graph))
         // Add user context loading middleware - loads user context based on auth info
         .route_layer(from_fn_with_state(state.clone(), user_context_load_mw))
-        //.route_layer(from_fn_with_state(state.clone(), common_tracing_mw))
         .with_state(state.clone())
 }
 

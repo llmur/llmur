@@ -12,17 +12,24 @@ use uuid::Uuid;
 
 // Common tracing middleware that can be applied to all routes - adds request ID and tracing span
 // Should be the outermost middleware (i.e., applied last) to wrap all other middlewares and handlers
+#[tracing::instrument(
+    name = "request",
+    skip(state, req, next),
+    fields(
+        method = ?req.method().to_string(),
+        path = ?req.uri().path().clone()
+    )
+)]
 pub(crate) async fn common_tracing_mw(State(state): State<Arc<LLMurState>>, mut req: Request<Body>, next: axum::middleware::Next) -> Response<Body> {
     let start = Instant::now();
     let now = Utc::now();
-
     let rid = RequestLogId(Uuid::now_v7());
 
     let method= req.method().clone();
     let uri = req.uri().clone();
 
     req.extensions_mut().insert(rid);
-    //req.extensions_mut().insert(now);
+    req.extensions_mut().insert(now);
 
     let res = next.run(req).await;
 
