@@ -1,16 +1,18 @@
 //! # LLMUR
 
-use std::option::Option;
-use std::collections::BTreeSet;
-use std::sync::Arc;
-use axum::middleware::from_fn_with_state;
-use axum::Router;
-use opentelemetry::metrics::Meter;
-use uuid::Uuid;
-use data::DataAccess;
-use crate::data::utils;
+use crate::errors::{LLMurError, UnhealthyStateReason};
 use crate::metrics::Metrics;
 use crate::routes::{admin_routes, openai_v1_routes};
+use axum::extract::State;
+use axum::middleware::from_fn_with_state;
+use axum::{Json, Router};
+use data::DataAccess;
+use serde_json::{json, Value};
+use std::collections::BTreeSet;
+use std::option::Option;
+use std::sync::Arc;
+use axum::routing::get;
+use uuid::Uuid;
 
 pub mod providers;
 pub mod data;
@@ -26,19 +28,32 @@ pub struct LLMurState {
     pub metrics: Option<Arc<Metrics>>
 }
 
-pub fn router(state: Arc<LLMurState>/*, application_secret: String, master_keys: Option<BTreeSet<String>>, meter: Option<Meter>*/) -> Router {
-    /*
-    let state: Arc<LLMurState> = Arc::new(LLMurState {
-        data: Box::leak(Box::new(access)),
-        application_secret: utils::new_uuid_v5_from_string(&application_secret),
-        master_keys: master_keys.unwrap_or_default(),
-        metrics: meter.map(|m| Arc::new(Metrics::new(m))),
-    });
-     */
-
+pub fn router(state: Arc<LLMurState>) -> Router {
     Router::new()
         .nest("/admin", admin_routes(state.clone()))
         .nest("/v1", openai_v1_routes(state.clone()))
-        .layer(from_fn_with_state(state.clone(), crate::routes::middleware::common::common_tracing_mw))
+        .route("/health", get(health_route))
+        .layer(from_fn_with_state(state.clone(), routes::middleware::common::common_tracing_mw))
         .with_state(state)
+}
+
+#[tracing::instrument(
+    name = "handler.health",
+    skip(state)
+)]
+async fn health_route(
+    State(state): State<Arc<LLMurState>>,
+) -> Result<Json<Value>, LLMurError> {
+
+    let poisoned =
+        state.data.cache.local.session_tokens.is_poisoned() ||
+        state.data.cache.local.opened_connections_counter.is_poisoned() ||
+        state.data.cache.local.graphs.is_poisoned() ||
+        state.data.cache.local.session_tokens.is_poisoned();
+
+    if poisoned {
+        return Err(LLMurError::UnhealthyState(UnhealthyStateReason::PoisonedLock))?;
+    }
+
+    Ok(Json(json!({"status": "ok"})))
 }

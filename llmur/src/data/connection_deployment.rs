@@ -2,14 +2,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use crate::data::connection::ConnectionId;
 use crate::data::deployment::DeploymentId;
-use crate::data::utils::{new_uuid_v5_from_string, ConvertInto};
-use crate::{default_access_fns, default_database_access_fns, impl_local_store_accessors, impl_locally_stored, impl_structured_id_utils, impl_with_id_parameter_for_struct};
+use crate::data::utils::ConvertInto;
+use crate::{default_access_fns, default_database_access_fns, impl_structured_id_utils, impl_with_id_parameter_for_struct};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 use crate::data::DataAccess;
-use crate::data::virtual_key::VirtualKeyId;
-use crate::data::virtual_key_deployment::VirtualKeyDeployment;
 use crate::errors::{DataAccessError, DbRecordConversionError};
 use crate::metrics::Metrics;
 
@@ -182,7 +180,7 @@ pub(crate) fn pg_search<'a>(connection_id: &'a Option<ConnectionId>, deployment_
     // Build query
     query
 }
-pub(crate) fn pg_get(id: &ConnectionDeploymentId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_get(id: &'_ ConnectionDeploymentId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             id,
@@ -201,7 +199,7 @@ pub(crate) fn pg_get(id: &ConnectionDeploymentId) -> QueryBuilder<Postgres> {
 }
 
 
-pub(crate) fn pg_getm(ids: &Vec<ConnectionDeploymentId>) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_getm(ids: &'_ Vec<ConnectionDeploymentId>) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             id,
@@ -223,7 +221,7 @@ pub(crate) fn pg_getm(ids: &Vec<ConnectionDeploymentId>) -> QueryBuilder<Postgre
     query
 }
 
-pub(crate) fn pg_delete(id: &ConnectionDeploymentId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_delete(id: &'_ ConnectionDeploymentId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         DELETE FROM deployments_connections_map
         WHERE id="

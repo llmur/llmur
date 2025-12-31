@@ -4,7 +4,6 @@ use crate::providers::azure::openai::v2024_02_01::chat_completions::extension::A
 use crate::providers::azure::openai::v2024_02_01::chat_completions::message::Message;
 use crate::providers::azure::openai::v2024_02_01::chat_completions::stop::Stop;
 use crate::providers::azure::openai::v2024_02_01::chat_completions::tool::{Tool, ToolChoice};
-use crate::providers::ExposesDeployment;
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Request {

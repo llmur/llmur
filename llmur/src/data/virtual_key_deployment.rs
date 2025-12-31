@@ -3,10 +3,10 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
-use crate::data::utils::{new_uuid_v5_from_string, ConvertInto};
-use crate::{default_access_fns, default_database_access_fns, impl_local_store_accessors, impl_locally_stored, impl_structured_id_utils, impl_with_id_parameter_for_struct};
+use crate::data::utils::ConvertInto;
+use crate::{default_access_fns, default_database_access_fns, impl_structured_id_utils, impl_with_id_parameter_for_struct};
 use crate::data::DataAccess;
-use crate::data::deployment::{Deployment, DeploymentId};
+use crate::data::deployment::DeploymentId;
 use crate::data::virtual_key::VirtualKeyId;
 use crate::errors::{DataAccessError, DbRecordConversionError};
 use crate::metrics::Metrics;
@@ -174,7 +174,7 @@ pub(crate) fn pg_search<'a>(virtual_key_id: &'a Option<VirtualKeyId>, deployment
     // Build query
     query
 }
-pub(crate) fn pg_get(id: &VirtualKeyDeploymentId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_get(id: &'_ VirtualKeyDeploymentId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             id,
@@ -191,7 +191,7 @@ pub(crate) fn pg_get(id: &VirtualKeyDeploymentId) -> QueryBuilder<Postgres> {
     query
 }
 
-pub(crate) fn pg_getm(ids: &Vec<VirtualKeyDeploymentId>) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_getm(ids: &'_ Vec<VirtualKeyDeploymentId>) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             id,
@@ -212,7 +212,7 @@ pub(crate) fn pg_getm(ids: &Vec<VirtualKeyDeploymentId>) -> QueryBuilder<Postgre
     query
 }
 
-pub(crate) fn pg_delete(id: &VirtualKeyDeploymentId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_delete(id: &'_ VirtualKeyDeploymentId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         DELETE FROM virtual_keys_deployments_map
         WHERE id="

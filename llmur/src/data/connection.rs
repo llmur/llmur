@@ -1,4 +1,3 @@
-use std::any::Any;
 use crate::data::DataAccess;
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::utils::{ConvertInto, decrypt, encrypt};
@@ -142,10 +141,23 @@ impl DataAccess {
         application_secret: &Uuid, 
         metrics: &Option<Arc<Metrics>>
     ) -> Result<BTreeMap<ConnectionId, Option<Connection>>, DataAccessError> {
-        self.__get_connections(ids, &Some(application_secret.clone()), metrics)
+        self.__get_connections(ids, &Some(*application_secret), metrics)
             .await
     }
 
+    #[tracing::instrument(
+        level="trace",
+        name = "search.connections",
+        skip(self, application_secret, metrics)
+    )]
+    pub async fn search_connections(
+        &self,
+        application_secret: &Uuid,
+        metrics: &Option<Arc<Metrics>>
+    ) -> Result<Vec<Connection>, DataAccessError> {
+        self.__search_connections(&Some(*application_secret), metrics)
+            .await
+    }
 
     #[tracing::instrument(
         level="trace",
@@ -265,9 +277,19 @@ default_database_access_fns!(
     search => { }
 );
 // region:      --- Postgres Queries
+#[allow(unused)]
 pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
-    todo!()
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
+        SELECT
+            id, connection_info, budget_limits, request_limits, token_limits
+            FROM connections",
+    );
+
+    // Return builder
+    query
 }
+
 pub(crate) fn pg_insert<'a>(
     connection_info: &'a DbConnectionInfoColumn,
     budget_limits: &'a Option<BudgetLimits>,
@@ -315,7 +337,7 @@ pub(crate) fn pg_insert<'a>(
     // Return builder
     query
 }
-pub(crate) fn pg_get(id: &ConnectionId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_get(id: &'_ ConnectionId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
         "
         SELECT
@@ -329,7 +351,7 @@ pub(crate) fn pg_get(id: &ConnectionId) -> QueryBuilder<Postgres> {
     // Return builder
     query
 }
-pub(crate) fn pg_getm(ids: &Vec<ConnectionId>) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_getm(ids: &'_ Vec<ConnectionId>) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
         "
         SELECT
@@ -346,7 +368,7 @@ pub(crate) fn pg_getm(ids: &Vec<ConnectionId>) -> QueryBuilder<Postgres> {
 
     query
 }
-pub(crate) fn pg_delete(id: &ConnectionId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_delete(id: &'_ ConnectionId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
         "
         DELETE FROM connections

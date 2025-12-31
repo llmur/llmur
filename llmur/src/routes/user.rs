@@ -1,14 +1,13 @@
-use std::sync::Arc;
-use axum::{Extension, Json, Router};
-use axum::extract::{Path, State};
-use axum::routing::{delete, get, post};
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
-use crate::{impl_from_vec_result, LLMurState};
 use crate::data::user::{ApplicationRole, User, UserId};
+use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
 use crate::routes::StatusResponse;
+use crate::{impl_from_vec_result, LLMurState};
+use axum::extract::{Path, State};
+use axum::routing::{delete, get, post};
+use axum::{Extension, Json, Router};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 // region:    --- Routes
 pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
@@ -35,25 +34,22 @@ pub(crate) async fn create_user(
 ) -> Result<Json<GetUserResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    match user_context {
-        UserContext::MasterUser => {
-            let user = state.data.create_user(
-                &payload.email,
-                &payload.name,
-                &payload.password,
-                false,
-                false,
-                &payload.role.unwrap_or(ApplicationRole::Member),
-                &state.application_secret,
-                &state.metrics
-            ).await?;
-
-            Ok(Json(user.into()))
-        }
-        UserContext::WebAppUser { .. } => {
-            Err(AuthorizationError::AccessDenied)?
-        }
+    if !user_context.is_master_user() {
+        return Err(AuthorizationError::AccessDenied)?
     }
+
+    let user = state.data.create_user(
+        &payload.email,
+        &payload.name,
+        &payload.password,
+        payload.email_verified.unwrap_or(false),
+        payload.blocked.unwrap_or(false),
+        &payload.role.unwrap_or(ApplicationRole::Member),
+        &state.application_secret,
+        &state.metrics
+    ).await?;
+
+    Ok(Json(user.into()))
 }
 
 #[tracing::instrument(
@@ -76,7 +72,7 @@ pub(crate) async fn get_user(
             Ok(Json(user.into()))
         }
         UserContext::WebAppUser { user, .. } => {
-            if user.id == id.into() || user.role == ApplicationRole::Admin {
+            if user.id == id || user.role == ApplicationRole::Admin {
                 Ok(Json(user.into()))
             }
             else { Err(AuthorizationError::AccessDenied)? }
@@ -144,6 +140,7 @@ pub(crate) struct CreateUserPayload {
     pub(crate) password: String,
     pub(crate) name: Option<String>,
     pub(crate) blocked: Option<bool>,
+    pub(crate) email_verified: Option<bool>,
     pub(crate) role: Option<ApplicationRole>
 }
 

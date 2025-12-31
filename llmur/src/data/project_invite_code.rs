@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use crate::data::project::{ProjectId, ProjectRole};
-use crate::data::utils::{generate_random_alphanumeric_string, new_uuid_v5_from_string, parse_and_add_to_current_ts, ConvertInto};
+use crate::data::utils::{generate_random_alphanumeric_string, parse_and_add_to_current_ts, ConvertInto};
 use crate::data::DataAccess;
 use crate::errors::{DataAccessError, DbRecordConversionError, InvalidTimeFormatError};
-use crate::{default_access_fns, default_database_access_fns, impl_local_store_accessors, impl_locally_stored, impl_structured_id_utils, impl_with_id_parameter_for_struct};
+use crate::{default_access_fns, default_database_access_fns, impl_structured_id_utils, impl_with_id_parameter_for_struct};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Postgres, QueryBuilder};
@@ -135,11 +135,12 @@ default_database_access_fns!(
 );
 
 // region:      --- Postgres Queries
+#[allow(unused)]
 pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
-    todo!()
+    unimplemented!()
 }
 
-pub(crate) fn pg_get(invite_id: &ProjectInviteCodeId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_get(invite_id: &'_ ProjectInviteCodeId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
     SELECT
         id,
@@ -158,11 +159,12 @@ pub(crate) fn pg_get(invite_id: &ProjectInviteCodeId) -> QueryBuilder<Postgres> 
     query
 }
 
-pub(crate) fn pg_getm(ids: &Vec<ProjectInviteCodeId>) -> QueryBuilder<Postgres> {
-    todo!()
+#[allow(unused)]
+pub(crate) fn pg_getm(ids: &'_ Vec<ProjectInviteCodeId>) -> QueryBuilder<'_, Postgres> {
+    unimplemented!()
 }
 
-pub(crate) fn pg_delete(invite_id: &ProjectInviteCodeId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_delete(invite_id: &'_ ProjectInviteCodeId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         DELETE FROM project_invites
         WHERE id = "

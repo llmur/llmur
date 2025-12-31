@@ -1,58 +1,57 @@
-use std::sync::Arc;
-use axum::{Extension, Json, Router};
-use axum::extract::{Path, State};
-use axum::routing::{delete, get, post};
-use serde::{Deserialize, Serialize};
-use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
-use crate::{impl_from_vec_result, LLMurState};
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::project::ProjectId;
 use crate::data::virtual_key::{VirtualKey, VirtualKeyId};
-use crate::routes::middleware::user_context::{AuthorizationManager, UserContext, UserContextExtractionResult};
+use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
+use crate::routes::middleware::user_context::{
+    AuthorizationManager, UserContextExtractionResult,
+};
 use crate::routes::StatusResponse;
+use crate::{impl_from_vec_result, LLMurState};
+use axum::extract::{Path, Query, State};
+use axum::routing::{delete, get, post};
+use axum::{Extension, Json, Router};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 // region:    --- Routes
 pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
     Router::new()
         .route("/", post(create_key))
-        //.route("/", get(search_keys))
+        .route("/", get(search_keys))
         .route("/{id}", get(get_key))
         .route("/{id}", delete(delete_key))
         .with_state(state.clone())
 }
 
-#[tracing::instrument(
-    name = "handler.create.virtual_key",
-    skip(state, ctx, payload)
-)]
+#[tracing::instrument(name = "handler.create.virtual_key", skip(state, ctx, payload))]
 pub(crate) async fn create_key(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
     Json(payload): Json<CreateVirtualKeyPayload>,
 ) -> Result<Json<GetVirtualKeyResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
-    match user_context {
-        UserContext::MasterUser => {
 
-            let key = state.data.create_virtual_key(
-                32,
-                &payload.alias,
-                &payload.description,
-                false,
-                &payload.project_id,
-                &payload.budget_limits,
-                &payload.request_limits,
-                &payload.token_limits,
-                &state.application_secret,
-                &state.metrics).await?;
-
-
-            Ok(Json(key.into()))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            Err(AuthorizationError::AccessDenied)?
-        }
+    if !user_context.has_project_admin_access(state.clone(), &payload.project_id).await? {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    let key = state
+        .data
+        .create_virtual_key(
+            32,
+            &payload.alias,
+            &payload.description,
+            false,
+            &payload.project_id,
+            &payload.budget_limits,
+            &payload.request_limits,
+            &payload.token_limits,
+            &state.application_secret,
+            &state.metrics,
+        )
+        .await?;
+
+    Ok(Json(key.into()))
 }
 
 #[tracing::instrument(
@@ -69,16 +68,17 @@ pub(crate) async fn get_key(
 ) -> Result<Json<GetVirtualKeyResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let key = state.data.get_virtual_key(&id, &state.application_secret, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?;
+    let key = state
+        .data
+        .get_virtual_key(&id, &state.application_secret, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
 
-    match user_context {
-        UserContext::MasterUser => {
-            Ok(Json(key.into()))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            Err(AuthorizationError::AccessDenied)?
-        }
+    if !user_context.has_project_developer_access(state.clone(), &key.project_id).await? {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    Ok(Json(key.into()))
 }
 
 #[tracing::instrument(
@@ -95,20 +95,58 @@ pub(crate) async fn delete_key(
 ) -> Result<Json<StatusResponse>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let key = state.data.get_virtual_key(&id, &state.application_secret, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?;
+    let key = state
+        .data
+        .get_virtual_key(&id, &state.application_secret, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
 
-    match user_context {
-        UserContext::MasterUser => {
-            let result = state.data.delete_virtual_key(&key.id, &state.metrics).await?;
-            Ok(Json(StatusResponse {
-                success: result != 0,
-                message: None,
-            }))
-        }
-        UserContext::WebAppUser { user, .. } => {
-            Err(AuthorizationError::AccessDenied)?
-        }
+    if !user_context.has_project_admin_access(state.clone(), &key.project_id).await? {
+        return Err(AuthorizationError::AccessDenied)?;
     }
+
+    let result = state
+        .data
+        .delete_virtual_key(&key.id, &state.metrics)
+        .await?;
+
+    Ok(Json(StatusResponse {
+        success: result != 0,
+        message: None,
+    }))
+}
+
+#[tracing::instrument(
+    name = "handler.search.virtual_keys",
+    skip(state, ctx, params)
+)]
+pub(crate) async fn search_keys(
+    Extension(ctx): Extension<UserContextExtractionResult>,
+    State(state): State<Arc<LLMurState>>,
+    Query(params): Query<Option<SearchVirtualKeyQueryParams>>,
+) -> Result<Json<ListVirtualKeysResult>, LLMurError> {
+    let user_context = ctx.require_authenticated_user()?;
+
+    let project_id = params.as_ref().and_then(|p| p.project_id);
+
+    if let Some(project_id) = project_id {
+        if !user_context.has_project_developer_access(state.clone(), &project_id).await? {
+            return Err(AuthorizationError::AccessDenied)?;
+        }
+    } else if !user_context.has_admin_access() {
+        return Err(AuthorizationError::AccessDenied)?;
+    }
+
+    let result = state
+        .data
+        .search_virtual_keys(&project_id, &state.application_secret, &state.metrics)
+        .await?
+        .into_iter()
+        .map(Into::<GetVirtualKeyResult>::into)
+        .collect::<Vec<GetVirtualKeyResult>>()
+        .into();
+
+    Ok(Json(result))
 }
 
 // endregion: --- Routes
@@ -125,19 +163,25 @@ pub(crate) struct CreateVirtualKeyPayload {
     pub(crate) token_limits: Option<TokenLimits>,
 }
 
+#[derive(Deserialize)]
+pub(crate) struct SearchVirtualKeyQueryParams {
+    pub(crate) project_id: Option<ProjectId>,
+}
+
 #[derive(Serialize)]
 pub(crate) struct GetVirtualKeyResult {
     pub(crate) id: VirtualKeyId,
     pub(crate) key: String,
+    pub(crate) description: Option<String>,
     pub(crate) alias: String,
     pub(crate) blocked: bool,
-    pub(crate) project_id: ProjectId
+    pub(crate) project_id: ProjectId,
 }
 
 #[derive(Serialize)]
 pub(crate) struct ListVirtualKeysResult {
     pub(crate) keys: Vec<GetVirtualKeyResult>,
-    pub(crate) total: usize
+    pub(crate) total: usize,
 }
 
 impl_from_vec_result!(GetVirtualKeyResult, ListVirtualKeysResult, keys);
@@ -147,6 +191,7 @@ impl From<VirtualKey> for GetVirtualKeyResult {
         GetVirtualKeyResult {
             id: value.id,
             key: value.key,
+            description: value.description,
             alias: value.alias,
             blocked: value.blocked,
             project_id: value.project_id,

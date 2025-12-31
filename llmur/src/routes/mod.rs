@@ -2,7 +2,6 @@ use crate::data::graph::Graph;
 use crate::errors::{GraphError, LLMurError};
 use crate::routes::chat_completions::chat_completions_route;
 use crate::routes::middleware::auth::auth_token_extraction_mw;
-use crate::routes::middleware::common::common_tracing_mw;
 use crate::routes::middleware::user_context::user_context_load_mw;
 use crate::routes::openai::controller::openai_route_controller_mw;
 use crate::LLMurState;
@@ -45,7 +44,6 @@ pub(crate) fn admin_routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .route("/graph/{key}/{deployment}", get(get_graph))
         // Add user context loading middleware - loads user context based on auth info
         .route_layer(from_fn_with_state(state.clone(), user_context_load_mw))
-        //.route_layer(from_fn_with_state(state.clone(), common_tracing_mw))
         .with_state(state.clone())
 }
 
@@ -74,7 +72,7 @@ pub(crate) struct StatusResponse {
 }
 
 #[derive(Deserialize)]
-struct Params {
+pub(crate) struct Params {
     key: String,
     deployment: String,
 }

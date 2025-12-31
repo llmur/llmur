@@ -183,6 +183,7 @@ macro_rules! default_db_insert_fn {
         $( $param_name:ident : $param_ty:ty ),* $(,)?
     ) => {
         paste::paste! {
+            #[allow(unused)]
             pub(crate) async fn [<insert_ $singular>](&self, metrics: &Option<std::sync::Arc<crate::metrics::Metrics>>, $( $param_name: $param_ty ),*) -> Result<$id_type, crate::errors::DataAccessError> {
                 use crate::metrics::RegisterDatabaseRequest;
 
@@ -220,6 +221,7 @@ macro_rules! default_db_search_fn {
         $pg_query_fn:path
     ) => {
         paste::paste! {
+            #[allow(unused)]
             pub(crate) async fn [<search_ $plural>](&self, metrics: &Option<std::sync::Arc<crate::metrics::Metrics>>) -> Result<Vec<$type>, crate::errors::DataAccessError> {
                 use crate::metrics::RegisterDatabaseRequest;
 
@@ -255,6 +257,7 @@ macro_rules! default_db_search_fn {
         $( $param_name:ident : $param_ty:ty ),+ $(,)?
     ) => {
         paste::paste! {
+            #[allow(unused)]
             pub(crate) async fn [<search_ $plural>](&self, metrics: &Option<std::sync::Arc<crate::metrics::Metrics>>, $( $param_name: $param_ty ),+) -> Result<Vec<$type>, crate::errors::DataAccessError> {
                 use crate::metrics::RegisterDatabaseRequest;
 
@@ -329,6 +332,7 @@ macro_rules! default_db_get_multiple_fn {
         $pg_query_fn:path
     ) => {
         paste::paste! {
+            #[allow(unused)]
             pub(crate) async fn [<get_ $plural>](&self, metrics: &Option<std::sync::Arc<crate::metrics::Metrics>>, ids: &Vec<$id_type>) -> Result<std::collections::BTreeMap<$id_type, Option<$type>>, crate::errors::DataAccessError> {
                 use crate::metrics::RegisterDatabaseRequest;
 

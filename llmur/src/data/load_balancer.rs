@@ -2,7 +2,7 @@ use crate::data::connection::ConnectionId;
 use crate::data::deployment::DeploymentId;
 use crate::data::graph::{ConnectionNode, Graph};
 use crate::data::{DataAccess, LocallyStoredValue};
-use crate::errors::{DataAccessError, GraphError, MissingConnectionReason};
+use crate::errors::{GraphError, MissingConnectionReason};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, PartialOrd, sqlx::Type)]
@@ -32,7 +32,7 @@ impl DataAccess {
             strategy = ?graph.deployment.data.strategy
         )
     )]
-    pub fn get_next_connection<'a>(&self, graph: &'a Graph) -> Result<&'a ConnectionNode, GraphError> {
+    pub(crate) fn get_next_connection<'a>(&self, graph: &'a Graph) -> Result<&'a ConnectionNode, GraphError> {
         if graph.connections.is_empty() {
             return Err(GraphError::NoConnectionAvailable(MissingConnectionReason::DeploymentConnectionsNotSetup));
         }

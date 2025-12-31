@@ -190,11 +190,7 @@ impl UsageStat {
             }
         }
     }
-
-    pub fn key(&self) -> &str {
-        &self.key
-    }
-
+    
     pub fn value(&self) -> &StatValue {
         &self.value
     }
@@ -326,29 +322,6 @@ impl MetricsUsageStats {
         keys
     }
 
-    pub fn generate_all_keys_with_values(
-        resource: Resource,
-        id: &impl std::fmt::Display,
-        now_utc: &DateTime<Utc>,
-        requests: i64,
-        cost: f64,
-        tokens: i64,
-    ) -> BTreeMap<String, String> {
-        let mut result = BTreeMap::new();
-
-        for key in PeriodStats::generate_keys(resource, id, Metric::Requests, now_utc) {
-            result.insert(key, requests.to_string());
-        }
-        for key in PeriodStats::generate_keys(resource, id, Metric::Budget, now_utc) {
-            result.insert(key, cost.to_string());
-        }
-        for key in PeriodStats::generate_keys(resource, id, Metric::Tokens, now_utc) {
-            result.insert(key, tokens.to_string());
-        }
-
-        result
-    }
-
     pub fn generate_request_keys_with_values(
         resource: Resource,
         id: &impl std::fmt::Display,
@@ -415,23 +388,6 @@ macro_rules! impl_resource_usage_stats {
                 data: &BTreeMap<String, Option<String>>,
             ) -> Self {
                 $name(MetricsUsageStats::extract_from_map($resource, id, now_utc, data))
-            }
-
-            pub fn generate_all_keys(
-                id: &impl std::fmt::Display,
-                now_utc: &DateTime<Utc>,
-            ) -> Vec<String> {
-                MetricsUsageStats::generate_all_keys($resource, id, now_utc)
-            }
-
-            pub fn generate_all_keys_with_values(
-                id: &impl std::fmt::Display,
-                now_utc: &DateTime<Utc>,
-                requests: i64,
-                cost: f64,
-                tokens: i64,
-            ) -> BTreeMap<String, String> {
-                MetricsUsageStats::generate_all_keys_with_values($resource, id, now_utc, requests, cost, tokens)
             }
 
             pub fn generate_request_keys_with_values(

@@ -7,17 +7,15 @@ use crate::data::utils::current_timestamp_ms;
 use crate::errors::{CacheAccessError, SetupError};
 use chrono::{DateTime, Utc};
 use redis::{
-    AsyncCommands, ConnectionAddr, ConnectionInfo, FromRedisValue, ProtocolVersion,
-    RedisConnectionInfo, RedisWrite, ToRedisArgs,
+    AsyncCommands, ConnectionAddr, ConnectionInfo, ProtocolVersion,
+    RedisConnectionInfo,
 };
 use reqwest::Client;
-use serde::Serialize;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::PgPoolOptions;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::task::JoinHandle;
@@ -254,7 +252,7 @@ impl Cache {
             },
         })?;
 
-        let mut con = client
+        let con = client
             .get_multiplexed_async_connection()
             .await?;
 
@@ -485,7 +483,7 @@ fn spawn_request_log_writer(
                             batch.push(ev);
                             if batch.len() >= max_batch {
                                 let to_write = std::mem::take(&mut batch);
-                                if let Err(e) = database.insert_request_logs(&to_write, &metrics).await {
+                                if let Err(_e) = database.insert_request_logs(&to_write, &metrics).await {
                                     println!("### request log size flush failed");
                                 }
                             }

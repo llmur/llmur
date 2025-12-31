@@ -1,15 +1,18 @@
-use std::collections::BTreeSet;
-use std::sync::Arc;
-use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, Postgres, QueryBuilder};
-use uuid::Uuid;
-use crate::data::utils::{new_uuid_v5_from_string, ConvertInto};
-use crate::{default_access_fns, default_database_access_fns, impl_local_store_accessors, impl_locally_stored, impl_structured_id_utils, impl_with_id_parameter_for_struct};
-use crate::data::{DataAccess, Database};
 use crate::data::membership::MembershipId;
 use crate::data::password::hash_password;
+use crate::data::utils::ConvertInto;
+use crate::data::{DataAccess, Database};
 use crate::errors::{DataAccessError, DbRecordConversionError};
 use crate::metrics::Metrics;
+use crate::{
+    default_access_fns, default_database_access_fns, impl_structured_id_utils,
+    impl_with_id_parameter_for_struct,
+};
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, Postgres, QueryBuilder};
+use std::collections::BTreeSet;
+use std::sync::Arc;
+use uuid::Uuid;
 
 // region:    --- Main Model
 #[derive(Debug, Clone, sqlx::Type, PartialEq, Serialize, Deserialize)]
@@ -35,7 +38,7 @@ pub enum ApplicationRole {
     sqlx::Type,
     Serialize,
     Deserialize,
-    FromRow
+    FromRow,
 )]
 #[sqlx(transparent)]
 pub struct UserId(pub Uuid);
@@ -54,7 +57,17 @@ pub struct User {
 }
 
 impl User {
-    pub(crate) fn new(id: UserId, email: String, name: String, hashed_password: String, salt: Uuid, email_verified: bool, blocked: bool, role: ApplicationRole, memberships: BTreeSet<MembershipId>) -> Self {
+    pub(crate) fn new(
+        id: UserId,
+        email: String,
+        name: String,
+        hashed_password: String,
+        salt: Uuid,
+        email_verified: bool,
+        blocked: bool,
+        role: ApplicationRole,
+        memberships: BTreeSet<MembershipId>,
+    ) -> Self {
         User {
             id,
             email,
@@ -75,7 +88,6 @@ impl_with_id_parameter_for_struct!(User, UserId);
 
 // region:    --- Data Access
 impl DataAccess {
-
     #[tracing::instrument(
         level="trace",
         name = "get.user",
@@ -84,17 +96,24 @@ impl DataAccess {
             id = %id.0
         )
     )]
-    pub async fn get_user(&self, id: &UserId, metrics: &Option<Arc<Metrics>>) -> Result<Option<User>, DataAccessError> {
+    pub async fn get_user(
+        &self,
+        id: &UserId,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<Option<User>, DataAccessError> {
         self.__get_user(id, &None, metrics).await
     }
-   
-    #[tracing::instrument(
-        level="trace",
-        name = "get.user",
-        skip(self, metrics)
-    )]
-    pub async fn get_user_with_email(&self, email: &str, metrics: &Option<Arc<Metrics>>) -> Result<Option<User>, DataAccessError> {
-        let maybe_value: Option<User> = self.database.get_user_with_email(email, metrics).await?
+
+    #[tracing::instrument(level = "trace", name = "get.user", skip(self, metrics))]
+    pub async fn get_user_with_email(
+        &self,
+        email: &str,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<Option<User>, DataAccessError> {
+        let maybe_value: Option<User> = self
+            .database
+            .get_user_with_email(email, metrics)
+            .await?
             .map(|v| v.convert(&None)) // Returns Option<Result<X,Y>>
             .transpose()?;
 
@@ -102,13 +121,36 @@ impl DataAccess {
     }
 
     #[tracing::instrument(
-        level="trace",
+        level = "trace",
         name = "create.user",
-        skip(self, name, password, email_verified, blocked, application_secret, metrics)
+        skip(
+            self,
+            name,
+            password,
+            email_verified,
+            blocked,
+            application_secret,
+            metrics
+        )
     )]
-    pub async fn create_user(&self, email: &str, name: &Option<String>, password: &str, email_verified: bool, blocked: bool, application_role: &ApplicationRole, application_secret: &Uuid, metrics: &Option<Arc<Metrics>>) -> Result<User, DataAccessError>{
+    pub async fn create_user(
+        &self,
+        email: &str,
+        name: &Option<String>,
+        password: &str,
+        email_verified: bool,
+        blocked: bool,
+        application_role: &ApplicationRole,
+        application_secret: &Uuid,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<User, DataAccessError> {
         let salt = Uuid::now_v7();
-        let hashed_password = hash_password(password.to_string(), salt.clone(), application_secret.clone()).await?;
+        let hashed_password = hash_password(
+            password.to_string(),
+            salt.clone(),
+            application_secret.clone(),
+        )
+        .await?;
         let name: &str = name
             .as_deref() // Convert &Option<String> to Option<&str>
             .filter(|s| !s.is_empty()) // Only use non-empty names
@@ -121,7 +163,18 @@ impl DataAccess {
                     .unwrap_or("user") // Default to "user" if needed
             });
 
-        self.__create_user(email, name, &hashed_password, email_verified, blocked, &salt, application_role, &None, metrics).await
+        self.__create_user(
+            email,
+            name,
+            &hashed_password,
+            email_verified,
+            blocked,
+            &salt,
+            application_role,
+            &None,
+            metrics,
+        )
+        .await
     }
 
     #[tracing::instrument(
@@ -132,46 +185,65 @@ impl DataAccess {
             id = %id.0
         )
     )]
-    pub async fn delete_user(&self, id: &UserId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+    pub async fn delete_user(
+        &self,
+        id: &UserId,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<u64, DataAccessError> {
         self.__delete_user(id, metrics).await
     }
 }
 
 default_access_fns!(
-        User,
-        UserId,
-        user,
-        users,
-        create => {
-            email: &str,
-            name: &str,
-            hashed_password: &str,
-            email_verified: bool,
-            blocked: bool,
-            salt: &Uuid,
-            application_role: &ApplicationRole
-        },
-        search => { }
-    );
+    User,
+    UserId,
+    user,
+    users,
+    create => {
+        email: &str,
+        name: &str,
+        hashed_password: &str,
+        email_verified: bool,
+        blocked: bool,
+        salt: &Uuid,
+        application_role: &ApplicationRole
+    },
+    search => { }
+);
 // endregion: --- Data Access
 
 // region:    --- Database Access
 impl Database {
-    #[tracing::instrument(
-        level="trace",
-        name = "db.get.user",
-        skip(self, metrics)
-    )]
-    pub(crate) async fn get_user_with_email(&self, email: &str, metrics: &Option<Arc<Metrics>>) -> Result<Option<DbUserRecord>, DataAccessError> {
-        match self {
-            Database::Postgres { pool } => {
-                let mut query = pg_get_user_with_email_query(email);
-                let sql= query.build_query_as::<DbUserRecord>();
-                let result = sql.fetch_optional(pool).await?;
+    #[tracing::instrument(level = "trace", name = "db.get.user", skip(self, metrics))]
+    pub(crate) async fn get_user_with_email(
+        &self,
+        email: &str,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<Option<DbUserRecord>, DataAccessError> {
+        use crate::metrics::RegisterDatabaseRequest;
 
-                Ok(result)
-            }
-        }
+        let operation = "db.get.user.with_email";
+        let span = tracing::trace_span!("database_operation", operation= %operation);
+
+        tracing::Instrument::instrument(
+            async move {
+                match self {
+                    Database::Postgres { pool } => {
+                        let start = std::time::Instant::now();
+
+                        let mut query = pg_get_user_with_email_query(email);
+                        let sql = query.build_query_as::<DbUserRecord>();
+                        let result = sql.fetch_optional(pool).await;
+
+                        metrics.register_database_request(operation, start.elapsed().as_millis() as u64, result.is_ok());
+
+                        Ok(result?)
+                    }
+                }
+            },
+            span,
+        )
+        .await
     }
 }
 
@@ -193,11 +265,12 @@ default_database_access_fns!(
 );
 
 // region:      --- Postgres Queries
+#[allow(unused)]
 pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
-    todo!()
+    unimplemented!()
 }
 
-pub(crate) fn pg_get(id: &UserId) -> QueryBuilder<Postgres> {
+pub(crate) fn pg_get(id: &'_ UserId) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             u.id,
@@ -223,14 +296,16 @@ pub(crate) fn pg_get(id: &UserId) -> QueryBuilder<Postgres> {
     query
 }
 
-pub(crate) fn pg_getm(ids: &Vec<UserId>) -> QueryBuilder<Postgres> {
-    todo!()
+#[allow(unused)]
+pub(crate) fn pg_getm(ids: &'_ Vec<UserId>) -> QueryBuilder<'_, Postgres> {
+    unimplemented!()
 }
 
-pub(crate) fn pg_delete(id: &UserId) -> QueryBuilder<Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+pub(crate) fn pg_delete(id: &'_ UserId) -> QueryBuilder<'_, Postgres> {
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         DELETE FROM users
-        WHERE id="
+        WHERE id=",
     );
     // Push id
     query.push_bind(id);
@@ -247,10 +322,12 @@ pub(crate) fn pg_insert<'a>(
     salt: &'a Uuid,
     role: &'a ApplicationRole,
 ) -> QueryBuilder<'a, Postgres> {
-    let mut query = QueryBuilder::<Postgres>::new("
+    let mut query = QueryBuilder::<Postgres>::new(
+        "
         INSERT INTO users
             (id, email, name, salt, hashed_password, email_verified, blocked, role)
-        VALUES (gen_random_uuid(), ");
+        VALUES (gen_random_uuid(), ",
+    );
 
     query.push_bind(email);
     query.push(", ");
@@ -276,8 +353,7 @@ pub(crate) fn pg_insert<'a>(
     query
 }
 
-
-fn pg_get_user_with_email_query(email: &str) -> QueryBuilder<Postgres> {
+fn pg_get_user_with_email_query(email: &'_ str) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             u.id,
@@ -341,4 +417,4 @@ impl ConvertInto<User> for DbUserRecord {
 }
 
 impl_with_id_parameter_for_struct!(DbUserRecord, UserId);
-// endregion: --- Database Model   
+// endregion: --- Database Model

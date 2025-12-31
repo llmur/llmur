@@ -1,14 +1,12 @@
-use std::str::FromStr;
 use uuid::Uuid;
 
 use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
+use chrono::{Duration, Utc};
 use hex::{decode, encode};
 use rand::{distributions::Alphanumeric, Rng};
 use sha2::{Digest, Sha256};
-use chrono::{Duration, Utc};
 
-use lazy_regex::regex_captures;
 use crate::errors::{DbRecordConversionError, DecryptionError, EncryptionError, InvalidTimeFormatError};
 
 pub trait ConvertInto<T>: Sized {
@@ -146,28 +144,11 @@ pub fn decrypt(encrypted_input: &str, salt: &Uuid, pepper: &Uuid) -> Result<Stri
 
 #[tracing::instrument(
     level = "trace",
-    name = "utils.hash.v1",
-    skip(content, salt)
-)]
-pub fn hash_content_1(content: &str, salt: &Uuid) -> String {
-    let combined = format!("{}{}", salt.to_string(), content);
-
-    // Create a SHA-256 hash of the combined string
-    let mut hasher = Sha256::new();
-    hasher.update(combined.as_bytes());
-    let hash = hasher.finalize();
-
-    // Encode the hash as a hexadecimal string
-    encode(hash)
-}
-
-#[tracing::instrument(
-    level = "trace",
     name = "utils.hash.v2",
-    skip(content, salt)
+    skip(content, salt, application_secret)
 )]
-pub fn hash_content_2(content: &str, salt: &Uuid, pepper: &Uuid) -> String {
-    let combined = format!("{}{}{}", salt.to_string(), content, pepper.to_string());
+pub fn hash_content_2(content: &str, salt: &Uuid, application_secret: &Uuid) -> String {
+    let combined = format!("{}{}{}", salt, content, application_secret);
 
     // Create a SHA-256 hash of the combined string
     let mut hasher = Sha256::new();

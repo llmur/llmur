@@ -3,17 +3,12 @@ use crate::errors::{GraphError, LLMurError, MissingConnectionReason, ProxyError}
 use crate::providers::{ExposesDeployment, ExposesUsage};
 use crate::routes::openai::request::OpenAiRequestData;
 use crate::routes::openai::response::{ProviderResponse, ProxyResponse};
-use std::collections::BTreeMap;
 
-use crate::data::request_log::{RequestLog, RequestLogData, RequestLogId};
+use crate::data::request_log::{RequestLogData, RequestLogId};
 use axum::extract::FromRequest;
-use axum::{body::Body, extract::State, http::Request, middleware::Next};
-use chrono::{DateTime, Utc};
+use axum::{extract::State, http::Request, middleware::Next};
 
-use crate::data::connection::Connection;
 use crate::data::graph::{ConnectionNode, NodeLimitsChecker};
-use crate::data::project::Project;
-use crate::data::virtual_key::VirtualKey;
 use log::debug;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -23,7 +18,7 @@ use tracing::Instrument;
 #[tracing::instrument(name = "controller", skip(state, request, next))]
 pub(crate) async fn openai_route_controller_mw<I, O>(
     State(state): State<Arc<LLMurState>>,
-    request: Request<Body>,
+    request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<axum::response::Response, LLMurError>
 where
@@ -59,13 +54,13 @@ where
             connection.data.connection_info
         );
 
-        let mut attempt_req = Request::new(Body::empty());
+        let mut attempt_req = Request::new(axum::body::Body::empty());
         attempt_req
                 .extensions_mut()
                 .insert(connection.data.connection_info.clone());
         attempt_req
                 .extensions_mut()
-                .insert(connection.data.id.clone());
+                .insert(connection.data.id);
         attempt_req
                 .extensions_mut()
                 .insert(request_data.clone());
@@ -101,7 +96,7 @@ where
         .await?;
 
     let mut response = result;
-    let mut maybe_error = response.extensions_mut().remove::<LLMurError>();
+    let maybe_error = response.extensions_mut().remove::<LLMurError>();
 
     // If status is OK and Upstream did not emit an error
     if response.status().is_success() && maybe_error.is_none() {
@@ -119,16 +114,21 @@ where
 }
 
 async fn load_request_details<I>(
-    request: Request<Body>,
+    request: Request<axum::body::Body>,
     state: Arc<LLMurState>,
 ) -> Result<(Arc<RequestLogId>, Arc<OpenAiRequestData<I>>), LLMurError>
 where
     I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
 {
     println!("Executing OpenAI-compatible request");
-    let request_id = request.extensions().get::<RequestLogId>().cloned().ok_or(
-        ProxyError::InternalError("Missing RequestLogId in request extensions".to_string()),
-    )?;
+    let request_id =
+        request
+            .extensions()
+            .get::<RequestLogId>()
+            .cloned()
+            .ok_or(ProxyError::InternalError(
+                "Missing RequestLogId in request extensions".to_string(),
+            ))?;
     let request_data = OpenAiRequestData::<I>::from_request(request, &state).await?;
 
     Ok((Arc::new(request_id), Arc::new(request_data)))
@@ -146,43 +146,37 @@ where
     O: Serialize + ExposesUsage + Send + 'static + Sync,
 {
     match &result_arc.result {
-        Ok(inner) => {
-             match inner {
-                 ProviderResponse::DecodedResponse { data, status_code } => {
-                     RequestLogData {
-                         id: request_id,
-                         attempt_number: attempt_number as i16,
-                         graph: request_data_arc.graph.clone(),
-                         selected_connection_node,
-                         input_tokens: Some(data.get_input_tokens() as i64),
-                         output_tokens: Some(data.get_output_tokens() as i64),
-                         cost: None,
-                         http_status_code: status_code.as_u16() as i16,
-                         error: None,
-                         request_ts: result_arc.request_ts,
-                         response_ts: result_arc.response_ts,
-                         method: request_data_arc.method.clone(),
-                         path: request_data_arc.path.clone(),
-                     }
-                 }
-                 ProviderResponse::JsonResponse { data, status_code } => {
-                     RequestLogData {
-                         id: request_id,
-                         attempt_number: attempt_number as i16,
-                         graph: request_data_arc.graph.clone(),
-                         selected_connection_node,
-                         input_tokens: None,
-                         output_tokens: None,
-                         cost: None,
-                         http_status_code: status_code.as_u16() as i16,
-                         error: None,
-                         request_ts: result_arc.request_ts,
-                         response_ts: result_arc.response_ts,
-                         method: request_data_arc.method.clone(),
-                         path: request_data_arc.path.clone(),
-                     }
-                 }
-             }
+        Ok(inner) => match inner {
+            ProviderResponse::DecodedResponse { data, status_code } => RequestLogData {
+                id: request_id,
+                attempt_number: attempt_number as i16,
+                graph: request_data_arc.graph.clone(),
+                selected_connection_node,
+                input_tokens: Some(data.get_input_tokens() as i64),
+                output_tokens: Some(data.get_output_tokens() as i64),
+                cost: None,
+                http_status_code: status_code.as_u16() as i16,
+                error: None,
+                request_ts: result_arc.request_ts,
+                response_ts: result_arc.response_ts,
+                method: request_data_arc.method.clone(),
+                path: request_data_arc.path.clone(),
+            },
+            ProviderResponse::JsonResponse { status_code, .. } => RequestLogData {
+                id: request_id,
+                attempt_number: attempt_number as i16,
+                graph: request_data_arc.graph.clone(),
+                selected_connection_node,
+                input_tokens: None,
+                output_tokens: None,
+                cost: None,
+                http_status_code: status_code.as_u16() as i16,
+                error: None,
+                request_ts: result_arc.request_ts,
+                response_ts: result_arc.response_ts,
+                method: request_data_arc.method.clone(),
+                path: request_data_arc.path.clone(),
+            },
         },
         Err(error) => RequestLogData {
             id: request_id,
@@ -251,25 +245,26 @@ where
     Ok(())
 }
 
+/*
 pub(crate) fn generate_usage_increments_map<I>(
-    data: Arc<OpenAiRequestData<I>>,
-    used_connection: Arc<ConnectionNode>,
+data: Arc<OpenAiRequestData<I>>,
+used_connection: Arc<ConnectionNode>,
 ) -> Result<(), ()>
 where
-    I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
+I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
 {
-    let mut map: BTreeMap<String, String> = BTreeMap::new();
+let mut map: BTreeMap<String, String> = BTreeMap::new();
 
-    todo!()
-    /*
-    let mut keys = Vec::with_capacity((self.connections.len() * 3 * 4) + (3 * 3 * 4));
-    keys.extend(MetricsUsageStats::<VirtualKey>::generate_all_keys(&self.virtual_key.id, now_utc));
-    keys.extend(MetricsUsageStats::<Deployment>::generate_all_keys(&self.deployment.id, now_utc));
-    keys.extend(MetricsUsageStats::<Project>::generate_all_keys(&self.project.id, now_utc));
-    keys.extend(MetricsUsageStats::<Connection>::generate_all_keys_for_vector(
-        self.connections.iter().map(|c| &c.id).collect(),
-        now_utc
-    ));
-    keys
-    */
+todo!()
+
+let mut keys = Vh_capacity((self.connections.len() * 3 * 4) + (3 * 3 * 4));
+keys.extend(MetricsUsageStats::<VirtualKey>::generate_all_keys(&self.virtual_key.id, now_utc));
+keys.extend(MetricsUsageStats::<Deployment>::generate_all_keys(&self.deployment.id, now_utc));
+keys.extend(MetricsUsageStats::<Project>::generate_all_keys(&self.project.id, now_utc));
+keys.extend(MetricsUsageStats::<Connection>::generate_all_keys_for_vector(
+    self.connections.iter().map(|c| &c.id).collect(),
+    now_utc
+));
+keys
 }
+*/

@@ -1,12 +1,11 @@
-use std::any::Any;
 use std::sync::Arc;
 use crate::data::connection::Connection;
 use crate::data::connection_deployment::{ConnectionDeployment, ConnectionDeploymentId};
-use crate::data::deployment::{Deployment, DeploymentId};
+use crate::data::deployment::Deployment;
 use crate::data::graph::local_store::{GraphData, GraphDataId};
 use crate::data::graph::usage_stats::{ConnectionUsageStats, DeploymentUsageStats, ProjectUsageStats, VirtualKeyUsageStats};
-use crate::data::project::{Project, ProjectId};
-use crate::data::virtual_key::{VirtualKey, VirtualKeyId};
+use crate::data::project::Project;
+use crate::data::virtual_key::VirtualKey;
 use crate::data::virtual_key_deployment::VirtualKeyDeploymentId;
 use crate::data::DataAccess;
 use crate::errors::{DataAccessError, GraphLoadError, InconsistentGraphDataError, UsageExceededError};
@@ -15,7 +14,6 @@ use serde::Serialize;
 use uuid::Uuid;
 use futures::future::try_join_all;
 use tracing::{instrument, trace_span, Instrument};
-use crate::data::load_balancer::LoadBalancingStrategy;
 use crate::metrics::Metrics;
 
 pub(crate) mod usage_stats;
@@ -78,12 +76,6 @@ impl NodeLimitsChecker for VirtualKeyNode {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
-pub(crate) struct VirtualKeyData {
-    pub(crate) id: VirtualKeyId,
-    pub(crate) alias: String,
-    pub(crate) blocked: bool,
-}
 // endregion: --- Virtual Key Node
 
 // region:    --- Deployment Node
@@ -120,12 +112,6 @@ impl NodeLimitsChecker for DeploymentNode {
 
         Ok(())
     }
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub(crate) struct DeploymentData {
-    pub(crate) id: DeploymentId,
-    pub(crate) name: String,
 }
 // endregion: --- Deployment Node
 
@@ -201,12 +187,6 @@ impl NodeLimitsChecker for ProjectNode {
         Ok(())
     }
 }
-
-#[derive(Clone, Debug, Serialize)]
-pub(crate) struct ProjectData {
-    pub(crate) id: ProjectId,
-    pub(crate) name: String,
-}
 // endregion: --- Project Node
 // endregion: --- Main Model
 
@@ -223,7 +203,7 @@ impl DataAccess {
         name = "get.graph",
         skip(self, api_key, application_secret, metrics)
     )]
-    pub async fn get_graph(&self, api_key: &str, model_name: &str, skip_local_cache: bool, local_cache_ttl_ms: u32, application_secret: &Uuid, ts: &DateTime<Utc>, metrics: &Option<Arc<Metrics>>) -> Result<Graph, GraphLoadError> {
+    pub(crate) async fn get_graph(&self, api_key: &str, model_name: &str, skip_local_cache: bool, local_cache_ttl_ms: u32, application_secret: &Uuid, ts: &DateTime<Utc>, metrics: &Option<Arc<Metrics>>) -> Result<Graph, GraphLoadError> {
         // Step 1: Get Graph Data
         let graph_data = self.get_graph_data(api_key, model_name, skip_local_cache, &ts, local_cache_ttl_ms, application_secret, metrics).await?;
 
