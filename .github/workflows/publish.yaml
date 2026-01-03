@@ -3,14 +3,16 @@ name: Publish to crates.io
 on:
   workflow_dispatch:
     inputs:
-      llmur_version:
-        description: 'Version of llmur to publish'
-        required: true
-        type: string
-      llmur_proxy_version:
-        description: 'Version of llmur-proxy to publish'
-        required: true
-        type: string
+      publish_llmur:
+        description: 'Publish llmur crate'
+        required: false
+        type: boolean
+        default: true
+      publish_llmur_proxy:
+        description: 'Publish llmur-proxy crate'
+        required: false
+        type: boolean
+        default: true
       dry_run:
         description: 'Dry run'
         required: false
@@ -52,43 +54,78 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Extract versions from tag (if triggered by tag)
-        if: startsWith(github.ref, 'refs/tags/')
-        id: tag_versions
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/llmur-v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/llmur-v}"
-            echo "llmur_version=$VERSION" >> $GITHUB_OUTPUT
-            echo "llmur_proxy_version=skip" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.ref }}" == refs/tags/llmur-proxy-v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/llmur-proxy-v}"
-            echo "llmur_version=skip" >> $GITHUB_OUTPUT
-            echo "llmur_proxy_version=$VERSION" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Set versions
+      - name: Read versions from Cargo.toml files
         id: versions
         run: |
+          LLMUR_VERSION=$(grep '^version = ' llmur/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          LLMUR_PROXY_VERSION=$(grep '^version = ' llmur-proxy/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "llmur_version=$LLMUR_VERSION" >> $GITHUB_OUTPUT
+          echo "llmur_proxy_version=$LLMUR_PROXY_VERSION" >> $GITHUB_OUTPUT
+          echo "Read llmur version: $LLMUR_VERSION"
+          echo "Read llmur-proxy version: $LLMUR_PROXY_VERSION"
+
+      - name: Extract version from tag (if triggered by tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        id: tag_version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/llmur-v* ]]; then
+            TAG_VERSION="${GITHUB_REF#refs/tags/llmur-v}"
+            echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
+            echo "tag_crate=llmur" >> $GITHUB_OUTPUT
+            echo "Extracted llmur tag version: $TAG_VERSION"
+          elif [[ "${{ github.ref }}" == refs/tags/llmur-proxy-v* ]]; then
+            TAG_VERSION="${GITHUB_REF#refs/tags/llmur-proxy-v}"
+            echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
+            echo "tag_crate=llmur-proxy" >> $GITHUB_OUTPUT
+            echo "Extracted llmur-proxy tag version: $TAG_VERSION"
+          fi
+
+      - name: Validate tag version matches Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG_VERSION="${{ steps.tag_version.outputs.tag_version }}"
+          TAG_CRATE="${{ steps.tag_version.outputs.tag_crate }}"
+          
+          if [[ "$TAG_CRATE" == "llmur" ]]; then
+            CARGO_VERSION="${{ steps.versions.outputs.llmur_version }}"
+          elif [[ "$TAG_CRATE" == "llmur-proxy" ]]; then
+            CARGO_VERSION="${{ steps.versions.outputs.llmur_proxy_version }}"
+          fi
+          
+          if [[ "$TAG_VERSION" != "$CARGO_VERSION" ]]; then
+            echo "❌ Version mismatch detected!"
+            echo "Tag version: $TAG_VERSION"
+            echo "Cargo.toml version: $CARGO_VERSION"
+            echo "The tag version must match the version in $TAG_CRATE/Cargo.toml"
+            exit 1
+          fi
+          
+          echo "✅ Version validation passed: tag version ($TAG_VERSION) matches Cargo.toml version ($CARGO_VERSION)"
+
+      - name: Determine which crates to publish
+        id: publish_flags
+        run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "llmur_version=${{ github.event.inputs.llmur_version }}" >> $GITHUB_OUTPUT
-            echo "llmur_proxy_version=${{ github.event.inputs.llmur_proxy_version }}" >> $GITHUB_OUTPUT
+            echo "publish_llmur=${{ github.event.inputs.publish_llmur }}" >> $GITHUB_OUTPUT
+            echo "publish_llmur_proxy=${{ github.event.inputs.publish_llmur_proxy }}" >> $GITHUB_OUTPUT
             echo "dry_run=${{ github.event.inputs.dry_run }}" >> $GITHUB_OUTPUT
           else
-            echo "llmur_version=${{ steps.tag_versions.outputs.llmur_version }}" >> $GITHUB_OUTPUT
-            echo "llmur_proxy_version=${{ steps.tag_versions.outputs.llmur_proxy_version }}" >> $GITHUB_OUTPUT
+            # Determine from tag
+            if [[ "${{ github.ref }}" == refs/tags/llmur-v* ]]; then
+              echo "publish_llmur=true" >> $GITHUB_OUTPUT
+              echo "publish_llmur_proxy=false" >> $GITHUB_OUTPUT
+            elif [[ "${{ github.ref }}" == refs/tags/llmur-proxy-v* ]]; then
+              echo "publish_llmur=false" >> $GITHUB_OUTPUT
+              echo "publish_llmur_proxy=true" >> $GITHUB_OUTPUT
+            else
+              echo "publish_llmur=true" >> $GITHUB_OUTPUT
+              echo "publish_llmur_proxy=true" >> $GITHUB_OUTPUT
+            fi
             echo "dry_run=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Update llmur version (if needed)
-        if: steps.versions.outputs.llmur_version != 'skip'
-        run: |
-          if [[ "${{ steps.versions.outputs.llmur_version }}" != "" ]]; then
-            sed -i 's/^version = ".*"/version = "${{ steps.versions.outputs.llmur_version }}"/' llmur/Cargo.toml
-            echo "Updated llmur version to ${{ steps.versions.outputs.llmur_version }}"
-          fi
-
       - name: Publish llmur
-        if: steps.versions.outputs.llmur_version != 'skip' && steps.versions.outputs.dry_run != 'true'
+        if: steps.publish_flags.outputs.publish_llmur == 'true' && steps.publish_flags.outputs.dry_run != 'true'
         run: |
           cargo publish --package llmur --dry-run || true
           cargo publish --package llmur
@@ -96,12 +133,12 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 
       - name: Check llmur (dry run)
-        if: steps.versions.outputs.llmur_version != 'skip' && steps.versions.outputs.dry_run == 'true'
+        if: steps.publish_flags.outputs.publish_llmur == 'true' && steps.publish_flags.outputs.dry_run == 'true'
         run: |
           cargo publish --package llmur --dry-run
 
       - name: Wait for crates.io to index llmur
-        if: steps.versions.outputs.llmur_version != 'skip' && steps.versions.outputs.dry_run != 'true'
+        if: steps.publish_flags.outputs.publish_llmur == 'true' && steps.publish_flags.outputs.dry_run != 'true'
         run: |
           echo "Waiting for crates.io to index llmur..."
           sleep 30
@@ -115,25 +152,17 @@ jobs:
             sleep 10
           done
 
-      - name: Update llmur-proxy version (if needed)
-        if: steps.versions.outputs.llmur_proxy_version != 'skip'
-        run: |
-          if [[ "${{ steps.versions.outputs.llmur_proxy_version }}" != "" ]]; then
-            sed -i 's/^version = ".*"/version = "${{ steps.versions.outputs.llmur_proxy_version }}"/' llmur-proxy/Cargo.toml
-            echo "Updated llmur-proxy version to ${{ steps.versions.outputs.llmur_proxy_version }}"
-          fi
-
       - name: Update llmur-proxy dependency to published version
-        if: steps.versions.outputs.llmur_proxy_version != 'skip' && steps.versions.outputs.llmur_version != 'skip'
+        if: steps.publish_flags.outputs.publish_llmur_proxy == 'true' && steps.publish_flags.outputs.dry_run != 'true'
         run: |
-          # Get the version of llmur that was just published
-          LLMUR_VERSION=$(grep '^version = ' llmur/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          # Get the version of llmur from Cargo.toml
+          LLMUR_VERSION="${{ steps.versions.outputs.llmur_version }}"
           # Replace path dependency with version dependency
           sed -i 's|llmur = { path = "../llmur" }|llmur = { version = "'"$LLMUR_VERSION"'" }|' llmur-proxy/Cargo.toml
           echo "Updated llmur-proxy to depend on llmur version $LLMUR_VERSION"
 
       - name: Publish llmur-proxy
-        if: steps.versions.outputs.llmur_proxy_version != 'skip' && steps.versions.outputs.dry_run != 'true'
+        if: steps.publish_flags.outputs.publish_llmur_proxy == 'true' && steps.publish_flags.outputs.dry_run != 'true'
         run: |
           cargo publish --package llmur-proxy --dry-run || true
           cargo publish --package llmur-proxy
@@ -141,20 +170,17 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 
       - name: Check llmur-proxy (dry run)
-        if: steps.versions.outputs.llmur_proxy_version != 'skip' && steps.versions.outputs.dry_run == 'true'
+        if: steps.publish_flags.outputs.publish_llmur_proxy == 'true' && steps.publish_flags.outputs.dry_run == 'true'
         run: |
           # Temporarily update dependency for dry run
-          if [[ "${{ steps.versions.outputs.llmur_version }}" != "skip" ]]; then
-            LLMUR_VERSION=$(grep '^version = ' llmur/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-            sed -i 's|llmur = { path = "../llmur" }|llmur = { version = "'"$LLMUR_VERSION"'" }|' llmur-proxy/Cargo.toml
-          fi
+          LLMUR_VERSION="${{ steps.versions.outputs.llmur_version }}"
+          sed -i 's|llmur = { path = "../llmur" }|llmur = { version = "'"$LLMUR_VERSION"'" }|' llmur-proxy/Cargo.toml
           cargo publish --package llmur-proxy --dry-run
 
       - name: Restore llmur-proxy dependency (for development)
-        if: always() && steps.versions.outputs.llmur_proxy_version != 'skip'
+        if: always() && steps.publish_flags.outputs.publish_llmur_proxy == 'true'
         run: |
           # Restore path dependency for local development
-          LLMUR_VERSION=$(grep '^version = ' llmur/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-          sed -i 's|llmur = { version = "'"$LLMUR_VERSION"'" }|llmur = { path = "../llmur" }|' llmur-proxy/Cargo.toml
+          sed -i 's|llmur = { version = ".*" }|llmur = { path = "../llmur" }|' llmur-proxy/Cargo.toml
           echo "Restored path dependency for local development"
 
