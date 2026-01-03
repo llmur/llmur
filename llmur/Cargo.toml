@@ -1,7 +1,15 @@
 [package]
 name = "llmur"
-version = "0.1.0"
+version = "0.0.4"
 edition = "2024"
+authors = ["andremachado94"]
+license = "MIT"
+description = "Lightweight LLM Proxy - A library for managing LLM API connections and deployments"
+repository = "https://github.com/llmur/llmur"
+homepage = "https://github.com/llmur/llmur"
+documentation = "https://docs.rs/llmur"
+keywords = ["llm", "proxy", "openai", "api", "ai"]
+readme = "../README.md"
 
 [dependencies]
 axum = { workspace = true }
