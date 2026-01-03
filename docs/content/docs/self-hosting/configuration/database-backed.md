@@ -213,7 +213,7 @@ When LLMUR starts with a database-backed configuration, it automatically runs da
 
 Ensure the path to your configuration file is correct:
 ```bash
-llmur-proxy --configuration /path/to/config.yaml
+llmur --configuration /path/to/config.yaml
 ```
 
 ### Database Connection Errors

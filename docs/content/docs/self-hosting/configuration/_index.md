@@ -19,7 +19,7 @@ LLMUR requires a YAML configuration file that specifies database and cache conne
 The configuration file is passed to the application via the `--configuration` command-line argument:
 
 ```bash
-llmur-proxy --configuration /path/to/config.yaml
+llmur --configuration /path/to/config.yaml
 ```
 
 All deployments currently require:

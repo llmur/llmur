@@ -4,42 +4,56 @@ version = "0.0.4"
 edition = "2024"
 authors = ["andremachado94"]
 license = "MIT"
-description = "Lightweight LLM Proxy - A library for managing LLM API connections and deployments"
+description = "Lightweight LLM Proxy - Binary application for running an LLM proxy server"
 repository = "https://github.com/llmur/llmur"
 homepage = "https://github.com/llmur/llmur"
-documentation = "https://docs.rs/llmur"
 keywords = ["llm", "proxy", "openai", "api", "ai"]
-readme = "../README.md"
+categories = ["command-line-utilities"]
+readme = "README.md"
+
+[[bin]]
+name = "llmur"
+path = "src/main.rs"
 
 [dependencies]
-axum = { workspace = true }
-sqlx = { workspace = true }
-serde = { workspace = true }
-uuid = { workspace = true }
-thiserror = { workspace = true }
-redis = { workspace = true }
-tracing = { workspace = true }
-reqwest = { workspace = true, features = ["json"] }
-serde_json = { workspace = true }
-email_address = { workspace = true }
+# Library dependencies
+axum = { version = "0.8.4", features = ["macros"] }
+sqlx = { version = "0.8.2", features = ["runtime-tokio", "tls-native-tls", "postgres", "mysql", "chrono", "uuid", "migrate", "runtime-async-std", "chrono"] }
+serde = { version = "1.0.215", features = ["derive"] }
+uuid = { version = "1.14.0", features = ["v5", "v7", "serde", "macro-diagnostics"] }
+thiserror = "2.0.2"
+redis = { version = "0.29.0", features = ["uuid", "aio", "async-std-comp"] }
+tracing = "0.1.43"
+reqwest = { version = "0.12.9", features = ["json"] }
+serde_json = "1.0.132"
+email_address = "0.2.9"
 derive-getters = "0.5.0"
-utoipa = { workspace = true }
-rand = { workspace = true }
-async-trait = { workspace = true }
-paste = { workspace = true }
-time = { workspace = true }
-tokio = { workspace = true }
-tower-http = { workspace = true }
-http-body-util = { workspace = true }
-lazy-regex = { workspace = true }
-
-# Crypt
-hex = { workspace = true }
-aes-gcm = { workspace = true }
-base64 = { workspace = true }
-sha2 = { workspace = true }
-hmac = { workspace = true }
+utoipa = { version = "5.2.0", features = ["axum_extras", "uuid"] }
+rand = "0.8.5"
+async-trait = "0.1.83"
+paste = "1.0.15"
+time = { version = "0.3.36", features = ["formatting", "parsing", "serde"] }
+tokio = { version = "1.48.0", features = ["rt", "rt-multi-thread", "macros", "full"] }
+tower-http = { version = "0.6.8", features = ["trace"] }
+http-body-util = "0.1.3"
+lazy-regex = "3.3.0"
+hex = "0.4.3"
+aes-gcm = { version = "0.10.3", features = ["std"] }
+base64 = "0.22.1"
+sha2 = "0.10.8"
+hmac = "0.12.1"
 chrono = "0.4.42"
 log = "0.4.28"
 futures = "0.3.31"
-opentelemetry = { workspace = true }
+opentelemetry = "0.31.0"
+
+# Binary-specific dependencies
+serde_yaml = "0.9.33"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
+opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.31.0", features = ["grpc-tonic"] }
+opentelemetry-semantic-conventions = "0.31.0"
+opentelemetry-appender-tracing = "0.31.1"
+tracing-opentelemetry = "0.32.0"
+clap = "4.5.18"
+clap_derive = "4.5.18"

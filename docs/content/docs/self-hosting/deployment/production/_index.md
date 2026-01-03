@@ -20,16 +20,13 @@ FROM rust:1.75 as builder
 WORKDIR /app
 
 # Copy dependency files
-COPY Cargo.toml Cargo.lock ./
 COPY llmur/Cargo.toml ./llmur/
-COPY llmur-proxy/Cargo.toml ./llmur-proxy/
 
 # Copy source code
 COPY llmur ./llmur
-COPY llmur-proxy ./llmur-proxy
 
 # Build the application
-RUN cargo build --release --bin llmur-proxy
+RUN cargo build --release --manifest-path ./llmur/Cargo.toml
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -41,31 +38,31 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy the binary from builder
-COPY --from=builder /app/target/release/llmur-proxy /usr/local/bin/llmur-proxy
+COPY --from=builder /app/target/release/llmur /usr/local/bin/llmur
 
 # Copy configuration file (or mount as volume)
 COPY config.yaml /app/config.yaml
 
 EXPOSE 8082
 
-CMD ["llmur-proxy", "--configuration", "/app/config.yaml"]
+CMD ["llmur", "--configuration", "/app/config.yaml"]
 ```
 
 ## Building the Docker Image
 
 ```bash
-docker build -t llmur-proxy:latest .
+docker build -t llmur:latest .
 ```
 
 ## Running the Container
 
 ```bash
 docker run -d \
-  --name llmur-proxy \
+  --name llmur \
   -p 8082:8082 \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
   --network app-network \
-  llmur-proxy:latest
+  llmur:latest
 ```
 
 ## Production Configuration

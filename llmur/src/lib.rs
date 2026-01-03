@@ -6,7 +6,7 @@ use crate::routes::{admin_routes, openai_v1_routes};
 use axum::extract::State;
 use axum::middleware::from_fn_with_state;
 use axum::{Json, Router};
-use data::DataAccess;
+use crate::data::DataAccess;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use std::option::Option;

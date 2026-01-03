@@ -46,7 +46,7 @@ The easiest way to get started with LLMUR is using the provided Docker Compose s
 4. **Build and run the proxy**:
    ```bash
    cargo build --release
-   ./target/release/llmur-proxy --configuration config.yaml
+   ./target/release/llmur --configuration config.yaml
    ```
 
 ## Docker Compose Services
