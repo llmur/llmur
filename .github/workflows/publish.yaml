@@ -164,8 +164,8 @@ jobs:
       - name: Publish llmur-proxy
         if: steps.publish_flags.outputs.publish_llmur_proxy == 'true' && steps.publish_flags.outputs.dry_run != 'true'
         run: |
-          cargo publish --package llmur-proxy --dry-run || true
-          cargo publish --package llmur-proxy
+          cargo publish --package llmur-proxy --dry-run --allow-dirty || true
+          cargo publish --package llmur-proxy --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 
@@ -175,7 +175,7 @@ jobs:
           # Temporarily update dependency for dry run
           LLMUR_VERSION="${{ steps.versions.outputs.llmur_version }}"
           sed -i 's|llmur = { path = "../llmur" }|llmur = { version = "'"$LLMUR_VERSION"'" }|' llmur-proxy/Cargo.toml
-          cargo publish --package llmur-proxy --dry-run
+          cargo publish --package llmur-proxy --dry-run --allow-dirty
 
       - name: Restore llmur-proxy dependency (for development)
         if: always() && steps.publish_flags.outputs.publish_llmur_proxy == 'true'
