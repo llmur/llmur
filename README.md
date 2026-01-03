@@ -4,9 +4,7 @@
   <img src="/img/banner.png" alt="LLMUR banner" width=1040 />
 </p>
 
-# LLMUR - Documentation not done yet
-
-**Lightweight LLM Proxy**
+# Lightweight LLM Proxy
 
 [docs](https://llmur.github.io/llmur/)
 
