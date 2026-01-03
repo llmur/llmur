@@ -2,6 +2,18 @@
 name = "llmur-proxy"
 version = "0.0.1"
 edition = "2024"
+authors = ["andremachado94"]
+license = "MIT"
+description = "Lightweight LLM Proxy - Binary application for running an LLM proxy server"
+repository = "https://github.com/llmur/llmur"
+homepage = "https://github.com/llmur/llmur"
+keywords = ["llm", "proxy", "openai", "api", "ai"]
+categories = ["command-line-utilities"]
+readme = "../README.md"
+
+[[bin]]
+name = "llmur-proxy"
+path = "src/main.rs"
 
 [dependencies]
 llmur = { path = "../llmur" }
