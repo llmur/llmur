@@ -44,7 +44,7 @@ params:
     logo:
       path: ./static/images/logo.svg
       dark: ./static/images/logo-dark.svg
-      link: /
+      link: /llmur
       width: 30
       height: 30
 
