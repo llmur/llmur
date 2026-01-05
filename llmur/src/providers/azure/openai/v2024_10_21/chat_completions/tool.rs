@@ -14,6 +14,8 @@ pub struct ToolFunction {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parameters: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strict: Option<bool>,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -37,21 +39,25 @@ pub struct ToolChoiceFunctionDetails {
 
 
 pub mod from_openai_transform {
-    use crate::providers::azure::openai::v2024_02_01::chat_completions::tool::{
+    use crate::providers::azure::openai::v2024_10_21::chat_completions::tool::{
         Tool as AzureTool,
         ToolFunction as AzureToolFunction,
         ToolChoice as AzureToolChoice,
         ToolChoiceFunction as AzureToolChoiceFunction,
         ToolChoiceFunctionDetails as AzureToolChoiceFunctionDetails,
     };
-    use crate::providers::openai::chat_completions::tool::{Tool as OpenAiTool, ToolFunction as OpenAiToolFunction, ToolChoice as OpenAiToolChoice, ToolChoiceFunction as OpenAiToolChoiceFunction, ToolChoiceFunctionDetails as OpenAiToolChoiceFunctionDetails};
+    use crate::providers::openai::chat_completions::tool::{Tool as OpenAiTool, ToolFunction as OpenAiToolFunction, ToolChoice as OpenAiToolChoice, ToolChoiceFunction as OpenAiToolChoiceFunction, ToolChoiceFunctionDetails as OpenAiToolChoiceFunctionDetails, Tool};
 
-    impl From<OpenAiTool> for AzureTool {
-        fn from(value: OpenAiTool) -> Self {
+    impl TryFrom<OpenAiTool> for AzureTool {
+        type Error = ();
+        fn try_from(value: OpenAiTool) -> Result<Self, Self::Error> {
             match value {
-                OpenAiTool::Function { function } => AzureTool::Function{ function: function.into() }
+                OpenAiTool::Function { function } => Ok(AzureTool::Function{ function: function.into() }),
+                Tool::Custom { .. } => Err(())
             }
         }
+
+
     }
     impl From<OpenAiToolFunction> for AzureToolFunction {
         fn from(value: OpenAiToolFunction) -> Self {
@@ -59,6 +65,7 @@ pub mod from_openai_transform {
                 name: value.name,
                 description: value.description,
                 parameters: value.parameters,
+                strict: value.strict,
             }
         }
     }

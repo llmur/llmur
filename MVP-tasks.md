@@ -7,10 +7,10 @@
 - [x] Error handling
 - [x] Tracing
 - [x] Metrics
-- [ ] User Guide
+- [x] User Guide
 - [ ] Technical Documentation
 - [ ] Integration Tests
-- [ ] Github deployment workflows
+- [x] GitHub deployment workflows
 
 ## Good to have:
 

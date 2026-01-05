@@ -18,12 +18,9 @@ use crate::metrics::Metrics;
 #[derive(Debug, Clone, sqlx::Type, PartialEq, Serialize, Deserialize)]
 #[sqlx(type_name = "azure_openai_api_version", rename_all = "lowercase")]
 pub enum AzureOpenAiApiVersion {
-    #[serde(rename = "2024-02-01")]
-    #[sqlx(rename = "2024-02-01")]
-    V2024_02_01,
-    #[sqlx(rename = "2024-06-01")]
-    #[serde(rename = "2024-06-01")]
-    V2024_06_01,
+    #[serde(rename = "2024-10-21")]
+    #[sqlx(rename = "2024-10-21")]
+    V2024_10_21
 }
 
 #[derive(
@@ -97,8 +94,7 @@ impl Connection {
 impl std::fmt::Display for AzureOpenAiApiVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AzureOpenAiApiVersion::V2024_02_01 => write!(f, "2024-02-01"),
-            AzureOpenAiApiVersion::V2024_06_01 => write!(f, "2024-06-01"),
+            AzureOpenAiApiVersion::V2024_10_21 => write!(f, "2024-10-21"),
         }
     }
 }

@@ -43,6 +43,22 @@ pub struct ResponseUsage {
     pub completion_tokens: u64,
     pub prompt_tokens: u64,
     pub total_tokens: u64,
+    pub completion_tokens_details: CompletionTokensDetails,
+    pub prompt_tokens_details: PromptTokensDetails
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct CompletionTokensDetails {
+    pub accepted_prediction_tokens: u64,
+    pub audio_tokens: u64,
+    pub reasoning_tokens: u64,
+    pub rejected_prediction_tokens: u64,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct PromptTokensDetails {
+    pub audio_tokens: u64,
+    pub cached_tokens: u64,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]

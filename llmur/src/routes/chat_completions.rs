@@ -65,8 +65,8 @@ pub(crate) async fn chat_completions_route(
 
 mod azure_openai_request {
     use crate::data::connection::AzureOpenAiApiVersion;
-    use crate::providers::azure::openai::v2024_02_01::chat_completions::request::from_openai_transform::Context as RequestContextV2024_02_01;
-    use crate::providers::azure::openai::v2024_02_01::chat_completions::response::to_openai_transform::Context as ResponseContextV2024_02_01;
+    use crate::providers::azure::openai::v2024_10_21::chat_completions::request::from_openai_transform::Context as RequestContextV2024_10_21;
+    use crate::providers::azure::openai::v2024_10_21::chat_completions::response::to_openai_transform::Context as ResponseContextV2024_10_21;
     use crate::providers::openai::chat_completions::request::Request as OpenAiRequest;
     use crate::providers::openai::chat_completions::response::Response as OpenAiResponse;
     use crate::providers::utils::generic_post_proxy_request;
@@ -85,9 +85,9 @@ mod azure_openai_request {
         let generate_url_fn = |_| { format!("{}/openai/deployments/{}/chat/completions?api-version={}", api_endpoint, deployment_name, api_version.to_string()) };
 
         match api_version {
-            AzureOpenAiApiVersion::V2024_02_01 => {
-                let request_context = RequestContextV2024_02_01 { data_sources: None };
-                let response_context = ResponseContextV2024_02_01 { model: Some(payload.model.clone()) };
+            AzureOpenAiApiVersion::V2024_10_21 => {
+                let request_context = RequestContextV2024_10_21 { data_sources: None };
+                let response_context = ResponseContextV2024_10_21 { model: Some(payload.model.clone()) };
 
                 let start_ts = Utc::now();
                 match generic_post_proxy_request(
@@ -98,29 +98,6 @@ mod azure_openai_request {
                         headers,
                         response_context,
                     ).await {
-                    Ok(response) => {
-                        ProxyResponse::new(Ok(response), start_ts)
-                    }
-                    Err(error) => {
-                        ProxyResponse::new(
-                            Err(error), start_ts
-                        )
-                    }
-                }
-            }
-            AzureOpenAiApiVersion::V2024_06_01 => {
-                let request_context = RequestContextV2024_02_01 { data_sources: None };
-                let response_context = ResponseContextV2024_02_01 { model: Some(payload.model.clone()) };
-
-                let start_ts = Utc::now();
-                match generic_post_proxy_request(
-                    client,
-                    payload,
-                    request_context,
-                    generate_url_fn,
-                    headers,
-                    response_context,
-                ).await {
                     Ok(response) => {
                         ProxyResponse::new(Ok(response), start_ts)
                     }

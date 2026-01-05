@@ -16,6 +16,12 @@ pub struct ResponseUsage {
     pub completion_tokens: u64,
     pub prompt_tokens: u64,
     pub total_tokens: u64,
+    pub completion_tokens_details: CompletionTokensDetails
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct CompletionTokensDetails {
+    pub reasoning_tokens: u64,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -79,7 +85,7 @@ pub struct ResponseChoiceFunctionToolCall {
 }
 
 pub mod to_openai_transform {
-    use crate::providers::azure::openai::v2024_02_01::chat_completions::response::{
+    use crate::providers::azure::openai::v2024_10_21::chat_completions::response::{
         Response as AzureResponse,
         ResponseUsage as AzureResponseUsage,
         ResponseChoice as AzureResponseChoice,
@@ -94,6 +100,8 @@ pub mod to_openai_transform {
         ResponseChoiceMessage as OpenAiResponseChoiceMessage,
         ResponseChoiceToolCall as OpenAiResponseChoiceToolCall,
         ResponseChoiceFunctionToolCall as OpenAiResponseChoiceFunctionToolCall,
+        CompletionTokensDetails as OpenAiCompletionTokensDetails,
+        PromptTokensDetails as OpenAiPromptTokensDetails,
     };
     use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
 
@@ -132,6 +140,13 @@ pub mod to_openai_transform {
                 completion_tokens: value.completion_tokens,
                 prompt_tokens: value.prompt_tokens,
                 total_tokens: value.total_tokens,
+                completion_tokens_details: OpenAiCompletionTokensDetails {
+                    accepted_prediction_tokens: 0,
+                    audio_tokens: 0,
+                    reasoning_tokens: value.completion_tokens_details.reasoning_tokens,
+                    rejected_prediction_tokens: 0,
+                },
+                prompt_tokens_details: OpenAiPromptTokensDetails { audio_tokens: 0, cached_tokens: 0 },
             }
         }
     }

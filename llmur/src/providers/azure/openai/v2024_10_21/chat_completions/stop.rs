@@ -8,7 +8,7 @@ pub enum Stop {
 }
 
 pub mod from_openai_transform {
-    use crate::providers::azure::openai::v2024_02_01::chat_completions::stop::{Stop as AzureStop};
+    use crate::providers::azure::openai::v2024_10_21::chat_completions::stop::{Stop as AzureStop};
     use crate::providers::openai::chat_completions::stop::{Stop as OpenAiStop};
 
     impl From<OpenAiStop> for AzureStop {
