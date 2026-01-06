@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+// region: --- Response structs
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Response {
     pub choices: Vec<ResponseChoice>,
@@ -77,22 +78,16 @@ pub enum ResponseChoiceToolCall {
     Function { id: String, function: ResponseChoiceFunctionToolCall },
 }
 
-#[derive(Debug, PartialEq, Clone)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ResponseChoiceFunctionToolCall {
     pub name: String,
     pub arguments: String,
 }
+// endregion: --- Response structs
 
+// region: --- Transform methods
 pub mod to_openai_transform {
-    use crate::providers::azure::openai::v2024_10_21::chat_completions::response::{
-        Response as AzureResponse,
-        ResponseUsage as AzureResponseUsage,
-        ResponseChoice as AzureResponseChoice,
-        ResponseChoiceMessage as AzureResponseChoiceMessage,
-        ResponseChoiceToolCall as AzureResponseChoiceToolCall,
-        ResponseChoiceFunctionToolCall as AzureResponseChoiceFunctionToolCall,
-    };
+    use super::*;
     use crate::providers::openai::chat_completions::response::{
         Response as OpenAiResponse,
         ResponseUsage as OpenAiResponseUsage,
@@ -113,20 +108,20 @@ pub mod to_openai_transform {
         pub model: Option<String>
     }
 
-    impl TransformationContext<AzureResponse, OpenAiResponse> for Context {}
-    impl TransformationLoss<AzureResponse, OpenAiResponse> for Loss {}
+    impl TransformationContext<Response, OpenAiResponse> for Context {}
+    impl TransformationLoss<Response, OpenAiResponse> for Loss {}
 
-    impl Transformer<OpenAiResponse, Context, Loss> for AzureResponse {
+    impl Transformer<OpenAiResponse, Context, Loss> for Response {
         fn transform(self, context: Context) -> Transformation<OpenAiResponse, Loss> {
             Transformation {
                 result: OpenAiResponse {
                     id: self.id,
-                    choices: self.choices.into_iter().map(Into::into).collect(),
+                    choices: self.choices.into_iter().map(|choice| transform_response_choice(choice)).collect(),
                     created: self.created,
                     model: context.model.unwrap_or(self.model),
                     system_fingerprint: self.system_fingerprint,
                     object: self.object,
-                    usage: self.usage.into(),
+                    usage: transform_response_usage(self.usage),
                     service_tier: None,
                 },
                 loss: Loss {},
@@ -134,59 +129,53 @@ pub mod to_openai_transform {
         }
     }
 
-    impl From<AzureResponseUsage> for OpenAiResponseUsage {
-        fn from(value: AzureResponseUsage) -> Self {
-            OpenAiResponseUsage {
-                completion_tokens: value.completion_tokens,
-                prompt_tokens: value.prompt_tokens,
-                total_tokens: value.total_tokens,
-                completion_tokens_details: OpenAiCompletionTokensDetails {
-                    accepted_prediction_tokens: 0,
-                    audio_tokens: 0,
-                    reasoning_tokens: value.completion_tokens_details.reasoning_tokens,
-                    rejected_prediction_tokens: 0,
-                },
-                prompt_tokens_details: OpenAiPromptTokensDetails { audio_tokens: 0, cached_tokens: 0 },
-            }
+    fn transform_response_usage(usage: ResponseUsage) -> OpenAiResponseUsage {
+        OpenAiResponseUsage {
+            completion_tokens: usage.completion_tokens,
+            prompt_tokens: usage.prompt_tokens,
+            total_tokens: usage.total_tokens,
+            completion_tokens_details: OpenAiCompletionTokensDetails {
+                accepted_prediction_tokens: 0,
+                audio_tokens: 0,
+                reasoning_tokens: usage.completion_tokens_details.reasoning_tokens,
+                rejected_prediction_tokens: 0,
+            },
+            prompt_tokens_details: OpenAiPromptTokensDetails { 
+                audio_tokens: 0, 
+                cached_tokens: 0 
+            },
         }
     }
 
-    impl From<AzureResponseChoice> for OpenAiResponseChoice {
-        fn from(value: AzureResponseChoice) -> Self {
-            OpenAiResponseChoice {
-                finish_reason: value.finish_reason,
-                index: value.index,
-                message: value.message.into(),
-                logprobs: None,
-            }
+    fn transform_response_choice(choice: ResponseChoice) -> OpenAiResponseChoice {
+        OpenAiResponseChoice {
+            finish_reason: choice.finish_reason,
+            index: choice.index,
+            message: transform_response_choice_message(choice.message),
+            logprobs: None,
         }
     }
-    impl From<AzureResponseChoiceMessage> for OpenAiResponseChoiceMessage {
-        fn from(value: AzureResponseChoiceMessage) -> Self {
-            OpenAiResponseChoiceMessage {
-                content: value.content,
-                role: value.role,
-                tool_calls: value.tool_calls.map(|t| t.into_iter().map(Into::into).collect()),
-            }
+
+    fn transform_response_choice_message(message: ResponseChoiceMessage) -> OpenAiResponseChoiceMessage {
+        OpenAiResponseChoiceMessage {
+            content: message.content,
+            role: message.role,
+            tool_calls: message.tool_calls.map(|tool_calls| {
+                tool_calls.into_iter().map(|tc| transform_response_choice_tool_call(tc)).collect()
+            }),
         }
     }
-    impl From<AzureResponseChoiceToolCall> for OpenAiResponseChoiceToolCall {
-        fn from(value: AzureResponseChoiceToolCall) -> Self {
-            match value {
-                AzureResponseChoiceToolCall::Function { id, function } =>
-                    OpenAiResponseChoiceToolCall::Function {
-                        id,
-                        function: function.into()
-                    }
-            }
-        }
-    }
-    impl From<AzureResponseChoiceFunctionToolCall> for OpenAiResponseChoiceFunctionToolCall {
-        fn from(value: AzureResponseChoiceFunctionToolCall) -> Self {
-            OpenAiResponseChoiceFunctionToolCall {
-                name: value.name,
-                arguments: value.arguments
-            }
+
+    fn transform_response_choice_tool_call(tool_call: ResponseChoiceToolCall) -> OpenAiResponseChoiceToolCall {
+        match tool_call {
+            ResponseChoiceToolCall::Function { id, function } => OpenAiResponseChoiceToolCall::Function {
+                id,
+                function: OpenAiResponseChoiceFunctionToolCall {
+                    name: function.name,
+                    arguments: function.arguments,
+                },
+            },
         }
     }
 }
+// endregion: --- Transform methods
