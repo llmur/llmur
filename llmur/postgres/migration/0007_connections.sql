@@ -1,6 +1,7 @@
 -- Define the available providers
-CREATE TYPE provider AS ENUM ('azure/openai', 'openai/v1');
+CREATE TYPE provider AS ENUM ('azure/openai', 'openai/v1', 'gemini');
 CREATE TYPE azure_openai_api_version AS ENUM ('2024-10-21');
+CREATE TYPE gemini_api_version AS ENUM ('v1beta');
 
 -- External connections table
 CREATE TABLE connections (

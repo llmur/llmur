@@ -18,7 +18,7 @@ pub struct Request {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum EmbeddingsInput  {
+pub enum EmbeddingsInput  {
     Text(String),
     Array(Vec<String>),
 }

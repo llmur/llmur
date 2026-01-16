@@ -2,6 +2,7 @@ use crate::data::DataAccess;
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::utils::{ConvertInto, decrypt, encrypt};
 use crate::errors::{DataAccessError, DbRecordConversionError};
+use crate::metrics::Metrics;
 use crate::{
     default_access_fns, default_database_access_fns, impl_structured_id_utils,
     impl_with_id_parameter_for_struct,
@@ -12,7 +13,6 @@ use sqlx::{FromRow, Postgres, QueryBuilder};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use uuid::Uuid;
-use crate::metrics::Metrics;
 
 // region:    --- Main Model
 #[derive(Debug, Clone, sqlx::Type, PartialEq, Serialize, Deserialize)]
@@ -20,7 +20,15 @@ use crate::metrics::Metrics;
 pub enum AzureOpenAiApiVersion {
     #[serde(rename = "2024-10-21")]
     #[sqlx(rename = "2024-10-21")]
-    V2024_10_21
+    V2024_10_21,
+}
+
+#[derive(Debug, Clone, sqlx::Type, PartialEq, Serialize, Deserialize)]
+#[sqlx(type_name = "gemini_api_version", rename_all = "lowercase")]
+pub enum GeminiApiVersion {
+    #[serde(rename = "v1beta")]
+    #[sqlx(rename = "v1beta")]
+    V1BETA,
 }
 
 #[derive(
@@ -53,6 +61,12 @@ pub enum ConnectionInfo {
         api_endpoint: String,
         model: String,
     },
+    GeminiApiKey {
+        api_key: String,
+        api_endpoint: String,
+        api_version: GeminiApiVersion,
+        model: String,
+    },
 }
 
 impl ConnectionInfo {
@@ -60,6 +74,7 @@ impl ConnectionInfo {
         match self {
             ConnectionInfo::AzureOpenAiApiKey { .. } => "azure/openai",
             ConnectionInfo::OpenAiApiKey { .. } => "openai/v1",
+            ConnectionInfo::GeminiApiKey { .. } => "gemini",
         }
     }
 }
@@ -116,8 +131,8 @@ impl DataAccess {
     pub async fn get_connection(
         &self,
         id: &ConnectionId,
-        application_secret: &Uuid, 
-        metrics: &Option<Arc<Metrics>>
+        application_secret: &Uuid,
+        metrics: &Option<Arc<Metrics>>,
     ) -> Result<Option<Connection>, DataAccessError> {
         self.__get_connection(id, &Some(application_secret.clone()), metrics)
             .await
@@ -134,34 +149,32 @@ impl DataAccess {
     pub async fn get_connections(
         &self,
         ids: &BTreeSet<ConnectionId>,
-        application_secret: &Uuid, 
-        metrics: &Option<Arc<Metrics>>
+        application_secret: &Uuid,
+        metrics: &Option<Arc<Metrics>>,
     ) -> Result<BTreeMap<ConnectionId, Option<Connection>>, DataAccessError> {
         self.__get_connections(ids, &Some(*application_secret), metrics)
             .await
     }
 
     #[tracing::instrument(
-        level="trace",
+        level = "trace",
         name = "search.connections",
         skip(self, application_secret, metrics)
     )]
     pub async fn search_connections(
         &self,
         application_secret: &Uuid,
-        metrics: &Option<Arc<Metrics>>
+        metrics: &Option<Arc<Metrics>>,
     ) -> Result<Vec<Connection>, DataAccessError> {
         self.__search_connections(&Some(*application_secret), metrics)
             .await
     }
 
     #[tracing::instrument(
-        level="trace",
+        level = "trace",
         name = "create.connection",
         skip(self, api_key, application_secret, metrics),
-        fields(
-            provider = "azure/openai"
-        )
+        fields(provider = "azure/openai")
     )]
     pub async fn create_azure_openai_connection(
         &self,
@@ -172,8 +185,8 @@ impl DataAccess {
         budget_limits: &Option<BudgetLimits>,
         request_limits: &Option<RequestLimits>,
         token_limits: &Option<TokenLimits>,
-        application_secret: &Uuid, 
-        metrics: &Option<Arc<Metrics>>
+        application_secret: &Uuid,
+        metrics: &Option<Arc<Metrics>>,
     ) -> Result<Connection, DataAccessError> {
         let salt = Uuid::now_v7();
         let encrypted_api_key = encrypt(api_key, &salt, application_secret)?;
@@ -186,17 +199,22 @@ impl DataAccess {
             salt,
         };
 
-        self.__create_connection(&connection_info, budget_limits, request_limits, token_limits, &Some(application_secret.clone()), metrics)
-            .await
+        self.__create_connection(
+            &connection_info,
+            budget_limits,
+            request_limits,
+            token_limits,
+            &Some(application_secret.clone()),
+            metrics,
+        )
+        .await
     }
 
     #[tracing::instrument(
-        level="trace",
+        level = "trace",
         name = "create.connection",
         skip(self, api_key, application_secret, metrics),
-        fields(
-            provider = "openai/v1"
-        )
+        fields(provider = "openai/v1")
     )]
     pub async fn create_openai_v1_connection(
         &self,
@@ -206,8 +224,8 @@ impl DataAccess {
         budget_limits: &Option<BudgetLimits>,
         request_limits: &Option<RequestLimits>,
         token_limits: &Option<TokenLimits>,
-        application_secret: &Uuid, 
-        metrics: &Option<Arc<Metrics>>
+        application_secret: &Uuid,
+        metrics: &Option<Arc<Metrics>>,
     ) -> Result<Connection, DataAccessError> {
         let salt = Uuid::now_v7();
         let encrypted_api_key = encrypt(api_key, &salt, application_secret)?;
@@ -225,7 +243,47 @@ impl DataAccess {
             request_limits,
             token_limits,
             &Some(application_secret.clone()),
-            metrics
+            metrics,
+        )
+        .await
+    }
+
+    #[tracing::instrument(
+        level = "trace",
+        name = "create.connection",
+        skip(self, api_key, application_secret, metrics),
+        fields(provider = "gemini")
+    )]
+    pub async fn create_gemini_v1beta_connection(
+        &self,
+        model: &str,
+        api_endpoint: &str,
+        api_key: &str,
+        api_version: &GeminiApiVersion,
+        budget_limits: &Option<BudgetLimits>,
+        request_limits: &Option<RequestLimits>,
+        token_limits: &Option<TokenLimits>,
+        application_secret: &Uuid,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<Connection, DataAccessError> {
+        let salt = Uuid::now_v7();
+        let encrypted_api_key = encrypt(api_key, &salt, application_secret)?;
+
+        let connection_info = DbConnectionInfoColumn::GeminiApiKey {
+            encrypted_api_key,
+            api_endpoint: api_endpoint.to_string(),
+            api_version: api_version.clone(),
+            model: model.to_string(),
+            salt,
+        };
+
+        self.__create_connection(
+            &connection_info,
+            budget_limits,
+            request_limits,
+            token_limits,
+            &Some(application_secret.clone()),
+            metrics,
         )
         .await
     }
@@ -238,7 +296,11 @@ impl DataAccess {
             id = %id.0
         )
     )]
-    pub async fn delete_connection(&self, id: &ConnectionId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+    pub async fn delete_connection(
+        &self,
+        id: &ConnectionId,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<u64, DataAccessError> {
         self.__delete_connection(id, metrics).await
     }
 }
@@ -296,7 +358,8 @@ pub(crate) fn pg_insert<'a>(
         "INSERT INTO connections
         (
             id,
-            connection_info");
+            connection_info",
+    );
 
     if budget_limits.is_some() {
         query.push(", budget_limits");
@@ -307,7 +370,8 @@ pub(crate) fn pg_insert<'a>(
     if token_limits.is_some() {
         query.push(", token_limits");
     }
-    query.push(")
+    query.push(
+        ")
         VALUES (gen_random_uuid(), ",
     );
 
@@ -407,6 +471,14 @@ pub(crate) enum DbConnectionInfoColumn {
         model: String,
         salt: Uuid,
     },
+    #[serde(rename = "gemini", alias = "gemini")]
+    GeminiApiKey {
+        encrypted_api_key: String,
+        api_endpoint: String,
+        api_version: GeminiApiVersion,
+        model: String,
+        salt: Uuid,
+    },
 }
 
 impl ConvertInto<ConnectionInfo> for DbConnectionInfoColumn {
@@ -414,7 +486,10 @@ impl ConvertInto<ConnectionInfo> for DbConnectionInfoColumn {
         self,
         application_secret: &Option<Uuid>,
     ) -> Result<ConnectionInfo, DbRecordConversionError> {
-        let application_secret = application_secret.ok_or(DbRecordConversionError::InternalError("Application Secret not passed to convert method for ConnectionInfo".to_string()))?; // TODO return Internal Server Error
+        let application_secret =
+            application_secret.ok_or(DbRecordConversionError::InternalError(
+                "Application Secret not passed to convert method for ConnectionInfo".to_string(),
+            ))?; // TODO return Internal Server Error
         match self {
             DbConnectionInfoColumn::AzureOpenAiApiKey {
                 encrypted_api_key,
@@ -438,17 +513,31 @@ impl ConvertInto<ConnectionInfo> for DbConnectionInfoColumn {
                 api_endpoint,
                 model,
             }),
+            DbConnectionInfoColumn::GeminiApiKey {
+                encrypted_api_key,
+                api_endpoint,
+                api_version,
+                model,
+                salt,
+            } => {
+                Ok(ConnectionInfo::GeminiApiKey {
+                    api_key: decrypt(&encrypted_api_key, &salt, &application_secret)?,
+                    api_endpoint,
+                    api_version,
+                    model,
+                })
+            }
         }
     }
 }
 
 impl ConvertInto<Connection> for DbConnectionRecord {
-    fn convert(self, application_secret: &Option<Uuid>) -> Result<Connection, DbRecordConversionError> {
-        let connection_info = self
-            .connection_info
-            .0
-            .convert(application_secret)?;
-        
+    fn convert(
+        self,
+        application_secret: &Option<Uuid>,
+    ) -> Result<Connection, DbRecordConversionError> {
+        let connection_info = self.connection_info.0.convert(application_secret)?;
+
         Ok(Connection::new(
             self.id,
             connection_info,

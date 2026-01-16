@@ -63,13 +63,13 @@ pub struct Request {
     pub tool_choice: Option<ToolChoice>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub service_tier: Option<String>,
+    pub service_tier: Option<ServiceTier>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub modalities: Option<Vec<String>>,
+    pub modalities: Option<Vec<ChatCompletionModality>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parallel_tool_calls: Option<bool>,
@@ -78,31 +78,79 @@ pub struct Request {
     pub prediction: Option<Prediction>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub prompt_cache_key: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reasoning_effort: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub safety_identifier: Option<String>,
+    pub reasoning_effort: Option<ReasoningEffort>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub store: Option<bool>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub verbosity: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub web_search_options: Option<WebSearchOptions>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function_call: Option<FunctionCall>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub functions: Option<Vec<FunctionDefinition>>,
 }
 
 impl ExposesDeployment for Request {
     fn get_deployment_ref(&self) -> &str {
         &self.model
     }
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChatCompletionModality {
+    Text,
+    Audio,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReasoningEffort {
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ServiceTier {
+    Auto,
+    Default,
+    Flex,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FunctionCall {
+    Mode(FunctionCallMode),
+    Function(FunctionCallOption),
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FunctionCallMode {
+    None,
+    Auto,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FunctionCallOption {
+    pub name: String,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FunctionDefinition {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<serde_json::Value>,
 }
 // endregion: --- Request structs
 
@@ -143,12 +191,21 @@ pub enum Message {
         refusal: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         tool_calls: Option<Vec<AssistantToolCall>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        function_call: Option<AssistantFunctionCall>,
     },
 
     #[serde(rename = "tool", alias = "tool")]
     ToolMessage {
         content: ToolMessageContent,
         tool_call_id: String
+    },
+
+    #[serde(rename = "function", alias = "function")]
+    FunctionMessage {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        content: Option<String>,
+        name: String,
     },
 }
 
@@ -236,26 +293,42 @@ pub enum UserMessageContentPart {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub enum FileContentPart {
-    #[serde(rename = "file_data", alias = "file_data")]
-    FileData(String),
-    #[serde(rename = "file_id", alias = "file_id")]
-    FileId(String),
-    #[serde(rename = "file_name", alias = "file_name")]
-    FileName(String),
+pub struct FileContentPart {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "file_name")]
+    pub filename: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_data: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_id: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ImageUrlContentPart {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub detail: Option<String>,
+    pub detail: Option<ImageDetail>,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ImageDetail {
+    Auto,
+    Low,
+    High,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct AudioContentPart {
     pub data: String,
-    pub format: String,
+    pub format: InputAudioFormat,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InputAudioFormat {
+    Wav,
+    Mp3,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -266,17 +339,6 @@ pub enum AssistantToolCall {
         id: String,
         function: AssistantToolCallFunction,
     },
-    #[serde(rename = "custom", alias = "custom")]
-    Custom {
-        id: String,
-        custom: AssistantToolCallCustom,
-    }
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub enum AssistantToolCallType {
-    #[serde(rename = "function")]
-    FunctionType,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -284,11 +346,10 @@ pub struct AssistantToolCallFunction {
     pub name: String,
     pub arguments: String,
 }
-
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct AssistantToolCallCustom {
-    pub input: String,
+pub struct AssistantFunctionCall {
     pub name: String,
+    pub arguments: String,
 }
 // endregion: --- Message structs
 
@@ -319,8 +380,6 @@ pub struct ResponseJsonSchema {
 pub enum Tool {
     #[serde(rename = "function", alias = "function")]
     Function { function: ToolFunction },
-    #[serde(rename = "custom", alias = "custom")]
-    Custom { custom: ToolCustom },
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -335,34 +394,18 @@ pub struct ToolFunction {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct ToolCustom {
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub format: Option<ToolCustomFormat>
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum ToolCustomFormat {
-    #[serde(rename = "text", alias = "text")]
-    Text,
-    #[serde(rename = "grammar", alias = "grammar")]
-    Grammar { grammar: GrammarFormat },
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct GrammarFormat {
-    definition: String,
-    syntax: String,
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ToolChoice {
-    String(String),
+    Mode(ToolChoiceMode),
     Function(ToolChoiceFunction),
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolChoiceMode {
+    None,
+    Auto,
+    Required,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -392,23 +435,40 @@ pub enum Stop {
 pub struct StreamOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_usage: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub include_obfuscation: Option<bool>,
 }
 // endregion: --- Stream structs
 
 // region: --- Audio structs
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Audio {
-    pub format: String,
-    pub voice: Voice
+    pub format: AudioFormat,
+    pub voice: VoiceId,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Voice {
-    BuiltIn(String),
-    Custom { id: String },
+#[serde(rename_all = "lowercase")]
+pub enum AudioFormat {
+    Wav,
+    Aac,
+    Mp3,
+    Flac,
+    Opus,
+    Pcm16,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VoiceId {
+    Alloy,
+    Ash,
+    Ballad,
+    Coral,
+    Echo,
+    Fable,
+    Nova,
+    Onyx,
+    Sage,
+    Shimmer,
 }
 // endregion: --- Audio structs
 
@@ -438,28 +498,43 @@ pub struct PredictionStaticContentPart {
 // region: --- WebSearch structs
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct WebSearchOptions {
-    pub search_context_size: Option<SearchContextSize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_context_size: Option<WebSearchContextSize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_location: Option<UserLocation>,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub enum SearchContextSize {
+#[serde(rename_all = "lowercase")]
+pub enum WebSearchContextSize {
     Low,
     Medium,
     High,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum UserLocation {
-    #[serde(rename = "approximate", alias = "approximate")]
-    Approximate {
-        city: Option<String>,
-        country: Option<String>,
-        region: Option<String>,
-        timezone: Option<String>,
-    }
+pub struct UserLocation {
+    #[serde(rename = "type")]
+    pub kind: UserLocationType,
+    pub approximate: WebSearchLocation,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UserLocationType {
+    Approximate,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct WebSearchLocation {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub city: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
 }
 // endregion: --- WebSearch structs
 
@@ -503,19 +578,121 @@ pub mod to_self {
                     modalities: self.modalities,
                     parallel_tool_calls: self.parallel_tool_calls,
                     prediction: self.prediction,
-                    prompt_cache_key: self.prompt_cache_key,
                     reasoning_effort: self.reasoning_effort,
-                    safety_identifier: self.safety_identifier,
                     store: self.store,
-                    verbosity: self.verbosity,
                     max_completion_tokens: self.max_completion_tokens,
                     web_search_options: self.web_search_options,
                     max_tokens: self.max_tokens,
                     user: self.user,
+                    function_call: self.function_call,
+                    functions: self.functions,
                 },
                 loss: Loss {},
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ChatCompletionModality, Request, UserLocationType, WebSearchContextSize,
+    };
+
+    #[test]
+    fn request_file_and_user_location_shapes() {
+        let json = r#"{
+            "model": "gpt-4o",
+            "messages": [{
+                "role": "user",
+                "content": [{
+                    "type": "file",
+                    "file": {
+                        "filename": "note.txt",
+                        "file_data": "ZGF0YQ=="
+                    }
+                }]
+            }],
+            "web_search_options": {
+                "search_context_size": "medium",
+                "user_location": {
+                    "type": "approximate",
+                    "approximate": {
+                        "country": "US"
+                    }
+                }
+            }
+        }"#;
+
+        let request: Request = serde_json::from_str(json).expect("parse request");
+        let file_part = match &request.messages[0] {
+            super::Message::UserMessage { content, .. } => match content {
+                super::UserMessageContent::Array(parts) => match &parts[0] {
+                    super::UserMessageContentPart::File { file } => file,
+                    _ => panic!("expected file part"),
+                },
+                _ => panic!("expected array content"),
+            },
+            _ => panic!("expected user message"),
+        };
+        assert_eq!(file_part.filename.as_deref(), Some("note.txt"));
+        assert_eq!(file_part.file_data.as_deref(), Some("ZGF0YQ=="));
+
+        let user_location = request
+            .web_search_options
+            .as_ref()
+            .and_then(|options| options.user_location.as_ref())
+            .expect("user_location");
+        assert!(matches!(user_location.kind, UserLocationType::Approximate));
+        assert_eq!(user_location.approximate.country.as_deref(), Some("US"));
+        assert!(matches!(
+            request.web_search_options.as_ref().unwrap().search_context_size,
+            Some(WebSearchContextSize::Medium)
+        ));
+    }
+
+    #[test]
+    fn request_modalities_serialize_lowercase() {
+        let request = Request {
+            model: "gpt-4o".to_string(),
+            messages: vec![super::Message::UserMessage {
+                name: None,
+                content: super::UserMessageContent::Text("hi".to_string()),
+            }],
+            audio: None,
+            n: None,
+            frequency_penalty: None,
+            temperature: None,
+            logprobs: None,
+            top_logprobs: None,
+            max_completion_tokens: None,
+            max_tokens: None,
+            presence_penalty: None,
+            top_p: None,
+            stream: None,
+            stream_options: None,
+            stop: None,
+            seed: None,
+            response_format: None,
+            logit_bias: None,
+            tools: None,
+            tool_choice: None,
+            service_tier: None,
+            metadata: None,
+            modalities: Some(vec![ChatCompletionModality::Text, ChatCompletionModality::Audio]),
+            parallel_tool_calls: None,
+            prediction: None,
+            reasoning_effort: None,
+            store: None,
+            user: None,
+            web_search_options: None,
+            function_call: None,
+            functions: None,
+        };
+
+        let value = serde_json::to_value(&request).expect("serialize request");
+        assert_eq!(value["modalities"][0], "text");
+        assert_eq!(value["modalities"][1], "audio");
     }
 }
 // endregion: --- Transform methods

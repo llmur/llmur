@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
 // region: --- Request structs
+/// Azure OpenAI chat completion request payload.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Request {
     pub messages: Vec<Message>,
@@ -66,10 +67,17 @@ pub struct Request {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_options: Option<StreamOptions>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function_call: Option<FunctionCall>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub functions: Option<Vec<FunctionDefinition>>,
 }
 // endregion: --- Request structs
 
 // region: --- Message structs
+/// Union of supported chat message roles for Azure chat completions.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(tag = "role")]
 pub enum Message {
@@ -94,6 +102,8 @@ pub enum Message {
         #[serde(skip_serializing_if = "Option::is_none")]
         tool_calls: Option<Vec<AssistantToolCall>>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        function_call: Option<AssistantFunctionCall>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         name: Option<String>,
     },
 
@@ -104,9 +114,14 @@ pub enum Message {
     },
 
     #[serde(rename = "function", alias = "function")]
-    FunctionMessage { content: String, name: String },
+    FunctionMessage {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        content: Option<String>,
+        name: String,
+    },
 }
 
+/// User message content as text or structured content parts.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum UserMessageContent {
@@ -114,15 +129,34 @@ pub enum UserMessageContent {
     Array(Vec<UserMessageContentPart>),
 }
 
+/// User message content part (text or image_url).
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum UserMessageContentPart {
     #[serde(rename = "text", alias = "text")]
     Text { text: String },
     #[serde(rename = "image_url", alias = "image_url")]
-    ImageUrl { image_url: String },
+    ImageUrl { image_url: ImageUrlContentPart },
 }
 
+/// Image URL content part object.
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct ImageUrlContentPart {
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<ImageDetail>,
+}
+
+/// Detail level for image input processing.
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ImageDetail {
+    Auto,
+    Low,
+    High,
+}
+
+/// System message content as text or text content parts.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum SystemMessageContent {
@@ -130,6 +164,7 @@ pub enum SystemMessageContent {
     Array(Vec<SystemMessageContentPart>),
 }
 
+/// System message content part (text only).
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum SystemMessageContentPart {
@@ -137,6 +172,7 @@ pub enum SystemMessageContentPart {
     Text { text: String },
 }
 
+/// Assistant message content as text or structured content parts.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AssistantMessageContent {
@@ -144,6 +180,7 @@ pub enum AssistantMessageContent {
     Array(Vec<AssistantMessageContentPart>),
 }
 
+/// Assistant message content part (text or refusal).
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum AssistantMessageContentPart {
@@ -153,6 +190,7 @@ pub enum AssistantMessageContentPart {
     Refusal { text: String },
 }
 
+/// Tool message content as text or text content parts.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ToolMessageContent {
@@ -160,6 +198,7 @@ pub enum ToolMessageContent {
     Array(Vec<ToolMessageContentPart>),
 }
 
+/// Tool message content part (text only).
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ToolMessageContentPart {
@@ -167,9 +206,11 @@ pub enum ToolMessageContentPart {
     Text { text: String },
 }
 
+/// Tool call emitted by the model.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum AssistantToolCall {
+    #[serde(rename = "function", alias = "function")]
     Function {
         id: String,
         function: AssistantToolCallFunction,
@@ -182,12 +223,21 @@ pub enum AssistantToolCallType {
     FunctionType,
 }
 
+/// Tool call function payload.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct AssistantToolCallFunction {
     pub name: String,
     pub arguments: String,
 }
 
+/// Deprecated function call payload in assistant messages.
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct AssistantFunctionCall {
+    pub name: String,
+    pub arguments: String,
+}
+
+/// Azure extension message context returned with assistant responses.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct AssistantMessageContext {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -196,6 +246,7 @@ pub struct AssistantMessageContext {
     pub citations: Option<Vec<AssistantContextCitation>>,
 }
 
+/// Citation entry in Azure extension message context.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct AssistantContextCitation {
     pub content: String,
@@ -211,6 +262,7 @@ pub struct AssistantContextCitation {
 // endregion: --- Message structs
 
 // region: --- Format structs
+/// Response format configuration (text/json_object/json_schema).
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ResponseFormat {
@@ -222,6 +274,7 @@ pub enum ResponseFormat {
     JsonSchema {json_schema: ResponseJsonSchema},
 }
 
+/// JSON schema details for structured outputs.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ResponseJsonSchema {
     pub name: String,
@@ -232,6 +285,7 @@ pub struct ResponseJsonSchema {
 // endregion: --- Format structs
 
 // region: --- Tool structs
+/// Tool definition (Azure supports function tools).
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Tool {
@@ -239,6 +293,7 @@ pub enum Tool {
     Function { function: ToolFunction },
 }
 
+/// Function tool definition.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ToolFunction {
     pub name: String,
@@ -250,13 +305,24 @@ pub struct ToolFunction {
     pub strict: Option<bool>,
 }
 
+/// Tool choice configuration (mode or named tool).
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ToolChoice {
-    String(String),
+    Mode(ToolChoiceMode),
     Function(ToolChoiceFunction),
 }
 
+/// Tool choice mode (none/auto/required).
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolChoiceMode {
+    None,
+    Auto,
+    Required,
+}
+
+/// Named tool selection.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ToolChoiceFunction {
@@ -264,6 +330,7 @@ pub enum ToolChoiceFunction {
     FunctionTool { function: ToolChoiceFunctionDetails },
 }
 
+/// Named function for tool choice.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ToolChoiceFunctionDetails {
     pub name: String,
@@ -271,6 +338,7 @@ pub struct ToolChoiceFunctionDetails {
 // endregion: --- Tool structs
 
 // region: --- Stop structs
+/// Stop sequence configuration (string or array).
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Stop {
@@ -280,6 +348,7 @@ pub enum Stop {
 // endregion: --- Stop structs
 
 // region: --- Extension structs
+/// Azure chat extension configuration (search/cosmos).
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum AzureChatExtensionConfiguration {
@@ -292,12 +361,47 @@ pub enum AzureChatExtensionConfiguration {
 // endregion: --- Extension structs
 
 // region: --- Stream structs
+/// Stream response options.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct StreamOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_usage: Option<bool>
 }
 // endregion: --- Stream structs
+
+// region: --- Function structs
+/// Deprecated function_call request field (mode or named function).
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FunctionCall {
+    Mode(FunctionCallMode),
+    Function(FunctionCallOption),
+}
+
+/// Deprecated function_call mode.
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FunctionCallMode {
+    None,
+    Auto,
+}
+
+/// Deprecated named function selection.
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FunctionCallOption {
+    pub name: String,
+}
+
+/// Deprecated function definition (use tools instead).
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FunctionDefinition {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<serde_json::Value>,
+}
+// endregion: --- Function structs
 
 // region: --- Transform methods
 pub mod from_openai_transform {
@@ -307,6 +411,7 @@ pub mod from_openai_transform {
         Message as OpenAiMessage,
         UserMessageContent as OpenAiUserMessageContent,
         UserMessageContentPart as OpenAiUserMessageContentPart,
+        ImageDetail as OpenAiImageDetail,
         SystemMessageContent as OpenAiSystemMessageContent,
         SystemMessageContentPart as OpenAiSystemMessageContentPart,
         DeveloperMessageContent as OpenAiDeveloperMessageContent,
@@ -316,16 +421,17 @@ pub mod from_openai_transform {
         ToolMessageContent as OpenAiToolMessageContent,
         ToolMessageContentPart as OpenAiToolMessageContentPart,
         AssistantToolCall as OpenAiAssistantToolCall,
-        AssistantToolCallFunction as OpenAiAssistantToolCallFunction,
         ResponseFormat as OpenAiResponseFormat,
-        ResponseJsonSchema as OpenAiResponseJsonSchema,
         Tool as OpenAiTool,
-        ToolFunction as OpenAiToolFunction,
         ToolChoice as OpenAiToolChoice,
+        ToolChoiceMode as OpenAiToolChoiceMode,
         ToolChoiceFunction as OpenAiToolChoiceFunction,
-        ToolChoiceFunctionDetails as OpenAiToolChoiceFunctionDetails,
         Stop as OpenAiStop,
         StreamOptions as OpenAiStreamOptions,
+        FunctionCall as OpenAiFunctionCall,
+        FunctionCallMode as OpenAiFunctionCallMode,
+        FunctionCallOption as OpenAiFunctionCallOption,
+        FunctionDefinition as OpenAiFunctionDefinition,
     };
     use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
     
@@ -372,6 +478,13 @@ pub mod from_openai_transform {
                     top_logprobs: self.top_logprobs,
                     parallel_tool_calls: self.parallel_tool_calls,
                     stream_options: self.stream_options.map(|so| transform_stream_options(so)),
+                    function_call: self.function_call.map(transform_function_call),
+                    functions: self.functions.map(|functions| {
+                        functions
+                            .into_iter()
+                            .map(|definition| transform_function_definition(definition))
+                            .collect()
+                    }),
                 },
                 loss: Loss { model: self.model },
             }
@@ -393,6 +506,7 @@ pub mod from_openai_transform {
                 name,
                 refusal,
                 tool_calls,
+                function_call,
                 ..
             } => Message::AssistantMessage {
                 content: content.map(|c| transform_assistant_message_content(c)),
@@ -402,6 +516,10 @@ pub mod from_openai_transform {
                         .filter_map(|t| transform_assistant_tool_call(t))
                         .collect()
                 }),
+                function_call: function_call.map(|call| AssistantFunctionCall {
+                    name: call.name,
+                    arguments: call.arguments,
+                }),
                 name,
             },
             OpenAiMessage::ToolMessage {
@@ -410,6 +528,10 @@ pub mod from_openai_transform {
             } => Message::ToolMessage {
                 content: transform_tool_message_content(content),
                 tool_call_id,
+            },
+            OpenAiMessage::FunctionMessage { content, name } => Message::FunctionMessage {
+                content,
+                name,
             },
             OpenAiMessage::DeveloperMessage { content, name } => {
                 // Convert developer message into System Message
@@ -439,7 +561,14 @@ pub mod from_openai_transform {
             }
             OpenAiUserMessageContentPart::ImageUrl { image_url } => {
                 Some(UserMessageContentPart::ImageUrl {
-                    image_url: image_url.url,
+                    image_url: ImageUrlContentPart {
+                        url: image_url.url,
+                        detail: image_url.detail.map(|detail| match detail {
+                            OpenAiImageDetail::Auto => ImageDetail::Auto,
+                            OpenAiImageDetail::Low => ImageDetail::Low,
+                            OpenAiImageDetail::High => ImageDetail::High,
+                        }),
+                    },
                 })
             }
             _ => None,
@@ -457,7 +586,6 @@ pub mod from_openai_transform {
                     },
                 })
             }
-            OpenAiAssistantToolCall::Custom { .. } => None,
         }
     }
 
@@ -547,13 +675,16 @@ pub mod from_openai_transform {
                     strict: function.strict,
                 },
             }),
-            OpenAiTool::Custom { .. } => None,
         }
     }
 
     fn transform_tool_choice(tool_choice: OpenAiToolChoice) -> ToolChoice {
         match tool_choice {
-            OpenAiToolChoice::String(s) => ToolChoice::String(s),
+            OpenAiToolChoice::Mode(mode) => ToolChoice::Mode(match mode {
+                OpenAiToolChoiceMode::None => ToolChoiceMode::None,
+                OpenAiToolChoiceMode::Auto => ToolChoiceMode::Auto,
+                OpenAiToolChoiceMode::Required => ToolChoiceMode::Required,
+            }),
             OpenAiToolChoice::Function(f) => ToolChoice::Function(transform_tool_choice_function(f)),
         }
     }
@@ -580,5 +711,95 @@ pub mod from_openai_transform {
             include_usage: stream_options.include_usage,
         }
     }
+
+    fn transform_function_call(call: OpenAiFunctionCall) -> FunctionCall {
+        match call {
+            OpenAiFunctionCall::Mode(mode) => FunctionCall::Mode(match mode {
+                OpenAiFunctionCallMode::None => FunctionCallMode::None,
+                OpenAiFunctionCallMode::Auto => FunctionCallMode::Auto,
+            }),
+            OpenAiFunctionCall::Function(OpenAiFunctionCallOption { name }) => {
+                FunctionCall::Function(FunctionCallOption { name })
+            }
+        }
+    }
+
+    fn transform_function_definition(definition: OpenAiFunctionDefinition) -> FunctionDefinition {
+        FunctionDefinition {
+            name: definition.name,
+            description: definition.description,
+            parameters: definition.parameters,
+        }
+    }
 }
 // endregion: --- Transform methods
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        FunctionCallMode, Message, Request, ToolChoice, ToolChoiceMode,
+    };
+
+    #[test]
+    fn request_image_url_shape_and_tool_choice_mode() {
+        let json = r#"{
+            "messages": [{
+                "role": "user",
+                "content": [{
+                    "type": "image_url",
+                    "image_url": { "url": "https://example.com/image.png", "detail": "low" }
+                }]
+            }],
+            "tool_choice": "required"
+        }"#;
+
+        let request: Request = serde_json::from_str(json).expect("parse request");
+        match &request.messages[0] {
+            Message::UserMessage { content, .. } => match content {
+                super::UserMessageContent::Array(parts) => match &parts[0] {
+                    super::UserMessageContentPart::ImageUrl { image_url } => {
+                        assert_eq!(image_url.url, "https://example.com/image.png");
+                    }
+                    _ => panic!("expected image_url part"),
+                },
+                _ => panic!("expected array content"),
+            },
+            _ => panic!("expected user message"),
+        }
+
+        assert!(matches!(request.tool_choice, Some(ToolChoice::Mode(ToolChoiceMode::Required))));
+    }
+
+    #[test]
+    fn request_function_call_and_functions_parse() {
+        let json = r#"{
+            "messages": [{
+                "role": "assistant",
+                "content": null,
+                "function_call": { "name": "do_thing", "arguments": "{}" }
+            }],
+            "function_call": "auto",
+            "functions": [{
+                "name": "do_thing",
+                "description": "Do the thing.",
+                "parameters": { "type": "object", "properties": {} }
+            }]
+        }"#;
+
+        let request: Request = serde_json::from_str(json).expect("parse request");
+        assert!(matches!(
+            request.function_call,
+            Some(super::FunctionCall::Mode(FunctionCallMode::Auto))
+        ));
+        assert_eq!(request.functions.as_ref().map(Vec::len), Some(1));
+        match &request.messages[0] {
+            Message::AssistantMessage { function_call, .. } => {
+                assert_eq!(
+                    function_call.as_ref().map(|call| call.name.as_str()),
+                    Some("do_thing")
+                );
+            }
+            _ => panic!("expected assistant message"),
+        }
+    }
+}

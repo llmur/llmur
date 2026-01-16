@@ -47,6 +47,16 @@ pub(crate) async fn chat_completions_route(
                 request.payload.clone(),
             ).await
         }
+        ConnectionInfo::GeminiApiKey { api_key, api_endpoint, api_version, model } => {
+            gemini_v1beta_request::chat_completions(
+                &state.data.http_client,
+                model,
+                api_key,
+                api_endpoint,
+                api_version,
+                request.payload.clone(),
+            ).await
+        }
     };
 
     state.metrics.register_proxy_request(
@@ -134,6 +144,69 @@ mod openai_v1_request {
 
         let request_context = RequestContext { model: Some(model.to_string()) };
         let response_context = ResponseContext { model: Some(payload.model.clone()) };
+
+        let start_ts = Utc::now();
+        match generic_post_proxy_request(
+            client,
+            payload,
+            request_context,
+            generate_url_fn,
+            headers,
+            response_context,
+        ).await {
+            Ok(response) => {
+                ProxyResponse::new(Ok(response), start_ts)
+            }
+            Err(error) => {
+                ProxyResponse::new(
+                    Err(error), start_ts
+                )
+            }
+        }
+    }
+}
+
+mod gemini_v1beta_request {
+    use crate::data::connection::GeminiApiVersion;
+    use crate::providers::gemini::v1beta::generate_content::request::from_openai_transform::Context as RequestContextV1Beta;
+    use crate::providers::gemini::v1beta::generate_content::response::to_openai_transform::Context as ResponseContextV1Beta;
+    use crate::providers::openai::chat_completions::request::Request as OpenAiRequest;
+    use crate::providers::openai::chat_completions::response::Response as OpenAiResponse;
+    use crate::providers::utils::generic_post_proxy_request;
+    use crate::routes::openai::response::ProxyResponse;
+    use chrono::Utc;
+    use reqwest::header::HeaderMap;
+
+    #[tracing::instrument(
+        name = "proxy.gemini.v1beta.chat_completions",
+        skip(client, api_key, payload)
+    )]
+    pub(crate) async fn chat_completions(
+        client: &reqwest::Client,
+        model: &str,
+        api_key: &str,
+        api_endpoint: &str,
+        api_version: &GeminiApiVersion,
+        payload: OpenAiRequest,
+    ) -> ProxyResponse<OpenAiResponse> {
+        let mut headers = HeaderMap::new();
+        headers.insert("Content-Type", "application/json".parse().unwrap());
+        let api_version_str = match api_version {
+            GeminiApiVersion::V1BETA => "v1beta",
+        };
+        let endpoint = api_endpoint.trim_end_matches('/');
+        let generate_url_fn = |loss: crate::providers::gemini::v1beta::generate_content::request::from_openai_transform::Loss| {
+            format!(
+                "{}/{}/models/{}:generateContent?key={}",
+                endpoint,
+                api_version_str,
+                loss.model,
+                api_key
+            )
+        };
+
+        let request_context = RequestContextV1Beta { model: Some(model.to_string()) };
+        let response_context = ResponseContextV1Beta { model: Some(model.to_string()) };
 
         let start_ts = Utc::now();
         match generic_post_proxy_request(
