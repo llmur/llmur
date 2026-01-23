@@ -1,5 +1,6 @@
 use crate::providers::ExposesDeployment;
 use serde::{Deserialize, Serialize};
+use std::num::NonZeroU64;
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -7,10 +8,10 @@ pub struct Request {
     pub input: EmbeddingsInput,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub dimensions: Option<u64>, //
+    pub dimensions: Option<NonZeroU64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub encoding_format: Option<String>, //
+    pub encoding_format: Option<EncodingFormat>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
@@ -21,6 +22,15 @@ pub struct Request {
 pub enum EmbeddingsInput  {
     Text(String),
     Array(Vec<String>),
+    TokenArray(Vec<i64>),
+    TokenArrayBatch(Vec<Vec<i64>>),
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EncodingFormat {
+    Float,
+    Base64,
 }
 
 impl ExposesDeployment for Request {

@@ -13,6 +13,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use uuid::Uuid;
 use futures::future::try_join_all;
+use log::error;
 use tracing::{instrument, trace_span, Instrument};
 use crate::metrics::Metrics;
 
@@ -216,7 +217,10 @@ impl DataAccess {
             let stats_map = if let Some(external_cache) = &self.cache.external {
                 match external_cache.get_values(&stats_keys.into_iter().collect()).await {
                     Ok(map) => { map }
-                    Err(_) => { todo!("Handle external cache retrieval error") } // Maybe fallback to local data?
+                    Err(e) => {
+                        error!("Failed to get values from cache: {:?}", e);
+                        todo!("Handle external cache retrieval error")
+                    } // Maybe fallback to local data?
                 }
             } else {
                 todo!("Handle case where no external cache is configured"); // Maybe store it locally?

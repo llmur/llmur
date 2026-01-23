@@ -3,7 +3,7 @@ use crate::providers::ExposesUsage;
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Response {
-    pub object: String,
+    pub object: ResponseObjectType,
     pub data: Vec<EmbeddingObject>,
     pub model: String,
     pub usage: ResponseUsage
@@ -13,13 +13,25 @@ pub struct Response {
 pub struct EmbeddingObject {
     pub embedding: Vec<f64>,
     pub index: u64,
-    pub object: String,
+    pub object: EmbeddingObjectType,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ResponseUsage {
     pub prompt_tokens: u64,
     pub total_tokens: u64,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ResponseObjectType {
+    List,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EmbeddingObjectType {
+    Embedding,
 }
 
 impl ExposesUsage for Response {
