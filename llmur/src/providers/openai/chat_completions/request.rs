@@ -541,12 +541,16 @@ pub struct WebSearchLocation {
 // region: --- Transform methods
 pub mod to_self {
     use crate::providers::openai::chat_completions::request::Request;
+    use crate::providers::openai::chat_completions::request::StreamOptions;
     use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
 
     #[derive(Debug)]
     pub struct Loss {}
     #[derive(Debug)]
-    pub struct Context { pub model: Option<String> }
+    pub struct Context {
+        pub model: Option<String>,
+        pub stream_include_usage: bool,
+    }
 
     impl TransformationContext<Request, Request> for Context {}
     impl TransformationLoss<Request, Request> for Loss {}
@@ -566,7 +570,17 @@ pub mod to_self {
                     presence_penalty: self.presence_penalty,
                     top_p: self.top_p,
                     stream: self.stream,
-                    stream_options: self.stream_options,
+                    stream_options: {
+                        if self.stream.unwrap_or(false) && context.stream_include_usage {
+                            let mut options = self.stream_options.unwrap_or(StreamOptions {
+                                include_usage: None,
+                            });
+                            options.include_usage = Some(true);
+                            Some(options)
+                        } else {
+                            self.stream_options
+                        }
+                    },
                     stop: self.stop,
                     seed: self.seed,
                     response_format: self.response_format,

@@ -443,6 +443,7 @@ pub mod from_openai_transform {
     #[derive(Debug)]
     pub struct Context {
         pub data_sources: Option<Vec<AzureChatExtensionConfiguration>>,
+        pub stream_include_usage: bool,
     }
 
     impl TransformationContext<OpenAiRequest, Request> for Context {}
@@ -477,7 +478,17 @@ pub mod from_openai_transform {
                     logprobs: self.logprobs,
                     top_logprobs: self.top_logprobs,
                     parallel_tool_calls: self.parallel_tool_calls,
-                    stream_options: self.stream_options.map(|so| transform_stream_options(so)),
+                    stream_options: {
+                        if self.stream.unwrap_or(false) && context.stream_include_usage {
+                            let mut options = self.stream_options.unwrap_or(OpenAiStreamOptions {
+                                include_usage: None,
+                            });
+                            options.include_usage = Some(true);
+                            Some(transform_stream_options(options))
+                        } else {
+                            self.stream_options.map(|so| transform_stream_options(so))
+                        }
+                    },
                     function_call: self.function_call.map(transform_function_call),
                     functions: self.functions.map(|functions| {
                         functions
