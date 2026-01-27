@@ -15,5 +15,5 @@
 ## Good to have:
 
 - [ ] Enable `/responses` api
-- [ ] Enable `/embeddings` api
-- [ ] Add Gemini provider
+- [x] Enable `/embeddings` api
+- [x] Add Gemini provider
