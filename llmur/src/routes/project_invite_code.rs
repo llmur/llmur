@@ -8,7 +8,7 @@ use crate::routes::middleware::user_context::{
 use crate::routes::StatusResponse;
 use crate::{impl_from_vec_result, LLMurState};
 use axum::extract::{Path, State};
-use axum::routing::{delete, post};
+use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -17,6 +17,7 @@ use std::sync::Arc;
 pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
     Router::new()
         .route("/", post(create_project_invite_code))
+        .route("/{id}", get(get_project_invite_code))
         .route("/{id}", delete(delete_project_invite_code))
         .with_state(state.clone())
 }
@@ -48,6 +49,36 @@ pub(crate) async fn create_project_invite_code(
         .await?;
 
     Ok(Json(invite.into()))
+}
+
+#[tracing::instrument(
+    name = "handler.get.project_invite_code",
+    skip(state, ctx, id),
+    fields(
+        id = %id.0,
+    )
+)]
+pub(crate) async fn get_project_invite_code(
+    Extension(ctx): Extension<UserContextExtractionResult>,
+    State(state): State<Arc<LLMurState>>,
+    Path(id): Path<ProjectInviteCodeId>,
+) -> Result<Json<GetProjectInviteCodeResult>, LLMurError> {
+    let user_context = ctx.require_authenticated_user()?;
+
+    let project_invite_code = state
+        .data
+        .get_invite_code(&id, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    if !user_context
+        .has_project_admin_access(state.clone(), &project_invite_code.project_id)
+        .await?
+    {
+        return Err(AuthorizationError::AccessDenied)?;
+    }
+
+    Ok(Json(project_invite_code.into()))
 }
 
 #[tracing::instrument(

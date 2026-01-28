@@ -39,6 +39,12 @@ pub(crate) async fn create_virtual_key_deployment(
         .await?
         .ok_or(DataAccessError::ResourceNotFound)?;
 
+    let _deployment = state
+        .data
+        .get_deployment(&payload.deployment_id, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
     if !user_context.has_project_admin_access(state.clone(), &virtual_key.project_id).await? {
         return Err(AuthorizationError::AccessDenied)?;
     }
@@ -133,12 +139,12 @@ pub(crate) async fn delete_virtual_key_deployment(
 pub(crate) async fn search_virtual_key_deployments(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
-    Query(params): Query<Option<SearchVirtualKeyDeploymentQueryParams>>,
+    Query(params): Query<SearchVirtualKeyDeploymentQueryParams>,
 ) -> Result<Json<ListVirtualKeyDeploymentsResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let virtual_key_id = params.as_ref().and_then(|p| p.virtual_key_id);
-    let deployment_id = params.as_ref().and_then(|p| p.deployment_id);
+    let virtual_key_id = params.virtual_key_id;
+    let deployment_id = params.deployment_id;
 
     // If the virtual key is passed as a parameter we need to check if the user has access
     // to the project it belongs to

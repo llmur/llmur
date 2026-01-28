@@ -3,6 +3,7 @@ use std::sync::Arc;
 use aes_gcm::aead;
 use axum::extract::rejection::JsonRejection;
 use axum::Json;
+use serde_json::json;
 use axum::response::{IntoResponse, Response};
 use hex::FromHexError;
 use redis::RedisError;
@@ -332,7 +333,19 @@ impl IntoResponse for &ProxyError {
 impl IntoResponse for DataAccessError {
     fn into_response(self) -> Response {
         match self {
-            DataAccessError::SqlxError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DataAccessError").into_response(),
+            DataAccessError::SqlxError(e) => {
+                if is_unique_violation(&e) {
+                    return (
+                        axum::http::StatusCode::CONFLICT,
+                        Json(json!({
+                            "error": "conflict",
+                            "message": "Resource already exists"
+                        })),
+                    )
+                        .into_response();
+                }
+                (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DataAccessError").into_response()
+            }
             DataAccessError::DbRecordConversionError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DataAccessError").into_response(),
             DataAccessError::EncryptionError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DataAccessError").into_response(),
             DataAccessError::InvalidTimeFormatError(e) => (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response(),
@@ -342,5 +355,12 @@ impl IntoResponse for DataAccessError {
             DataAccessError::FailedToGetCreatedResource(_, _, _) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "FailedToGetCreatedResource").into_response(),
             DataAccessError::CreatedResourceNotFound(_, _) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "CreatedResourceNotFound").into_response(),
         }
+    }
+}
+
+fn is_unique_violation(error: &sqlx::Error) -> bool {
+    match error {
+        sqlx::Error::Database(db_error) => db_error.code().as_deref() == Some("23505"),
+        _ => false,
     }
 }

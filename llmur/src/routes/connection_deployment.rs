@@ -35,6 +35,18 @@ pub(crate) async fn create_connection_deployment(
         return Err(AuthorizationError::AccessDenied)?;
     }
 
+    let _connection = state
+        .data
+        .get_connection(&payload.connection_id, &state.application_secret, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    let _deployment = state
+        .data
+        .get_deployment(&payload.deployment_id, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
     let result = state.data.create_connection_deployment(&payload.connection_id, &payload.deployment_id, payload.weight.unwrap_or(1), &state.metrics).await?;
     Ok(Json(result.into()))
 }

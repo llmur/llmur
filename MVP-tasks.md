@@ -9,7 +9,7 @@
 - [x] Metrics
 - [x] User Guide
 - [ ] Technical Documentation
-- [ ] Integration Tests
+- [x] Integration Tests
 - [x] GitHub deployment workflows
 
 ## Good to have:

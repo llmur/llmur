@@ -157,19 +157,11 @@ where
     let mut response = result;
     let maybe_error = response.extensions_mut().remove::<LLMurError>();
 
-    // If status is OK and Upstream did not emit an error
-    if response.status().is_success() && maybe_error.is_none() {
-        return Ok(response);
-    }
-
     if let Some(error) = maybe_error {
         return Err(error);
     }
 
-    // Should never get to this point
-    Err(ProxyError::InternalError(
-        "Invalid controller path".to_string(),
-    ))?
+    Ok(response)
 }
 
 async fn load_request_details<I>(

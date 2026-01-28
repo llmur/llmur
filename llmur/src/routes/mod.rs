@@ -99,5 +99,11 @@ pub(crate) async fn get_graph(
         .get_graph(&key, &deployment, false, 10000, &state.application_secret, &Utc::now(), &state.metrics)
         .await
         .map_err(|e| e.into());
-    Ok(Json(graph?))
+    let graph = graph?;
+    if graph.connections.is_empty() {
+        return Err(GraphError::NoConnectionAvailable(
+            crate::errors::MissingConnectionReason::DeploymentConnectionsNotSetup,
+        ))?;
+    }
+    Ok(Json(graph))
 }
