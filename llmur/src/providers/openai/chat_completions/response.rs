@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::providers::ExposesUsage;
+use crate::providers::openai::chat_completions::request::ServiceTier;
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Response {
@@ -12,7 +13,7 @@ pub struct Response {
     pub object: String,
     pub usage: ResponseUsage,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub service_tier: Option<String>,
+    pub service_tier: Option<ServiceTier>,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -26,9 +27,40 @@ pub struct ResponseChoice {
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ResponseChoiceMessage {
     pub content: Option<String>, // nullable but required
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refusal: Option<String>,
     pub role: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ResponseChoiceToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<Vec<ResponseMessageAnnotation>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio: Option<ResponseMessageAudio>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function_call: Option<ResponseChoiceFunctionToolCall>,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ResponseMessageAnnotation {
+    #[serde(rename = "url_citation", alias = "url_citation")]
+    UrlCitation { url_citation: ResponseUrlCitation },
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct ResponseUrlCitation {
+    pub start_index: u64,
+    pub end_index: u64,
+    pub url: String,
+    pub title: String,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct ResponseMessageAudio {
+    pub id: String,
+    pub expires_at: u64,
+    pub data: String,
+    pub transcript: String,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -43,12 +75,38 @@ pub struct ResponseUsage {
     pub completion_tokens: u64,
     pub prompt_tokens: u64,
     pub total_tokens: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_tokens_details: Option<CompletionTokensDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_tokens_details: Option<PromptTokensDetails>
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct CompletionTokensDetails {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accepted_prediction_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rejected_prediction_tokens: Option<u64>,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct PromptTokensDetails {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cached_tokens: Option<u64>,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ResponseChoiceLogprob {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<Vec<ResponseChoiceLogprobContent>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refusal: Option<Vec<ResponseChoiceLogprobContent>>,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -112,5 +170,43 @@ pub mod to_self {
                 loss: Loss {},
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Response;
+
+    #[test]
+    fn response_optional_usage_details_and_refusal_logprobs() {
+        let json = r#"{
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "gpt-4o",
+            "choices": [{
+                "finish_reason": "stop",
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "hi",
+                    "refusal": null
+                },
+                "logprobs": {
+                    "content": null,
+                    "refusal": null
+                }
+            }],
+            "usage": {
+                "prompt_tokens": 1,
+                "completion_tokens": 1,
+                "total_tokens": 2
+            }
+        }"#;
+
+        let response: Response = serde_json::from_str(json).expect("parse response");
+        assert_eq!(response.choices.len(), 1);
+        assert!(response.usage.completion_tokens_details.is_none());
+        assert!(response.usage.prompt_tokens_details.is_none());
     }
 }

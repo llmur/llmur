@@ -36,6 +36,12 @@ pub(crate) async fn create_membership(
         .await?
         .ok_or(DataAccessError::ResourceNotFound)?;
 
+    let _user = state
+        .data
+        .get_user(&payload.user_id, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
     if !user_context
         .has_project_admin_access(state.clone(), &project.id)
         .await?
@@ -124,12 +130,12 @@ pub(crate) async fn delete_membership(
 pub(crate) async fn search_memberships(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
-    Query(params): Query<Option<SearchMembershipsQueryParams>>,
+    Query(params): Query<SearchMembershipsQueryParams>,
 ) -> Result<Json<ListMembershipsResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let user_id = params.as_ref().and_then(|p| p.user_id);
-    let project_id = params.as_ref().and_then(|p| p.project_id);
+    let user_id = params.user_id;
+    let project_id = params.project_id;
 
     // If the project is set and the user is a member, it should be able to retrieve it
     if let Some(project_id) = project_id {

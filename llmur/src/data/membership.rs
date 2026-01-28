@@ -167,11 +167,11 @@ pub(crate) fn pg_search<'a>(user_id: &'a Option<UserId>, project_id: &'a Option<
     );
     if let Some(project_id) = project_id {
         query.push(" AND project_id=");
-        query.push(project_id);
+        query.push_bind(project_id);
     }
     if let Some(user_id) = user_id {
         query.push(" AND user_id=");
-        query.push(user_id);
+        query.push_bind(user_id);
     }
     // Build query
     query

@@ -1,11 +1,11 @@
-use crate::data::connection::{AzureOpenAiApiVersion, Connection, ConnectionId, ConnectionInfo};
+use crate::data::connection::{
+    AzureOpenAiApiVersion, Connection, ConnectionId, ConnectionInfo, GeminiApiVersion,
+};
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
-use crate::routes::middleware::user_context::{
-    AuthorizationManager, UserContextExtractionResult,
-};
 use crate::routes::StatusResponse;
-use crate::{impl_from_vec_result, LLMurState};
+use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
+use crate::{LLMurState, impl_from_vec_result};
 use axum::extract::{Path, State};
 use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
@@ -81,6 +81,30 @@ pub(crate) async fn create_connection(
                 )
                 .await?
         }
+        CreateConnectionPayload::Gemini {
+            model,
+            api_endpoint,
+            api_key,
+            api_version,
+            budget_limits,
+            request_limits,
+            token_limits,
+        } => {
+            state
+                .data
+                .create_gemini_v1beta_connection(
+                    model,
+                    api_endpoint,
+                    api_key,
+                    api_version,
+                    budget_limits,
+                    request_limits,
+                    token_limits,
+                    &state.application_secret,
+                    &state.metrics,
+                )
+                .await?
+        }
     };
 
     Ok(Json(result.into()))
@@ -148,17 +172,13 @@ pub(crate) async fn delete_connection(
     }))
 }
 
-
-#[tracing::instrument(
-    name = "handler.search.connections",
-    skip(state, ctx)
-)]
+#[tracing::instrument(name = "handler.search.connections", skip(state, ctx))]
 pub(crate) async fn list_connections(
     Extension(ctx): Extension<UserContextExtractionResult>,
-    State(state): State<Arc<LLMurState>>
+    State(state): State<Arc<LLMurState>>,
 ) -> Result<Json<ListConnectionsResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
-    
+
     if !user_context.has_admin_access() {
         return Err(AuthorizationError::AccessDenied)?;
     }
@@ -201,6 +221,18 @@ pub(crate) enum CreateConnectionPayload {
         request_limits: Option<RequestLimits>,
         token_limits: Option<TokenLimits>,
     },
+
+    #[serde(rename = "gemini", alias = "gemini")]
+    Gemini {
+        model: String,
+        api_endpoint: String,
+        api_key: String,
+        api_version: GeminiApiVersion,
+
+        budget_limits: Option<BudgetLimits>,
+        request_limits: Option<RequestLimits>,
+        token_limits: Option<TokenLimits>,
+    },
 }
 
 #[derive(Clone, Serialize)]
@@ -220,6 +252,15 @@ pub enum GetConnectionResult {
         api_key: String,
         model: String,
         api_endpoint: String,
+    },
+
+    #[serde(rename = "gemini", alias = "gemini")]
+    Gemini {
+        id: ConnectionId,
+        api_key: String,
+        model: String,
+        api_endpoint: String,
+        api_version: GeminiApiVersion,
     },
 }
 
@@ -256,6 +297,18 @@ impl From<Connection> for GetConnectionResult {
                 model,
                 api_endpoint,
             },
+            ConnectionInfo::GeminiApiKey {
+                api_key,
+                api_endpoint,
+                api_version,
+                model,
+            } => GetConnectionResult::Gemini {
+                id: connection.id,
+                api_key,
+                model,
+                api_endpoint,
+                api_version,
+            }
         }
     }
 }

@@ -1,5 +1,6 @@
 pub mod openai;
 pub mod azure;
+pub mod gemini;
 
 pub(crate) mod utils;
 

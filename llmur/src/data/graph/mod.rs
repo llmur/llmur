@@ -13,6 +13,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use uuid::Uuid;
 use futures::future::try_join_all;
+use log::error;
 use tracing::{instrument, trace_span, Instrument};
 use crate::metrics::Metrics;
 
@@ -216,7 +217,10 @@ impl DataAccess {
             let stats_map = if let Some(external_cache) = &self.cache.external {
                 match external_cache.get_values(&stats_keys.into_iter().collect()).await {
                     Ok(map) => { map }
-                    Err(_) => { todo!("Handle external cache retrieval error") } // Maybe fallback to local data?
+                    Err(e) => {
+                        error!("Failed to get values from cache: {:?}", e);
+                        todo!("Handle external cache retrieval error")
+                    } // Maybe fallback to local data?
                 }
             } else {
                 todo!("Handle case where no external cache is configured"); // Maybe store it locally?
@@ -317,19 +321,25 @@ impl DataAccess {
             .clone();
         println!("Loaded virtual key deployment");
 
-        // Load connection deployments - If any None values are found it is an inconsistency and should error out
-        let connection_deployments = self.get_connection_deployments(&deployment.connections, metrics).await?
-            .into_values()
-            .collect::<Option<Vec<ConnectionDeployment>>>()
-            .ok_or(GraphLoadError::InconsistentGraphDataError(InconsistentGraphDataError::InvalidConnectionDeployments))?;
-        println!("Loaded connection deployments");
+        let (connection_deployments, connections) = if deployment.connections.is_empty() {
+            (Vec::new(), Vec::new())
+        } else {
+            // Load connection deployments - If any None values are found it is an inconsistency and should error out
+            let connection_deployments = self.get_connection_deployments(&deployment.connections, metrics).await?
+                .into_values()
+                .collect::<Option<Vec<ConnectionDeployment>>>()
+                .ok_or(GraphLoadError::InconsistentGraphDataError(InconsistentGraphDataError::InvalidConnectionDeployments))?;
+            println!("Loaded connection deployments");
 
-        // Load connections - If any None values are found it is an inconsistency and should error out
-        let connections = self.get_connections(&connection_deployments.iter().map(|cd| cd.connection_id).collect(), application_secret, metrics).await?
-            .into_values()
-            .collect::<Option<Vec<Connection>>>()
-            .ok_or(GraphLoadError::InconsistentGraphDataError(InconsistentGraphDataError::InvalidConnection))?;
-        println!("Loaded connections");
+            // Load connections - If any None values are found it is an inconsistency and should error out
+            let connections = self.get_connections(&connection_deployments.iter().map(|cd| cd.connection_id).collect(), application_secret, metrics).await?
+                .into_values()
+                .collect::<Option<Vec<Connection>>>()
+                .ok_or(GraphLoadError::InconsistentGraphDataError(InconsistentGraphDataError::InvalidConnection))?;
+            println!("Loaded connections");
+
+            (connection_deployments, connections)
+        };
 
         Ok(
             GraphData {

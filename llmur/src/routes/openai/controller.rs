@@ -3,8 +3,9 @@ use crate::errors::{GraphError, LLMurError, MissingConnectionReason, ProxyError}
 use crate::providers::{ExposesDeployment, ExposesUsage};
 use crate::routes::openai::request::OpenAiRequestData;
 use crate::routes::openai::response::{ProviderResponse, ProxyResponse};
+use crate::routes::openai::logging::{RequestLogContext, RequestLogSenders, send_request_log};
 
-use crate::data::request_log::{RequestLogData, RequestLogId};
+use crate::data::request_log::RequestLogId;
 use axum::extract::FromRequest;
 use axum::{extract::State, http::Request, middleware::Next};
 
@@ -13,6 +14,7 @@ use log::debug;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
+use chrono::Utc;
 use tracing::Instrument;
 
 #[tracing::instrument(name = "controller", skip(state, request, next))]
@@ -67,6 +69,15 @@ where
 
             // Copy the RequestLogId to the new request
         attempt_req.extensions_mut().insert(*request_id.as_ref());
+        attempt_req.extensions_mut().insert(RequestLogContext {
+            request_id: *request_id.as_ref(),
+            graph: request_data.graph.clone(),
+            selected_connection_node: connection.clone(),
+            method: request_data.method.clone(),
+            path: request_data.path.clone(),
+            attempt_number: 0,
+            request_ts: Utc::now(),
+        });
 
         let response = next.clone().run(attempt_req).await;
         state.data.decrement_opened_connection_count(&connection.data.id);
@@ -77,18 +88,66 @@ where
             .ok_or(ProxyError::InternalError("Layers aren't properly setup or route is not returning OpenAiCompatibleResponse<O>".to_string()))?
             .clone();
 
-        let request_log_data_arc = Arc::new(generate_request_log_data::<I, O>(
-            *request_id,
-            request_data.clone(),
-            0,
-            connection.clone(),
-            result.clone()
-        ));
-
-        submit_request_log::<I, O>(
-            state.clone(),
-            request_log_data_arc,
-        );
+        let is_stream = matches!(result.result, Ok(ProviderResponse::Stream { .. }));
+        if !is_stream {
+            let senders = RequestLogSenders {
+                request_log_tx: state.data.request_log_tx.clone(),
+                usage_log_tx: state.data.usage_log_tx.clone(),
+            };
+            let response_ts = result.response_ts;
+            match &result.result {
+                Ok(inner) => match inner {
+                    ProviderResponse::DecodedResponse { data, status_code } => {
+                        send_request_log(
+                            &request_data_to_log_context(request_id.as_ref(), &request_data, &connection, result.request_ts),
+                            &senders,
+                            *status_code,
+                            Some(data.get_input_tokens() as i64),
+                            Some(data.get_output_tokens() as i64),
+                            None,
+                            response_ts,
+                        );
+                    }
+                    ProviderResponse::JsonResponse { status_code, .. } => {
+                        send_request_log(
+                            &request_data_to_log_context(request_id.as_ref(), &request_data, &connection, result.request_ts),
+                            &senders,
+                            *status_code,
+                            None,
+                            None,
+                            None,
+                            response_ts,
+                        );
+                    }
+                    ProviderResponse::Stream { status_code, .. } => {
+                        send_request_log(
+                            &request_data_to_log_context(request_id.as_ref(), &request_data, &connection, result.request_ts),
+                            &senders,
+                            *status_code,
+                            None,
+                            None,
+                            None,
+                            response_ts,
+                        );
+                    }
+                },
+                Err(error) => {
+                    let status = match error {
+                        ProxyError::ProxyReturnError(status_code, _) => *status_code,
+                        _ => reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                    };
+                    send_request_log(
+                        &request_data_to_log_context(request_id.as_ref(), &request_data, &connection, result.request_ts),
+                        &senders,
+                        status,
+                        None,
+                        None,
+                        Some(error.to_string()),
+                        response_ts,
+                    );
+                }
+            }
+        }
 
         Ok::<axum::http::Response<axum::body::Body>, ProxyError>(response)
     }
@@ -98,19 +157,11 @@ where
     let mut response = result;
     let maybe_error = response.extensions_mut().remove::<LLMurError>();
 
-    // If status is OK and Upstream did not emit an error
-    if response.status().is_success() && maybe_error.is_none() {
-        return Ok(response);
-    }
-
     if let Some(error) = maybe_error {
         return Err(error);
     }
 
-    // Should never get to this point
-    Err(ProxyError::InternalError(
-        "Invalid controller path".to_string(),
-    ))?
+    Ok(response)
 }
 
 async fn load_request_details<I>(
@@ -134,104 +185,24 @@ where
     Ok((Arc::new(request_id), Arc::new(request_data)))
 }
 
-fn generate_request_log_data<I, O>(
-    request_id: RequestLogId,
-    request_data_arc: Arc<OpenAiRequestData<I>>,
-    attempt_number: usize,
-    selected_connection_node: ConnectionNode,
-    result_arc: Arc<ProxyResponse<O>>,
-) -> RequestLogData
+fn request_data_to_log_context<I>(
+    request_id: &RequestLogId,
+    request_data_arc: &Arc<OpenAiRequestData<I>>,
+    selected_connection_node: &ConnectionNode,
+    request_ts: chrono::DateTime<chrono::Utc>,
+) -> RequestLogContext
 where
     I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
-    O: Serialize + ExposesUsage + Send + 'static + Sync,
 {
-    match &result_arc.result {
-        Ok(inner) => match inner {
-            ProviderResponse::DecodedResponse { data, status_code } => RequestLogData {
-                id: request_id,
-                attempt_number: attempt_number as i16,
-                graph: request_data_arc.graph.clone(),
-                selected_connection_node,
-                input_tokens: Some(data.get_input_tokens() as i64),
-                output_tokens: Some(data.get_output_tokens() as i64),
-                cost: None,
-                http_status_code: status_code.as_u16() as i16,
-                error: None,
-                request_ts: result_arc.request_ts,
-                response_ts: result_arc.response_ts,
-                method: request_data_arc.method.clone(),
-                path: request_data_arc.path.clone(),
-            },
-            ProviderResponse::JsonResponse { status_code, .. } => RequestLogData {
-                id: request_id,
-                attempt_number: attempt_number as i16,
-                graph: request_data_arc.graph.clone(),
-                selected_connection_node,
-                input_tokens: None,
-                output_tokens: None,
-                cost: None,
-                http_status_code: status_code.as_u16() as i16,
-                error: None,
-                request_ts: result_arc.request_ts,
-                response_ts: result_arc.response_ts,
-                method: request_data_arc.method.clone(),
-                path: request_data_arc.path.clone(),
-            },
-        },
-        Err(error) => RequestLogData {
-            id: request_id,
-            attempt_number: attempt_number as i16,
-            graph: request_data_arc.graph.clone(),
-            selected_connection_node,
-            input_tokens: None,
-            output_tokens: None,
-            cost: None,
-            http_status_code: match error {
-                ProxyError::ProxyReturnError(status_code, _) => status_code.as_u16() as i16,
-                _ => reqwest::StatusCode::INTERNAL_SERVER_ERROR.as_u16() as i16,
-            },
-            error: Some(error.to_string()),
-            request_ts: result_arc.request_ts,
-            response_ts: result_arc.response_ts,
-            method: request_data_arc.method.clone(),
-            path: request_data_arc.path.clone(),
-        },
+    RequestLogContext {
+        request_id: *request_id,
+        attempt_number: 0,
+        graph: request_data_arc.graph.clone(),
+        selected_connection_node: selected_connection_node.clone(),
+        method: request_data_arc.method.clone(),
+        path: request_data_arc.path.clone(),
+        request_ts,
     }
-}
-
-fn submit_request_log<I, O>(state: Arc<LLMurState>, request_log_data_arc: Arc<RequestLogData>) -> ()
-where
-    I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
-    O: Serialize + ExposesUsage + Send + 'static + Sync,
-{
-    // Submit request log to 2 channels - One will add the record in the DB and the other will
-    // update the usage stats
-
-    match state
-        .data
-        .usage_log_tx
-        .try_send(request_log_data_arc.clone())
-    {
-        Ok(_) => {
-            println!("### Successfully sent request log to usage channel");
-        }
-        Err(_) => {
-            println!("### Failed to send request log to usage channel");
-        }
-    };
-
-    match state
-        .data
-        .request_log_tx
-        .try_send(request_log_data_arc.clone())
-    {
-        Ok(_) => {
-            println!("### Successfully sent request log to logging channel");
-        }
-        Err(_) => {
-            println!("### Failed to send request log to logging channel");
-        }
-    };
 }
 
 fn validate_usage<I>(data: Arc<OpenAiRequestData<I>>) -> Result<(), GraphError>

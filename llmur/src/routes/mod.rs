@@ -1,6 +1,7 @@
 use crate::data::graph::Graph;
 use crate::errors::{GraphError, LLMurError};
 use crate::routes::chat_completions::chat_completions_route;
+use crate::routes::embeddings::embeddings_route;
 use crate::routes::middleware::auth::auth_token_extraction_mw;
 use crate::routes::middleware::user_context::user_context_load_mw;
 use crate::routes::openai::controller::openai_route_controller_mw;
@@ -24,6 +25,7 @@ mod session_token;
 mod user;
 mod membership;
 mod chat_completions;
+mod embeddings;
 
 mod macros;
 pub(crate) mod middleware;
@@ -49,6 +51,17 @@ pub(crate) fn admin_routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
 
 pub(crate) fn openai_v1_routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
     Router::new()
+        .route(
+            "/embeddings",
+            post(embeddings_route)
+                .route_layer(from_fn_with_state(
+                    state.clone(),
+                    openai_route_controller_mw::<
+                        crate::providers::openai::embeddings::request::Request,
+                        crate::providers::openai::embeddings::response::Response,
+                    >,
+                )),
+        )
         .route(
             "/chat/completions",
             post(chat_completions_route)
@@ -86,5 +99,11 @@ pub(crate) async fn get_graph(
         .get_graph(&key, &deployment, false, 10000, &state.application_secret, &Utc::now(), &state.metrics)
         .await
         .map_err(|e| e.into());
-    Ok(Json(graph?))
+    let graph = graph?;
+    if graph.connections.is_empty() {
+        return Err(GraphError::NoConnectionAvailable(
+            crate::errors::MissingConnectionReason::DeploymentConnectionsNotSetup,
+        ))?;
+    }
+    Ok(Json(graph))
 }

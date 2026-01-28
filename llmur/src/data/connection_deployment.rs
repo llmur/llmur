@@ -89,7 +89,6 @@ impl DataAccess {
         )
     )]
     pub async fn create_connection_deployment(&self, connection_id: &ConnectionId, deployment_id: &DeploymentId, weight: i16, metrics: &Option<Arc<Metrics>>) -> Result<ConnectionDeployment, DataAccessError> {
-        //self.cache.delete_cached_deployment(deployment_id).await;
         self.__create_connection_deployment(connection_id, deployment_id, weight, &None, metrics).await
     }
 

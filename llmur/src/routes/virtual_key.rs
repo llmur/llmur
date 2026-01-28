@@ -123,11 +123,11 @@ pub(crate) async fn delete_key(
 pub(crate) async fn search_keys(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
-    Query(params): Query<Option<SearchVirtualKeyQueryParams>>,
+    Query(params): Query<SearchVirtualKeyQueryParams>,
 ) -> Result<Json<ListVirtualKeysResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    let project_id = params.as_ref().and_then(|p| p.project_id);
+    let project_id = params.project_id;
 
     if let Some(project_id) = project_id {
         if !user_context.has_project_developer_access(state.clone(), &project_id).await? {

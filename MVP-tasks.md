@@ -7,13 +7,13 @@
 - [x] Error handling
 - [x] Tracing
 - [x] Metrics
-- [ ] User Guide
+- [x] User Guide
 - [ ] Technical Documentation
-- [ ] Integration Tests
-- [ ] Github deployment workflows
+- [x] Integration Tests
+- [x] GitHub deployment workflows
 
 ## Good to have:
 
 - [ ] Enable `/responses` api
-- [ ] Enable `/embeddings` api
-- [ ] Add Gemini provider
+- [x] Enable `/embeddings` api
+- [x] Add Gemini provider
