@@ -16,15 +16,15 @@ use uuid::Uuid;
 
 // region:    --- Main Model
 #[derive(Debug, Clone, sqlx::Type, PartialEq, Serialize, Deserialize)]
-#[sqlx(type_name = "azure_openai_api_version", rename_all = "lowercase")]
+#[sqlx(rename_all = "lowercase")]
 pub enum AzureOpenAiApiVersion {
-    #[serde(rename = "2024-10-21")]
-    #[sqlx(rename = "2024-10-21")]
-    V2024_10_21,
+    #[serde(rename = "v1")]
+    #[sqlx(rename = "v1")]
+    V1,
 }
 
 #[derive(Debug, Clone, sqlx::Type, PartialEq, Serialize, Deserialize)]
-#[sqlx(type_name = "gemini_api_version", rename_all = "lowercase")]
+#[sqlx(rename_all = "lowercase")]
 pub enum GeminiApiVersion {
     #[serde(rename = "v1beta")]
     #[sqlx(rename = "v1beta")]
@@ -109,7 +109,7 @@ impl Connection {
 impl std::fmt::Display for AzureOpenAiApiVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AzureOpenAiApiVersion::V2024_10_21 => write!(f, "2024-10-21"),
+            AzureOpenAiApiVersion::V1 => write!(f, "v1"),
         }
     }
 }
@@ -519,14 +519,12 @@ impl ConvertInto<ConnectionInfo> for DbConnectionInfoColumn {
                 api_version,
                 model,
                 salt,
-            } => {
-                Ok(ConnectionInfo::GeminiApiKey {
-                    api_key: decrypt(&encrypted_api_key, &salt, &application_secret)?,
-                    api_endpoint,
-                    api_version,
-                    model,
-                })
-            }
+            } => Ok(ConnectionInfo::GeminiApiKey {
+                api_key: decrypt(&encrypted_api_key, &salt, &application_secret)?,
+                api_endpoint,
+                api_version,
+                model,
+            }),
         }
     }
 }

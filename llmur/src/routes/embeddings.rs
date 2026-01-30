@@ -1,13 +1,15 @@
+use crate::LLMurState;
 use crate::data::connection::{ConnectionId, ConnectionInfo};
 use crate::errors::{ProxyError, ProxyErrorMessage};
 use crate::metrics::RegisterProxyRequest;
-use crate::providers::openai::embeddings::request::{EmbeddingsInput, Request as EmbeddingsRequest};
+use crate::providers::openai::embeddings::request::{
+    EmbeddingsInput, Request as EmbeddingsRequest,
+};
 use crate::providers::openai::embeddings::response::Response as EmbeddingsResponse;
 use crate::routes::openai::request::OpenAiRequestData;
 use crate::routes::openai::response::ProxyResponse;
-use crate::LLMurState;
-use axum::extract::State;
 use axum::Extension;
+use axum::extract::State;
 use chrono::Utc;
 use std::sync::Arc;
 use std::time::Instant;
@@ -118,8 +120,8 @@ pub(crate) async fn embeddings_route(
 
 mod azure_openai_request {
     use crate::data::connection::AzureOpenAiApiVersion;
-    use crate::providers::azure::openai::v2024_10_21::embeddings::request::from_openai_transform::Context as RequestContextV2024_10_21;
-    use crate::providers::azure::openai::v2024_10_21::embeddings::response::to_openai_transform::Context as ResponseContextV2024_10_21;
+    use crate::providers::azure::openai::v1::embeddings::request::from_openai_transform::Context as RequestContextV1;
+    use crate::providers::azure::openai::v1::embeddings::response::to_openai_transform::Context as ResponseContextV1;
     use crate::providers::openai::embeddings::request::Request as OpenAiRequest;
     use crate::providers::openai::embeddings::response::Response as OpenAiResponse;
     use crate::providers::utils::generic_post_proxy_request;
@@ -127,10 +129,7 @@ mod azure_openai_request {
     use chrono::Utc;
     use reqwest::header::HeaderMap;
 
-    #[tracing::instrument(
-        name = "proxy.azure.openai.embeddings",
-        skip(client, api_key, payload)
-    )]
+    #[tracing::instrument(name = "proxy.azure.openai.embeddings", skip(client, api_key, payload))]
     pub(crate) async fn embeddings(
         client: &reqwest::Client,
         deployment_name: &str,
@@ -142,53 +141,55 @@ mod azure_openai_request {
         let mut headers = HeaderMap::new();
         headers.insert("api-key", api_key.parse().unwrap());
         headers.insert("Content-Type", "application/json".parse().unwrap());
+
+        let request_context = RequestContextV1 {
+            model: Some(deployment_name.to_string()),
+        };
+        let response_context = ResponseContextV1 {
+            model: Some(payload.model.clone()),
+        };
+        let api_base = api_endpoint.trim_end_matches('/');
+        let api_base = if api_base.ends_with("/openai/v1") {
+            api_base.to_string()
+        } else {
+            format!("{}/openai/v1", api_base)
+        };
         let generate_url_fn = |_| {
             format!(
-                "{}/openai/deployments/{}/embeddings?api-version={}",
-                api_endpoint,
-                deployment_name,
+                "{}/embeddings?api-version={}",
+                api_base,
                 api_version.to_string()
             )
         };
 
-        match api_version {
-            AzureOpenAiApiVersion::V2024_10_21 => {
-                let request_context = RequestContextV2024_10_21 { input_type: None };
-                let response_context = ResponseContextV2024_10_21 { model: Some(payload.model.clone()) };
-
-                let start_ts = Utc::now();
-                match generic_post_proxy_request(
-                    client,
-                    payload,
-                    request_context,
-                    generate_url_fn,
-                    headers,
-                    response_context,
-                )
-                .await
-                {
-                    Ok(response) => ProxyResponse::new(Ok(response), start_ts),
-                    Err(error) => ProxyResponse::new(Err(error), start_ts),
-                }
-            }
+        let start_ts = Utc::now();
+        match generic_post_proxy_request(
+            client,
+            payload,
+            request_context,
+            generate_url_fn,
+            headers,
+            response_context,
+        )
+        .await
+        {
+            Ok(response) => ProxyResponse::new(Ok(response), start_ts),
+            Err(error) => ProxyResponse::new(Err(error), start_ts),
         }
     }
 }
 
 mod openai_v1_request {
-    use crate::providers::openai::embeddings::request::to_self::Context as RequestContext;
     use crate::providers::openai::embeddings::request::Request as OpenAiRequest;
-    use crate::providers::openai::embeddings::response::to_self::Context as ResponseContext;
+    use crate::providers::openai::embeddings::request::to_self::Context as RequestContext;
     use crate::providers::openai::embeddings::response::Response as OpenAiResponse;
+    use crate::providers::openai::embeddings::response::to_self::Context as ResponseContext;
     use crate::providers::utils::generic_post_proxy_request;
     use crate::routes::openai::response::ProxyResponse;
     use chrono::Utc;
     use reqwest::header::HeaderMap;
 
-    #[tracing::instrument(
-        name = "proxy.openai.v1.embeddings",
-        skip(client, api_key, payload)
-    )]
+    #[tracing::instrument(name = "proxy.openai.v1.embeddings", skip(client, api_key, payload))]
     pub(crate) async fn embeddings(
         client: &reqwest::Client,
         model: &str,
@@ -197,7 +198,10 @@ mod openai_v1_request {
         payload: OpenAiRequest,
     ) -> ProxyResponse<OpenAiResponse> {
         let mut headers = HeaderMap::new();
-        headers.insert("Authorization", format!("Bearer {}", api_key).parse().unwrap());
+        headers.insert(
+            "Authorization",
+            format!("Bearer {}", api_key).parse().unwrap(),
+        );
         headers.insert("Content-Type", "application/json".parse().unwrap());
         let generate_url_fn = |_| format!("{}/v1/embeddings", api_endpoint);
 

@@ -19,7 +19,7 @@ pub struct Request {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum EmbeddingsInput  {
+pub enum EmbeddingsInput {
     Text(String),
     Array(Vec<String>),
     TokenArray(Vec<i64>),
@@ -41,13 +41,17 @@ impl ExposesDeployment for Request {
 
 pub mod to_self {
     use crate::providers::openai::embeddings::request::Request;
-    use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
+    use crate::providers::{
+        Transformation, TransformationContext, TransformationLoss, Transformer,
+    };
 
     #[derive(Debug)]
     pub struct Loss {}
 
     #[derive(Debug)]
-    pub struct Context { pub model: Option<String> }
+    pub struct Context {
+        pub model: Option<String>,
+    }
 
     impl TransformationContext<Request, Request> for Context {}
     impl TransformationLoss<Request, Request> for Loss {}

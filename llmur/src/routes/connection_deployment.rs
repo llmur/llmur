@@ -2,9 +2,9 @@ use crate::data::connection::ConnectionId;
 use crate::data::connection_deployment::{ConnectionDeployment, ConnectionDeploymentId};
 use crate::data::deployment::DeploymentId;
 use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
-use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
 use crate::routes::StatusResponse;
-use crate::{impl_from_vec_result, LLMurState};
+use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
+use crate::{LLMurState, impl_from_vec_result};
 use axum::extract::{Path, State};
 use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
@@ -37,7 +37,11 @@ pub(crate) async fn create_connection_deployment(
 
     let _connection = state
         .data
-        .get_connection(&payload.connection_id, &state.application_secret, &state.metrics)
+        .get_connection(
+            &payload.connection_id,
+            &state.application_secret,
+            &state.metrics,
+        )
         .await?
         .ok_or(DataAccessError::ResourceNotFound)?;
 
@@ -47,7 +51,15 @@ pub(crate) async fn create_connection_deployment(
         .await?
         .ok_or(DataAccessError::ResourceNotFound)?;
 
-    let result = state.data.create_connection_deployment(&payload.connection_id, &payload.deployment_id, payload.weight.unwrap_or(1), &state.metrics).await?;
+    let result = state
+        .data
+        .create_connection_deployment(
+            &payload.connection_id,
+            &payload.deployment_id,
+            payload.weight.unwrap_or(1),
+            &state.metrics,
+        )
+        .await?;
     Ok(Json(result.into()))
 }
 
@@ -96,9 +108,16 @@ pub(crate) async fn delete_connection_deployment(
         return Err(AuthorizationError::AccessDenied)?;
     }
 
-    let cd = state.data.get_connection_deployment(&id, &state.metrics).await?.ok_or(DataAccessError::ResourceNotFound)?; // TODO
+    let cd = state
+        .data
+        .get_connection_deployment(&id, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?; // TODO
 
-    let result = state.data.delete_connection_deployment(&cd.id, &state.metrics).await?;
+    let result = state
+        .data
+        .delete_connection_deployment(&cd.id, &state.metrics)
+        .await?;
     Ok(Json(StatusResponse {
         success: result != 0,
         message: None,
@@ -118,16 +137,20 @@ pub(crate) struct CreateConnectionDeploymentPayload {
 pub(crate) struct GetConnectionDeploymentResult {
     pub(crate) id: ConnectionDeploymentId,
     pub(crate) connection_id: ConnectionId,
-    pub(crate) deployment_id: DeploymentId
+    pub(crate) deployment_id: DeploymentId,
 }
 
 #[derive(Serialize)]
 pub(crate) struct ListConnectionDeploymentsResult {
     pub(crate) maps: Vec<GetConnectionDeploymentResult>,
-    pub(crate) total: usize
+    pub(crate) total: usize,
 }
 
-impl_from_vec_result!(GetConnectionDeploymentResult, ListConnectionDeploymentsResult, maps);
+impl_from_vec_result!(
+    GetConnectionDeploymentResult,
+    ListConnectionDeploymentsResult,
+    maps
+);
 
 impl From<ConnectionDeployment> for GetConnectionDeploymentResult {
     fn from(value: ConnectionDeployment) -> Self {

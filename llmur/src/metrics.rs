@@ -2,8 +2,8 @@ use crate::data::connection::ConnectionId;
 use crate::data::deployment::DeploymentId;
 use opentelemetry::KeyValue;
 use opentelemetry::metrics::{Counter, Histogram, Meter};
-use std::sync::Arc;
 use reqwest::StatusCode;
+use std::sync::Arc;
 
 pub struct Metrics {
     // Metrics associated with all HTTP requests
@@ -72,7 +72,6 @@ impl Metrics {
                 ])
                 .build(),
 
-
             db_request_counter: meter
                 .u64_counter("database_request_total")
                 .with_description("Number of requests that hit the database")
@@ -83,7 +82,7 @@ impl Metrics {
                 .with_description("Database request duration time")
                 .with_boundaries(vec![
                     0.0, 5.0, 10.0, 25.0, 50.0, 75.0, 100.0, 250.0, 500.0, 750.0, 1000.0, 2500.0,
-                    5000.0, 7500.0, 10000.0, 25000.0
+                    5000.0, 7500.0, 10000.0, 25000.0,
                 ])
                 .build(),
         }
@@ -128,7 +127,7 @@ pub(crate) trait RegisterProxyRequest {
         input_tokens: Option<u64>,
         output_tokens: Option<u64>,
         elapsed: u64,
-        status_code: Option<StatusCode>
+        status_code: Option<StatusCode>,
     );
 }
 
@@ -142,23 +141,37 @@ impl RegisterProxyRequest for Metrics {
         input_tokens: Option<u64>,
         output_tokens: Option<u64>,
         elapsed: u64,
-        status_code: Option<StatusCode>
+        status_code: Option<StatusCode>,
     ) {
         let deployment_id_attr = KeyValue::new("deployment_id", deployment_id.0.to_string());
         let connection_id_attr = KeyValue::new("connection_id", connection_id.0.to_string());
         let provider_attr = KeyValue::new("provider", provider);
         let path_attr = KeyValue::new("path", path);
-        let status_attr = KeyValue::new("status_code", status_code.unwrap_or(StatusCode::INTERNAL_SERVER_ERROR).as_u16().to_string());
+        let status_attr = KeyValue::new(
+            "status_code",
+            status_code
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+                .as_u16()
+                .to_string(),
+        );
 
-        let attributes = vec![deployment_id_attr, connection_id_attr, provider_attr, path_attr, status_attr];
+        let attributes = vec![
+            deployment_id_attr,
+            connection_id_attr,
+            provider_attr,
+            path_attr,
+            status_attr,
+        ];
 
         self.proxy_request_counter.add(1, &attributes);
         self.proxy_request_duration.record(elapsed, &attributes);
         if let Some(input_tokens) = input_tokens {
-            self.proxy_request_input_tokens.record(input_tokens, &attributes);
+            self.proxy_request_input_tokens
+                .record(input_tokens, &attributes);
         }
         if let Some(output_tokens) = output_tokens {
-            self.proxy_request_output_tokens.record(output_tokens, &attributes);
+            self.proxy_request_output_tokens
+                .record(output_tokens, &attributes);
         }
     }
 }
@@ -173,7 +186,7 @@ impl RegisterProxyRequest for Option<Arc<Metrics>> {
         input_tokens: Option<u64>,
         output_tokens: Option<u64>,
         elapsed: u64,
-        status_code: Option<StatusCode>
+        status_code: Option<StatusCode>,
     ) {
         if let Some(metrics) = self {
             metrics.register_proxy_request(
@@ -194,24 +207,14 @@ impl RegisterProxyRequest for Option<Arc<Metrics>> {
 // region:    --- RegisterDatabaseRequest
 
 pub(crate) trait RegisterDatabaseRequest {
-    fn register_database_request(
-        &self,
-        operation: &str,
-        elapsed: u64,
-        success: bool
-    );
+    fn register_database_request(&self, operation: &str, elapsed: u64, success: bool);
 }
 
 impl RegisterDatabaseRequest for Metrics {
-    fn register_database_request(
-        &self,
-        operation: &str,
-        elapsed: u64,
-        success: bool
-    ) {
+    fn register_database_request(&self, operation: &str, elapsed: u64, success: bool) {
         let operation_attr = KeyValue::new("operation", operation.to_string());
         let success_attr = KeyValue::new("success", success);
-        
+
         let attributes = vec![operation_attr, success_attr];
 
         self.db_request_counter.add(1, &attributes);
@@ -220,18 +223,9 @@ impl RegisterDatabaseRequest for Metrics {
 }
 
 impl RegisterDatabaseRequest for Option<Arc<Metrics>> {
-    fn register_database_request(
-        &self,
-        operation: &str,
-        elapsed: u64,
-        success: bool
-    ) {
+    fn register_database_request(&self, operation: &str, elapsed: u64, success: bool) {
         if let Some(metrics) = self {
-            metrics.register_database_request(
-                operation,
-                elapsed,
-                success
-            );
+            metrics.register_database_request(operation, elapsed, success);
         }
     }
 }

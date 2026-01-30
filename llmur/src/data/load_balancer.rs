@@ -32,9 +32,14 @@ impl DataAccess {
             strategy = ?graph.deployment.data.strategy
         )
     )]
-    pub(crate) fn get_next_connection<'a>(&self, graph: &'a Graph) -> Result<&'a ConnectionNode, GraphError> {
+    pub(crate) fn get_next_connection<'a>(
+        &self,
+        graph: &'a Graph,
+    ) -> Result<&'a ConnectionNode, GraphError> {
         if graph.connections.is_empty() {
-            return Err(GraphError::NoConnectionAvailable(MissingConnectionReason::DeploymentConnectionsNotSetup));
+            return Err(GraphError::NoConnectionAvailable(
+                MissingConnectionReason::DeploymentConnectionsNotSetup,
+            ));
         }
 
         let deployment_id = &graph.deployment.data.id;
@@ -121,7 +126,9 @@ impl DataAccess {
                     .map(|stored| stored.value)
                     .unwrap_or(0)
             })
-            .ok_or(GraphError::NoConnectionAvailable(MissingConnectionReason::DeploymentConnectionsNotSetup))
+            .ok_or(GraphError::NoConnectionAvailable(
+                MissingConnectionReason::DeploymentConnectionsNotSetup,
+            ))
     }
 
     fn weighted_least_connections_select<'a>(
@@ -133,14 +140,8 @@ impl DataAccess {
         connections
             .iter()
             .min_by(|a, b| {
-                let a_count = counter_map
-                    .get(&a.data.id)
-                    .map(|s| s.value)
-                    .unwrap_or(0) as f64;
-                let b_count = counter_map
-                    .get(&b.data.id)
-                    .map(|s| s.value)
-                    .unwrap_or(0) as f64;
+                let a_count = counter_map.get(&a.data.id).map(|s| s.value).unwrap_or(0) as f64;
+                let b_count = counter_map.get(&b.data.id).map(|s| s.value).unwrap_or(0) as f64;
 
                 // Normalize by weight (higher weight means it can handle more)
                 let a_weight = a.weight.max(1) as f64;
@@ -149,9 +150,13 @@ impl DataAccess {
                 let a_ratio = a_count / a_weight;
                 let b_ratio = b_count / b_weight;
 
-                a_ratio.partial_cmp(&b_ratio).unwrap_or(std::cmp::Ordering::Equal)
+                a_ratio
+                    .partial_cmp(&b_ratio)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
-            .ok_or(GraphError::NoConnectionAvailable(MissingConnectionReason::DeploymentConnectionsNotSetup))
+            .ok_or(GraphError::NoConnectionAvailable(
+                MissingConnectionReason::DeploymentConnectionsNotSetup,
+            ))
     }
 
     // Helper method to increment connection counter when a connection is opened

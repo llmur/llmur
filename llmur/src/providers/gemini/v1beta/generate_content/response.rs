@@ -509,23 +509,24 @@ impl ExposesUsage for Response {
 pub mod to_openai_transform {
     use super::*;
     use crate::providers::openai::chat_completions::response::{
-        Response as OpenAiResponse,
-        ResponseUsage as OpenAiResponseUsage,
+        CompletionTokensDetails as OpenAiCompletionTokensDetails,
+        PromptTokensDetails as OpenAiPromptTokensDetails, Response as OpenAiResponse,
         ResponseChoice as OpenAiResponseChoice,
+        ResponseChoiceFunctionToolCall as OpenAiResponseChoiceFunctionToolCall,
         ResponseChoiceMessage as OpenAiResponseChoiceMessage,
         ResponseChoiceToolCall as OpenAiResponseChoiceToolCall,
-        ResponseChoiceFunctionToolCall as OpenAiResponseChoiceFunctionToolCall,
-        CompletionTokensDetails as OpenAiCompletionTokensDetails,
-        PromptTokensDetails as OpenAiPromptTokensDetails,
+        ResponseUsage as OpenAiResponseUsage,
     };
-    use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
+    use crate::providers::{
+        Transformation, TransformationContext, TransformationLoss, Transformer,
+    };
 
     #[derive(Debug)]
     pub struct Loss {}
 
     #[derive(Debug)]
     pub struct Context {
-        pub model: Option<String>
+        pub model: Option<String>,
     }
 
     impl TransformationContext<Response, OpenAiResponse> for Context {}
@@ -566,20 +567,22 @@ pub mod to_openai_transform {
             let total_tokens = usage
                 .total_token_count
                 .unwrap_or(prompt_tokens + completion_tokens);
-            let completion_tokens_details = usage.thoughts_token_count.map(|value| {
-                OpenAiCompletionTokensDetails {
-                    accepted_prediction_tokens: None,
-                    audio_tokens: None,
-                    reasoning_tokens: Some(value),
-                    rejected_prediction_tokens: None,
-                }
-            });
-            let prompt_tokens_details = usage.cached_content_token_count.map(|value| {
-                OpenAiPromptTokensDetails {
-                    audio_tokens: None,
-                    cached_tokens: Some(value),
-                }
-            });
+            let completion_tokens_details =
+                usage
+                    .thoughts_token_count
+                    .map(|value| OpenAiCompletionTokensDetails {
+                        accepted_prediction_tokens: None,
+                        audio_tokens: None,
+                        reasoning_tokens: Some(value),
+                        rejected_prediction_tokens: None,
+                    });
+            let prompt_tokens_details =
+                usage
+                    .cached_content_token_count
+                    .map(|value| OpenAiPromptTokensDetails {
+                        audio_tokens: None,
+                        cached_tokens: Some(value),
+                    });
 
             OpenAiResponseUsage {
                 completion_tokens,
@@ -599,7 +602,10 @@ pub mod to_openai_transform {
         }
     }
 
-    fn transform_response_choice(candidate: Candidate, candidate_index: u64) -> OpenAiResponseChoice {
+    fn transform_response_choice(
+        candidate: Candidate,
+        candidate_index: u64,
+    ) -> OpenAiResponseChoice {
         let (content, tool_calls) = transform_content(candidate.content, candidate_index);
         OpenAiResponseChoice {
             finish_reason: transform_finish_reason(candidate.finish_reason),
@@ -634,8 +640,8 @@ pub mod to_openai_transform {
                 text_parts.push(text.clone());
             }
             if let Some(function_call) = &part.function_call {
-                let arguments = serde_json::to_string(&function_call.args)
-                    .unwrap_or_else(|_| "{}".to_string());
+                let arguments =
+                    serde_json::to_string(&function_call.args).unwrap_or_else(|_| "{}".to_string());
                 tool_calls.push(OpenAiResponseChoiceToolCall::Function {
                     id: format!("gemini-call-{}-{}", candidate_index, idx),
                     function: OpenAiResponseChoiceFunctionToolCall {
@@ -671,13 +677,231 @@ pub mod to_openai_transform {
         }
     }
 }
+
+pub mod to_openai_responses_transform {
+    use super::*;
+    use crate::providers::openai::responses::response::{
+        Response as OpenAiResponse, ResponseError, ResponseErrorCode, ResponseIncompleteDetails,
+        ResponseIncompleteReason, ResponseInputTokensDetails, ResponseObject, ResponseOutputTokensDetails,
+        ResponseStatus, ResponseUsage,
+    };
+    use crate::providers::openai::responses::types::{
+        FunctionToolCall, FunctionToolCallType, ItemStatus, OutputContent, OutputItem, OutputMessage,
+        OutputMessageRole, Tool, ToolChoice, ToolChoiceMode, Truncation, Reasoning, TextConfig,
+        ServiceTier,
+    };
+    use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
+    use std::collections::HashMap;
+
+    #[derive(Debug)]
+    pub struct Loss {}
+
+    #[derive(Debug)]
+    pub struct Context {
+        pub model: Option<String>,
+        pub parallel_tool_calls: Option<bool>,
+        pub previous_response_id: Option<String>,
+        pub reasoning: Option<Reasoning>,
+        pub max_output_tokens: Option<u64>,
+        pub instructions: Option<String>,
+        pub text: Option<TextConfig>,
+        pub tools: Option<Vec<Tool>>,
+        pub tool_choice: Option<ToolChoice>,
+        pub truncation: Option<Truncation>,
+        pub metadata: Option<HashMap<String, String>>,
+        pub temperature: Option<f64>,
+        pub top_p: Option<f64>,
+        pub user: Option<String>,
+        pub service_tier: Option<ServiceTier>,
+    }
+
+    impl TransformationContext<Response, OpenAiResponse> for Context {}
+    impl TransformationLoss<Response, OpenAiResponse> for Loss {}
+
+    impl Transformer<OpenAiResponse, Context, Loss> for Response {
+        fn transform(self, context: Context) -> Transformation<OpenAiResponse, Loss> {
+            let model = context
+                .model
+                .or(self.model_version)
+                .unwrap_or_else(|| "gemini".to_string());
+            let response_id = self.response_id.unwrap_or_else(|| "gemini".to_string());
+
+            let candidates = self.candidates.unwrap_or_default();
+            let (output, output_text, incomplete_details) = transform_candidates(candidates);
+            let error = transform_prompt_feedback_error(&self.prompt_feedback);
+
+            let status = if error.is_some() {
+                ResponseStatus::Failed
+            } else if incomplete_details.is_some() {
+                ResponseStatus::Incomplete
+            } else {
+                ResponseStatus::Completed
+            };
+
+            let tools = context.tools.unwrap_or_default();
+            let tool_choice = context
+                .tool_choice
+                .unwrap_or_else(|| default_tool_choice(&tools));
+
+            Transformation {
+                result: OpenAiResponse {
+                    id: response_id,
+                    object: ResponseObject::Response,
+                    created_at: 0,
+                    status,
+                    error,
+                    incomplete_details,
+                    output,
+                    output_text,
+                    usage: self.usage_metadata.map(transform_usage),
+                    parallel_tool_calls: context.parallel_tool_calls.unwrap_or(false),
+                    previous_response_id: context.previous_response_id,
+                    model,
+                    reasoning: context.reasoning,
+                    max_output_tokens: context.max_output_tokens,
+                    instructions: context.instructions,
+                    text: context.text,
+                    tools,
+                    tool_choice,
+                    truncation: context.truncation,
+                    metadata: context.metadata,
+                    temperature: context.temperature,
+                    top_p: context.top_p,
+                    user: context.user,
+                    service_tier: context.service_tier,
+                },
+                loss: Loss {},
+            }
+        }
+    }
+
+    fn default_tool_choice(tools: &[Tool]) -> ToolChoice {
+        if tools.is_empty() {
+            ToolChoice::Mode(ToolChoiceMode::None)
+        } else {
+            ToolChoice::Mode(ToolChoiceMode::Auto)
+        }
+    }
+
+    fn transform_usage(usage: UsageMetadata) -> ResponseUsage {
+        let input_tokens = usage.prompt_token_count.unwrap_or(0);
+        let output_tokens = usage.candidates_token_count.unwrap_or(0);
+        let total_tokens = usage
+            .total_token_count
+            .unwrap_or(input_tokens + output_tokens);
+        let cached_tokens = usage.cached_content_token_count.unwrap_or(0);
+        let reasoning_tokens = usage.thoughts_token_count.unwrap_or(0);
+
+        ResponseUsage {
+            input_tokens,
+            input_tokens_details: ResponseInputTokensDetails { cached_tokens },
+            output_tokens,
+            output_tokens_details: ResponseOutputTokensDetails { reasoning_tokens },
+            total_tokens,
+        }
+    }
+
+    fn transform_prompt_feedback_error(
+        feedback: &Option<PromptFeedback>,
+    ) -> Option<ResponseError> {
+        let reason = feedback.as_ref().and_then(|value| value.block_reason.as_ref())?;
+        Some(ResponseError {
+            code: ResponseErrorCode::InvalidPrompt,
+            message: format!("Prompt blocked: {}", reason),
+        })
+    }
+
+    fn transform_candidates(
+        candidates: Vec<Candidate>,
+    ) -> (Vec<OutputItem>, Option<String>, Option<ResponseIncompleteDetails>) {
+        let mut output_items = Vec::new();
+        let mut output_text = None;
+        let mut incomplete_reason = None;
+
+        for (idx, candidate) in candidates.into_iter().enumerate() {
+            if let Some(reason) = candidate.finish_reason.as_ref() {
+                match reason.to_ascii_uppercase().as_str() {
+                    "MAX_TOKENS" => {
+                        incomplete_reason = Some(ResponseIncompleteReason::MaxOutputTokens);
+                    }
+                    "SAFETY" | "RECITATION" => {
+                        incomplete_reason = Some(ResponseIncompleteReason::ContentFilter);
+                    }
+                    _ => {}
+                }
+            }
+
+            if let Some(content) = candidate.content {
+                let (text, tool_calls) = transform_content(content, idx as u64);
+                if let Some(text) = text {
+                    if output_text.is_none() {
+                        output_text = Some(text.clone());
+                    }
+                    output_items.push(OutputItem::OutputMessage(OutputMessage {
+                        id: format!("gemini-msg-{}", idx),
+                        message_type: None,
+                        role: OutputMessageRole::Assistant,
+                        content: vec![OutputContent::OutputText {
+                            text,
+                            annotations: Vec::new(),
+                        }],
+                        status: ItemStatus::Completed,
+                    }));
+                }
+                for tool_call in tool_calls {
+                    output_items.push(OutputItem::FunctionToolCall(tool_call));
+                }
+            }
+        }
+
+        let incomplete_details = incomplete_reason.map(|reason| ResponseIncompleteDetails { reason });
+
+        (output_items, output_text, incomplete_details)
+    }
+
+    fn transform_content(
+        content: Content,
+        candidate_index: u64,
+    ) -> (Option<String>, Vec<FunctionToolCall>) {
+        let mut text_parts = Vec::new();
+        let mut tool_calls = Vec::new();
+
+        for (idx, part) in content.parts.iter().enumerate() {
+            if let Some(text) = &part.text {
+                text_parts.push(text.clone());
+            }
+            if let Some(function_call) = &part.function_call {
+                let call_id = format!("gemini-call-{}-{}", candidate_index, idx);
+                let arguments =
+                    serde_json::to_string(&function_call.args).unwrap_or_else(|_| "{}".to_string());
+                tool_calls.push(FunctionToolCall {
+                    id: Some(call_id.clone()),
+                    tool_type: FunctionToolCallType::FunctionCall,
+                    call_id,
+                    name: function_call.name.clone(),
+                    arguments,
+                    status: Some(ItemStatus::Completed),
+                });
+            }
+        }
+
+        let content = if text_parts.is_empty() {
+            None
+        } else {
+            Some(text_parts.join(""))
+        };
+
+        (content, tool_calls)
+    }
+}
 // endregion: --- Transform methods
 
 #[cfg(test)]
 mod tests {
-    use super::{to_openai_transform, Response};
-    use crate::providers::openai::chat_completions::response::Response as OpenAiResponse;
+    use super::{Response, to_openai_responses_transform, to_openai_transform};
     use crate::providers::Transformer;
+    use crate::providers::openai::chat_completions::response::Response as OpenAiResponse;
+    use crate::providers::openai::responses::response::Response as OpenAiResponsesResponse;
 
     #[test]
     fn response_schema_example_roundtrip() {
@@ -838,5 +1062,63 @@ mod tests {
                 .and_then(|details| details.reasoning_tokens),
             Some(1)
         );
+    }
+
+    #[test]
+    fn transform_gemini_response_to_openai_responses() {
+        let json = r#"{
+            "candidates": [{
+                "content": {
+                    "role": "model",
+                    "parts": [
+                        { "text": "Hello" },
+                        { "functionCall": { "name": "getWeather", "args": { "city": "Paris" } } }
+                    ]
+                },
+                "finishReason": "STOP",
+                "index": 0
+            }],
+            "usageMetadata": {
+                "promptTokenCount": 2,
+                "candidatesTokenCount": 3,
+                "totalTokenCount": 5,
+                "cachedContentTokenCount": 1,
+                "thoughtsTokenCount": 1
+            },
+            "modelVersion": "gemini-2.0",
+            "responseId": "resp-1"
+        }"#;
+
+        let response: Response = serde_json::from_str(json).expect("parse response");
+        let transformed = response.transform(to_openai_responses_transform::Context {
+            model: Some("gemini-2.0".to_string()),
+            parallel_tool_calls: Some(false),
+            previous_response_id: None,
+            reasoning: None,
+            max_output_tokens: None,
+            instructions: None,
+            text: None,
+            tools: None,
+            tool_choice: None,
+            truncation: None,
+            metadata: None,
+            temperature: None,
+            top_p: None,
+            user: None,
+            service_tier: None,
+        });
+        let openai_response: OpenAiResponsesResponse = transformed.result;
+
+        assert_eq!(openai_response.id, "resp-1");
+        assert_eq!(openai_response.model, "gemini-2.0");
+        assert_eq!(openai_response.output.len(), 2);
+        assert_eq!(openai_response.output_text.as_deref(), Some("Hello"));
+        assert!(openai_response.usage.is_some());
+        let usage = openai_response.usage.expect("usage");
+        assert_eq!(usage.input_tokens, 2);
+        assert_eq!(usage.output_tokens, 3);
+        assert_eq!(usage.total_tokens, 5);
+        assert_eq!(usage.input_tokens_details.cached_tokens, 1);
+        assert_eq!(usage.output_tokens_details.reasoning_tokens, 1);
     }
 }

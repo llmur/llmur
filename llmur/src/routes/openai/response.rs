@@ -1,12 +1,12 @@
 use crate::errors::ProxyError;
 use crate::providers::ExposesUsage;
-use axum::response::{IntoResponse, Response};
 use axum::body::Body;
-use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::HeaderValue;
-use std::sync::{Arc, Mutex};
+use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
+use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
+use std::sync::{Arc, Mutex};
 
 /// Wrapper that carries the response wrapped in a trait that exposes usage information.
 pub struct ProxyResponse<T> {
@@ -86,7 +86,11 @@ where
                         (*status_code, axum::Json::<serde_json::Value>(data.clone()))
                             .into_response()
                     }
-                    ProviderResponse::Stream { body, status_code, content_type } => {
+                    ProviderResponse::Stream {
+                        body,
+                        status_code,
+                        content_type,
+                    } => {
                         let stream_body = body
                             .lock()
                             .ok()
@@ -94,13 +98,9 @@ where
                             .unwrap_or_else(|| Body::from(""));
                         let mut resp = Response::new(stream_body);
                         *resp.status_mut() = *status_code;
-                        resp.headers_mut().insert(
-                            CACHE_CONTROL,
-                            HeaderValue::from_static("no-cache"),
-                        );
-                        let content_type = content_type
-                            .as_deref()
-                            .unwrap_or("text/event-stream");
+                        resp.headers_mut()
+                            .insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+                        let content_type = content_type.as_deref().unwrap_or("text/event-stream");
                         if let Ok(value) = HeaderValue::from_str(content_type) {
                             resp.headers_mut().insert(CONTENT_TYPE, value);
                         }

@@ -192,3 +192,7 @@ class APIClient:
     def create_embeddings(self, payload: Dict[str, Any], bearer_token: str) -> requests.Response:
         headers = {"Authorization": f"Bearer {bearer_token}"}
         return self._make_request('POST', '/v1/embeddings', payload, headers=headers)
+
+    def create_responses(self, payload: Dict[str, Any], bearer_token: str) -> requests.Response:
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        return self._make_request('POST', '/v1/responses', payload, headers=headers)

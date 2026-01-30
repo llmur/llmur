@@ -1,9 +1,9 @@
 use crate::otel::init_tracing_subscriber;
 use crate::utils::AsyncFrom;
 use async_trait::async_trait;
+use llmur::LLMurState;
 use llmur::data::DataAccessBuilder;
 use llmur::metrics::Metrics;
-use llmur::LLMurState;
 use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -105,11 +105,10 @@ impl AsyncFrom<Configuration> for DataAccess {
     }
 }*/
 
-
 #[async_trait]
 impl AsyncFrom<Configuration> for LLMurState {
     async fn from_async(value: Configuration) -> Self {
-        if let Some(conf) =  value.otel {
+        if let Some(conf) = value.otel {
             init_tracing_subscriber(
                 "llmur",
                 &conf.exporter_otlp_endpoint,
@@ -120,7 +119,6 @@ impl AsyncFrom<Configuration> for LLMurState {
             );
         };
 
-
         let meter = opentelemetry::global::meter("llmur");
         let metrics = Some(Arc::new(Metrics::new(meter)));
 
@@ -128,26 +126,29 @@ impl AsyncFrom<Configuration> for LLMurState {
 
         match value.database_configuration {
             DatabaseConfiguration::Postgres(conf) => {
-                builder = builder.with_postgres_db(
-                    &conf.host,
-                    conf.port,
-                    &conf.database,
-                    &conf.username,
-                    &conf.password,
-                    &conf.min_connections,
-                    &conf.max_connections
-                ).await.unwrap();
+                builder = builder
+                    .with_postgres_db(
+                        &conf.host,
+                        conf.port,
+                        &conf.database,
+                        &conf.username,
+                        &conf.password,
+                        &conf.min_connections,
+                        &conf.max_connections,
+                    )
+                    .await
+                    .unwrap();
             }
         }
 
-        match value.cache_configuration { CacheConfiguration::Redis(conf) => {
-            builder = builder.with_redis_standalone(
-                &conf.host,
-                conf.port,
-                &conf.username,
-                &conf.password,
-            ).await.unwrap();
-        } }
+        match value.cache_configuration {
+            CacheConfiguration::Redis(conf) => {
+                builder = builder
+                    .with_redis_standalone(&conf.host, conf.port, &conf.username, &conf.password)
+                    .await
+                    .unwrap();
+            }
+        }
 
         let data_access = builder.build(metrics.clone()).unwrap();
 
@@ -155,7 +156,10 @@ impl AsyncFrom<Configuration> for LLMurState {
 
         let state = LLMurState {
             data: Box::leak(Box::new(data_access)),
-            application_secret: Uuid::new_v5(&Uuid::NAMESPACE_DNS, value.application_secret.as_bytes()),
+            application_secret: Uuid::new_v5(
+                &Uuid::NAMESPACE_DNS,
+                value.application_secret.as_bytes(),
+            ),
             master_keys: value.master_keys.unwrap_or_default().into_iter().collect(),
             metrics: metrics,
         };

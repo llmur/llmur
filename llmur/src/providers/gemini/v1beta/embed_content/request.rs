@@ -68,7 +68,9 @@ pub mod from_openai_transform {
     use crate::providers::openai::embeddings::request::{
         EmbeddingsInput as OpenAiEmbeddingsInput, Request as OpenAiRequest,
     };
-    use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
+    use crate::providers::{
+        Transformation, TransformationContext, TransformationLoss, Transformer,
+    };
 
     #[derive(Debug)]
     pub struct Loss {
@@ -120,20 +122,17 @@ pub mod from_openai_transform {
 #[cfg(test)]
 mod tests {
     use super::from_openai_transform;
+    use crate::providers::Transformer;
     use crate::providers::openai::embeddings::request::{
         EmbeddingsInput as OpenAiEmbeddingsInput, Request as OpenAiRequest,
     };
-    use crate::providers::Transformer;
     use std::num::NonZeroU64;
 
     #[test]
     fn transforms_openai_request_to_gemini() {
         let request = OpenAiRequest {
             model: "text-embedding-3-small".to_string(),
-            input: OpenAiEmbeddingsInput::Array(vec![
-                "first".to_string(),
-                "second".to_string(),
-            ]),
+            input: OpenAiEmbeddingsInput::Array(vec!["first".to_string(), "second".to_string()]),
             dimensions: NonZeroU64::new(768),
             encoding_format: None,
             user: None,

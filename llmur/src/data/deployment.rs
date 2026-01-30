@@ -1,12 +1,13 @@
+use crate::data::DataAccess;
 use crate::data::connection_deployment::ConnectionDeploymentId;
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::load_balancer::LoadBalancingStrategy;
 use crate::data::utils::ConvertInto;
-use crate::data::DataAccess;
 use crate::errors::{DataAccessError, DbRecordConversionError};
+use crate::metrics::Metrics;
 use crate::{
-    default_access_fns, default_database_access_fns
-    , impl_structured_id_utils, impl_with_id_parameter_for_struct,
+    default_access_fns, default_database_access_fns, impl_structured_id_utils,
+    impl_with_id_parameter_for_struct,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
@@ -14,7 +15,6 @@ use sqlx::{FromRow, Postgres, QueryBuilder};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use uuid::Uuid;
-use crate::metrics::Metrics;
 
 // region:    --- Main Model
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, PartialOrd, sqlx::Type)]
@@ -100,8 +100,8 @@ impl DataAccess {
     )]
     pub async fn get_deployment(
         &self,
-        id: &DeploymentId, 
-        metrics: &Option<Arc<Metrics>>
+        id: &DeploymentId,
+        metrics: &Option<Arc<Metrics>>,
     ) -> Result<Option<Deployment>, DataAccessError> {
         self.__get_deployment(id, &None, metrics).await
     }
@@ -117,7 +117,7 @@ impl DataAccess {
     pub async fn get_deployments(
         &self,
         ids: &BTreeSet<DeploymentId>,
-        metrics: &Option<Arc<Metrics>>
+        metrics: &Option<Arc<Metrics>>,
     ) -> Result<BTreeMap<DeploymentId, Option<Deployment>>, DataAccessError> {
         self.__get_deployments(ids, &None, metrics).await
     }
@@ -133,16 +133,12 @@ impl DataAccess {
     pub async fn search_deployments(
         &self,
         name: &Option<String>,
-        metrics: &Option<Arc<Metrics>>
+        metrics: &Option<Arc<Metrics>>,
     ) -> Result<Vec<Deployment>, DataAccessError> {
         self.__search_deployments(name, &None, metrics).await
     }
 
-    #[tracing::instrument(
-        level="trace",
-        name = "create.deployment",
-        skip(self, metrics)
-    )]
+    #[tracing::instrument(level = "trace", name = "create.deployment", skip(self, metrics))]
     pub async fn create_deployment(
         &self,
         name: &str,
@@ -151,9 +147,19 @@ impl DataAccess {
         budget_limits: &Option<BudgetLimits>,
         request_limits: &Option<RequestLimits>,
         token_limits: &Option<TokenLimits>,
-        metrics: &Option<Arc<Metrics>>
+        metrics: &Option<Arc<Metrics>>,
     ) -> Result<Deployment, DataAccessError> {
-        self.__create_deployment(name, access, strategy, budget_limits, request_limits, token_limits, &None, metrics).await
+        self.__create_deployment(
+            name,
+            access,
+            strategy,
+            budget_limits,
+            request_limits,
+            token_limits,
+            &None,
+            metrics,
+        )
+        .await
     }
 
     #[tracing::instrument(
@@ -164,7 +170,11 @@ impl DataAccess {
             id = %id.0
         )
     )]
-    pub async fn delete_deployment(&self, id: &DeploymentId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+    pub async fn delete_deployment(
+        &self,
+        id: &DeploymentId,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<u64, DataAccessError> {
         self.__delete_deployment(id, metrics).await
     }
 }

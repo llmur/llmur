@@ -235,7 +235,11 @@ impl Database {
                         let sql = query.build_query_as::<DbUserRecord>();
                         let result = sql.fetch_optional(pool).await;
 
-                        metrics.register_database_request(operation, start.elapsed().as_millis() as u64, result.is_ok());
+                        metrics.register_database_request(
+                            operation,
+                            start.elapsed().as_millis() as u64,
+                            result.is_ok(),
+                        );
 
                         Ok(result?)
                     }

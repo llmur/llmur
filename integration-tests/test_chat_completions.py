@@ -387,7 +387,7 @@ class TestChatCompletions:
 
         response = api_client.create_chat_completion(payload, azure_chat_invalid_provider_setup["virtual_key"])
 
-        assert response.status_code == 404
+        assert response.status_code == 400
 
     def test_chat_completions_gemini_invalid_model(self, api_client, gemini_chat_invalid_provider_setup):
         """Test Gemini provider errors propagate (invalid model)"""

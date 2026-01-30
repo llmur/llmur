@@ -1,28 +1,25 @@
+use crate::LLMurState;
 use crate::data::graph::Graph;
 use crate::errors::{AuthenticationError, GraphError, LLMurError, ProxyError};
 use crate::providers::ExposesDeployment;
-use crate::LLMurState;
 
+use crate::routes::middleware::auth::{AuthorizationHeader, AuthorizationHeaderExtractionResult};
 use axum::{
-    body::Body,
-    extract::{FromRef, FromRequest}
-    ,
     Json,
-};
-use crate::routes::middleware::auth::{
-    AuthorizationHeader, AuthorizationHeaderExtractionResult,
+    body::Body,
+    extract::{FromRef, FromRequest},
 };
 
+use chrono::Utc;
 use serde::de::DeserializeOwned;
 use std::{ops::Deref, sync::Arc};
-use chrono::Utc;
 
 /// Consumes the request and extracts/builds all required information from it
 pub struct OpenAiRequestData<T> {
     pub payload: T,
     pub graph: Graph,
     pub method: String,
-    pub path: String
+    pub path: String,
 }
 
 impl<T> Deref for OpenAiRequestData<T> {
@@ -32,8 +29,7 @@ impl<T> Deref for OpenAiRequestData<T> {
     }
 }
 
-
-impl<S, T> FromRequest<S, Body> for OpenAiRequestData<T>  
+impl<S, T> FromRequest<S, Body> for OpenAiRequestData<T>
 where
     Arc<LLMurState>: FromRef<S>,
     S: Send + Sync,
@@ -41,9 +37,10 @@ where
 {
     type Rejection = LLMurError;
 
-    async fn from_request(request: axum::http::Request<Body>, state: &S)
-                          -> Result<Self, Self::Rejection>
-    {
+    async fn from_request(
+        request: axum::http::Request<Body>,
+        state: &S,
+    ) -> Result<Self, Self::Rejection> {
         let app_state = Arc::<LLMurState>::from_ref(state);
 
         let auth_ext = request
@@ -69,7 +66,15 @@ where
                 // TODO: Pass the correct TS - TS of the actual request
                 app_state
                     .data
-                    .get_graph(&api_key, deployment, false, 10_000, &app_state.application_secret, &Utc::now(), &app_state.metrics)
+                    .get_graph(
+                        &api_key,
+                        deployment,
+                        false,
+                        10_000,
+                        &app_state.application_secret,
+                        &Utc::now(),
+                        &app_state.metrics,
+                    )
                     .await
                     .map_err(GraphError::from)?
             }
@@ -79,8 +84,7 @@ where
             payload,
             graph,
             method,
-            path
+            path,
         })
     }
 }
-

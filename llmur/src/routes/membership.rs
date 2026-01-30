@@ -2,11 +2,9 @@ use crate::data::membership::{Membership, MembershipId};
 use crate::data::project::{ProjectId, ProjectRole};
 use crate::data::user::UserId;
 use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
-use crate::routes::middleware::user_context::{
-    AuthorizationManager, UserContextExtractionResult,
-};
 use crate::routes::StatusResponse;
-use crate::{impl_from_vec_result, LLMurState};
+use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
+use crate::{LLMurState, impl_from_vec_result};
 use axum::extract::{Path, Query, State};
 use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
@@ -82,7 +80,10 @@ pub(crate) async fn get_membership(
         .await?
         .ok_or(DataAccessError::ResourceNotFound)?;
 
-    if !user_context.has_project_member_access(state.clone(), &membership.project_id).await? {
+    if !user_context
+        .has_project_member_access(state.clone(), &membership.project_id)
+        .await?
+    {
         return Err(AuthorizationError::AccessDenied)?;
     }
 
@@ -109,7 +110,10 @@ pub(crate) async fn delete_membership(
         .await?
         .ok_or(DataAccessError::ResourceNotFound)?;
 
-    if !user_context.has_project_admin_access(state.clone(), &membership.project_id).await? {
+    if !user_context
+        .has_project_admin_access(state.clone(), &membership.project_id)
+        .await?
+    {
         return Err(AuthorizationError::AccessDenied)?;
     }
 
@@ -123,10 +127,7 @@ pub(crate) async fn delete_membership(
     }))
 }
 
-#[tracing::instrument(
-    name = "handler.search.memberships",
-    skip(state, ctx, params)
-)]
+#[tracing::instrument(name = "handler.search.memberships", skip(state, ctx, params))]
 pub(crate) async fn search_memberships(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
@@ -139,7 +140,10 @@ pub(crate) async fn search_memberships(
 
     // If the project is set and the user is a member, it should be able to retrieve it
     if let Some(project_id) = project_id {
-        if !user_context.has_project_member_access(state.clone(), &project_id).await? {
+        if !user_context
+            .has_project_member_access(state.clone(), &project_id)
+            .await?
+        {
             return Err(AuthorizationError::AccessDenied)?;
         }
     } else if user_id != user_context.get_user_id() && !user_context.has_admin_access() {

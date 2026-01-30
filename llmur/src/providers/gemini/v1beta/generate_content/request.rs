@@ -435,37 +435,32 @@ pub enum MediaResolution {
 pub mod from_openai_transform {
     use super::*;
     use crate::providers::openai::chat_completions::request::{
-        Request as OpenAiRequest,
-        Message as OpenAiMessage,
-        UserMessageContent as OpenAiUserMessageContent,
-        UserMessageContentPart as OpenAiUserMessageContentPart,
-        ImageUrlContentPart as OpenAiImageUrlContentPart,
-        SystemMessageContent as OpenAiSystemMessageContent,
-        SystemMessageContentPart as OpenAiSystemMessageContentPart,
-        DeveloperMessageContent as OpenAiDeveloperMessageContent,
-        DeveloperMessageContentPart as OpenAiDeveloperMessageContentPart,
+        AssistantFunctionCall as OpenAiAssistantFunctionCall,
         AssistantMessageContent as OpenAiAssistantMessageContent,
         AssistantMessageContentPart as OpenAiAssistantMessageContentPart,
-        ToolMessageContent as OpenAiToolMessageContent,
-        ToolMessageContentPart as OpenAiToolMessageContentPart,
         AssistantToolCall as OpenAiAssistantToolCall,
         AssistantToolCallFunction as OpenAiAssistantToolCallFunction,
-        AssistantFunctionCall as OpenAiAssistantFunctionCall,
-        ResponseFormat as OpenAiResponseFormat,
-        ResponseJsonSchema as OpenAiResponseJsonSchema,
-        Tool as OpenAiTool,
-        ToolFunction as OpenAiToolFunction,
-        ToolChoice as OpenAiToolChoice,
-        ToolChoiceMode as OpenAiToolChoiceMode,
-        ToolChoiceFunction as OpenAiToolChoiceFunction,
-        Stop as OpenAiStop,
-        FunctionCall as OpenAiFunctionCall,
-        FunctionCallMode as OpenAiFunctionCallMode,
+        ChatCompletionModality as OpenAiChatCompletionModality,
+        DeveloperMessageContent as OpenAiDeveloperMessageContent,
+        DeveloperMessageContentPart as OpenAiDeveloperMessageContentPart,
+        FunctionCall as OpenAiFunctionCall, FunctionCallMode as OpenAiFunctionCallMode,
         FunctionCallOption as OpenAiFunctionCallOption,
         FunctionDefinition as OpenAiFunctionDefinition,
-        ChatCompletionModality as OpenAiChatCompletionModality,
+        ImageUrlContentPart as OpenAiImageUrlContentPart, Message as OpenAiMessage,
+        Request as OpenAiRequest, ResponseFormat as OpenAiResponseFormat,
+        ResponseJsonSchema as OpenAiResponseJsonSchema, Stop as OpenAiStop,
+        SystemMessageContent as OpenAiSystemMessageContent,
+        SystemMessageContentPart as OpenAiSystemMessageContentPart, Tool as OpenAiTool,
+        ToolChoice as OpenAiToolChoice, ToolChoiceFunction as OpenAiToolChoiceFunction,
+        ToolChoiceMode as OpenAiToolChoiceMode, ToolFunction as OpenAiToolFunction,
+        ToolMessageContent as OpenAiToolMessageContent,
+        ToolMessageContentPart as OpenAiToolMessageContentPart,
+        UserMessageContent as OpenAiUserMessageContent,
+        UserMessageContentPart as OpenAiUserMessageContentPart,
     };
-    use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
+    use crate::providers::{
+        Transformation, TransformationContext, TransformationLoss, Transformer,
+    };
     use serde_json::Value;
 
     #[derive(Debug)]
@@ -485,8 +480,12 @@ pub mod from_openai_transform {
         fn transform(self, context: Context) -> Transformation<Request, Loss> {
             let generation_config = transform_generation_config(&self);
             let (system_instruction, contents) = transform_messages(self.messages);
-            let (tools, tool_config) =
-                transform_tools_and_config(self.tools, self.tool_choice, self.function_call, self.functions);
+            let (tools, tool_config) = transform_tools_and_config(
+                self.tools,
+                self.tool_choice,
+                self.function_call,
+                self.functions,
+            );
 
             Transformation {
                 result: Request {
@@ -534,11 +533,7 @@ pub mod from_openai_transform {
                         parts.extend(transform_assistant_message_content(content));
                     }
                     if let Some(tool_calls) = tool_calls {
-                        parts.extend(
-                            tool_calls
-                                .into_iter()
-                                .map(transform_assistant_tool_call),
-                        );
+                        parts.extend(tool_calls.into_iter().map(transform_assistant_tool_call));
                     }
                     if let Some(function_call) = function_call {
                         parts.push(transform_assistant_function_call_deprecated(function_call));
@@ -548,7 +543,10 @@ pub mod from_openai_transform {
                         parts,
                     });
                 }
-                OpenAiMessage::ToolMessage { content, tool_call_id } => {
+                OpenAiMessage::ToolMessage {
+                    content,
+                    tool_call_id,
+                } => {
                     contents.push(Content {
                         role: Some("user".to_string()),
                         parts: vec![transform_tool_message_content(content, tool_call_id)],
@@ -620,7 +618,9 @@ pub mod from_openai_transform {
     fn transform_user_message_content_part(part: OpenAiUserMessageContentPart) -> Option<Part> {
         match part {
             OpenAiUserMessageContentPart::Text { text } => Some(text_part(text)),
-            OpenAiUserMessageContentPart::ImageUrl { image_url } => transform_image_url_part(image_url),
+            OpenAiUserMessageContentPart::ImageUrl { image_url } => {
+                transform_image_url_part(image_url)
+            }
             OpenAiUserMessageContentPart::InputAudio { .. } => None,
             OpenAiUserMessageContentPart::File { .. } => None,
         }
@@ -665,7 +665,9 @@ pub mod from_openai_transform {
         }
     }
 
-    fn transform_assistant_message_content_part(part: OpenAiAssistantMessageContentPart) -> Option<Part> {
+    fn transform_assistant_message_content_part(
+        part: OpenAiAssistantMessageContentPart,
+    ) -> Option<Part> {
         match part {
             OpenAiAssistantMessageContentPart::Text { text } => Some(text_part(text)),
             OpenAiAssistantMessageContentPart::Refusal { .. } => None,
@@ -697,7 +699,9 @@ pub mod from_openai_transform {
         }
     }
 
-    fn transform_assistant_function_call_deprecated(function_call: OpenAiAssistantFunctionCall) -> Part {
+    fn transform_assistant_function_call_deprecated(
+        function_call: OpenAiAssistantFunctionCall,
+    ) -> Part {
         let args = serde_json::from_str::<Value>(&function_call.arguments)
             .unwrap_or_else(|_| Value::String(function_call.arguments));
         Part {
@@ -714,7 +718,10 @@ pub mod from_openai_transform {
         }
     }
 
-    fn transform_tool_message_content(content: OpenAiToolMessageContent, tool_call_id: String) -> Part {
+    fn transform_tool_message_content(
+        content: OpenAiToolMessageContent,
+        tool_call_id: String,
+    ) -> Part {
         let text = match content {
             OpenAiToolMessageContent::Text(text) => text,
             OpenAiToolMessageContent::Array(parts) => parts
@@ -845,16 +852,21 @@ pub mod from_openai_transform {
                 }),
                 allowed_function_names: None,
             },
-            OpenAiFunctionCall::Function(OpenAiFunctionCallOption { name }) => FunctionCallingConfig {
-                mode: Some("ANY".to_string()),
-                allowed_function_names: Some(vec![name]),
-            },
+            OpenAiFunctionCall::Function(OpenAiFunctionCallOption { name }) => {
+                FunctionCallingConfig {
+                    mode: Some("ANY".to_string()),
+                    allowed_function_names: Some(vec![name]),
+                }
+            }
         }
     }
 
     fn transform_generation_config(request: &OpenAiRequest) -> Option<GenerationConfig> {
         let stop_sequences = request.stop.clone().map(transform_stop);
-        let response_config = request.response_format.clone().map(transform_response_format);
+        let response_config = request
+            .response_format
+            .clone()
+            .map(transform_response_format);
         let max_output_tokens = request
             .max_completion_tokens
             .or(request.max_tokens)
@@ -926,7 +938,9 @@ pub mod from_openai_transform {
         }
     }
 
-    fn transform_modalities(modalities: &Vec<OpenAiChatCompletionModality>) -> Vec<ResponseModality> {
+    fn transform_modalities(
+        modalities: &Vec<OpenAiChatCompletionModality>,
+    ) -> Vec<ResponseModality> {
         modalities
             .iter()
             .map(|modality| match modality {
@@ -992,13 +1006,459 @@ pub mod from_openai_transform {
         Some(mime_type.to_string())
     }
 }
+
+pub mod from_openai_responses_transform {
+    use super::*;
+    use crate::providers::openai::responses::request as openai;
+    use crate::providers::openai::responses::types as openai_types;
+    use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
+    use serde_json::Value;
+
+    #[derive(Debug)]
+    pub struct Loss {
+        pub model: String,
+    }
+
+    #[derive(Debug)]
+    pub struct Context {
+        pub model: Option<String>,
+    }
+
+    impl TransformationContext<openai::Request, Request> for Context {}
+    impl TransformationLoss<openai::Request, Request> for Loss {}
+
+    impl Transformer<Request, Context, Loss> for openai::Request {
+        fn transform(self, context: Context) -> Transformation<Request, Loss> {
+            let generation_config = transform_generation_config(&self);
+            let (system_instruction, contents) = transform_input(self.input, self.instructions);
+            let (tools, tool_config) = transform_tools_and_config(self.tools, self.tool_choice);
+
+            Transformation {
+                result: Request {
+                    contents,
+                    tools,
+                    tool_config,
+                    safety_settings: None,
+                    system_instruction,
+                    generation_config,
+                    cached_content: None,
+                },
+                loss: Loss {
+                    model: context.model.unwrap_or(self.model),
+                },
+            }
+        }
+    }
+
+    fn transform_input(
+        input: openai_types::Input,
+        instructions: Option<String>,
+    ) -> (Option<Content>, Vec<Content>) {
+        let mut system_parts: Vec<Part> = Vec::new();
+        let mut contents: Vec<Content> = Vec::new();
+
+        if let Some(instructions) = instructions {
+            system_parts.push(text_part(instructions));
+        }
+
+        match input {
+            openai_types::Input::Text(text) => {
+                contents.push(Content {
+                    role: Some("user".to_string()),
+                    parts: vec![text_part(text)],
+                });
+            }
+            openai_types::Input::Items(items) => {
+                for item in items {
+                    match item {
+                        openai_types::InputItem::EasyMessage(message) => {
+                            let parts = transform_easy_message_content(message.content);
+                            push_content_for_role(
+                                message.role,
+                                parts,
+                                &mut system_parts,
+                                &mut contents,
+                            );
+                        }
+                        openai_types::InputItem::Item(item) => {
+                            transform_item(item, &mut system_parts, &mut contents);
+                        }
+                        openai_types::InputItem::Reference(_) => {}
+                    }
+                }
+            }
+        }
+
+        let system_instruction = if system_parts.is_empty() {
+            None
+        } else {
+            Some(Content {
+                role: Some("system".to_string()),
+                parts: system_parts,
+            })
+        };
+
+        (system_instruction, contents)
+    }
+
+    fn transform_easy_message_content(
+        content: openai_types::EasyInputMessageContent,
+    ) -> Vec<Part> {
+        match content {
+            openai_types::EasyInputMessageContent::Text(text) => vec![text_part(text)],
+            openai_types::EasyInputMessageContent::ContentList(parts) => parts
+                .into_iter()
+                .filter_map(transform_input_content)
+                .collect(),
+        }
+    }
+
+    fn transform_input_message(
+        message: openai_types::InputMessage,
+        system_parts: &mut Vec<Part>,
+        contents: &mut Vec<Content>,
+    ) {
+        let parts = message
+            .content
+            .into_iter()
+            .filter_map(transform_input_content)
+            .collect();
+
+        match message.role {
+            openai_types::InputMessageRole::User => contents.push(Content {
+                role: Some("user".to_string()),
+                parts,
+            }),
+            openai_types::InputMessageRole::System | openai_types::InputMessageRole::Developer => {
+                system_parts.extend(parts);
+            }
+        }
+    }
+
+    fn transform_output_message(
+        message: openai_types::OutputMessage,
+        contents: &mut Vec<Content>,
+    ) {
+        let mut text_parts: Vec<String> = Vec::new();
+        for part in message.content {
+            if let openai_types::OutputContent::OutputText { text, .. } = part {
+                text_parts.push(text);
+            }
+        }
+
+        if !text_parts.is_empty() {
+            contents.push(Content {
+                role: Some("model".to_string()),
+                parts: vec![text_part(text_parts.join(""))],
+            });
+        }
+    }
+
+    fn transform_item(
+        item: openai_types::Item,
+        system_parts: &mut Vec<Part>,
+        contents: &mut Vec<Content>,
+    ) {
+        match item {
+            openai_types::Item::InputMessage(message) => {
+                transform_input_message(message, system_parts, contents);
+            }
+            openai_types::Item::OutputMessage(message) => {
+                transform_output_message(message, contents);
+            }
+            openai_types::Item::FunctionToolCall(call) => {
+                contents.push(Content {
+                    role: Some("model".to_string()),
+                    parts: vec![transform_function_tool_call(call)],
+                });
+            }
+            openai_types::Item::FunctionCallOutputItem(output) => {
+                contents.push(Content {
+                    role: Some("user".to_string()),
+                    parts: vec![transform_function_call_output(output)],
+                });
+            }
+            _ => {}
+        }
+    }
+
+    fn transform_input_content(content: openai_types::InputContent) -> Option<Part> {
+        match content {
+            openai_types::InputContent::Text { text } => Some(text_part(text)),
+            openai_types::InputContent::Image { image_url, .. } => {
+                let image_url = image_url?;
+                transform_image_url_part(image_url)
+            }
+            openai_types::InputContent::File { .. } => None,
+        }
+    }
+
+    fn push_content_for_role(
+        role: openai_types::EasyInputMessageRole,
+        parts: Vec<Part>,
+        system_parts: &mut Vec<Part>,
+        contents: &mut Vec<Content>,
+    ) {
+        match role {
+            openai_types::EasyInputMessageRole::User => contents.push(Content {
+                role: Some("user".to_string()),
+                parts,
+            }),
+            openai_types::EasyInputMessageRole::Assistant => contents.push(Content {
+                role: Some("model".to_string()),
+                parts,
+            }),
+            openai_types::EasyInputMessageRole::System
+            | openai_types::EasyInputMessageRole::Developer => {
+                system_parts.extend(parts);
+            }
+        }
+    }
+
+    fn transform_function_tool_call(call: openai_types::FunctionToolCall) -> Part {
+        let args = serde_json::from_str::<Value>(&call.arguments)
+            .unwrap_or_else(|_| Value::String(call.arguments));
+        Part {
+            text: None,
+            inline_data: None,
+            file_data: None,
+            function_call: Some(FunctionCall {
+                name: call.name,
+                args,
+            }),
+            function_response: None,
+            executable_code: None,
+            code_execution_result: None,
+        }
+    }
+
+    fn transform_function_call_output(output: openai_types::FunctionCallOutputItemParam) -> Part {
+        let response = serde_json::from_str::<Value>(&output.output)
+            .unwrap_or_else(|_| Value::String(output.output));
+        Part {
+            text: None,
+            inline_data: None,
+            file_data: None,
+            function_call: None,
+            function_response: Some(FunctionResponse {
+                name: output.call_id,
+                response,
+            }),
+            executable_code: None,
+            code_execution_result: None,
+        }
+    }
+
+    fn transform_image_url_part(image_url: String) -> Option<Part> {
+        if let Some(inline_data) = parse_data_url(&image_url) {
+            Some(Part {
+                text: None,
+                inline_data: Some(inline_data),
+                file_data: None,
+                function_call: None,
+                function_response: None,
+                executable_code: None,
+                code_execution_result: None,
+            })
+        } else if let Some(mime_type) = guess_mime_type(&image_url) {
+            Some(Part {
+                text: None,
+                inline_data: None,
+                file_data: Some(FileData {
+                    mime_type,
+                    file_uri: image_url,
+                }),
+                function_call: None,
+                function_response: None,
+                executable_code: None,
+                code_execution_result: None,
+            })
+        } else {
+            None
+        }
+    }
+
+    fn transform_tools_and_config(
+        tools: Option<Vec<openai_types::Tool>>,
+        tool_choice: Option<openai_types::ToolChoice>,
+    ) -> (Option<Vec<Tool>>, Option<ToolConfig>) {
+        let mut declarations: Vec<FunctionDeclaration> = Vec::new();
+
+        if let Some(tools) = tools {
+            for tool in tools {
+                if let openai_types::Tool::Function(function) = tool {
+                    declarations.push(FunctionDeclaration {
+                        name: function.name,
+                        description: function.description,
+                        parameters: function.parameters,
+                    });
+                }
+            }
+        }
+
+        let tools = if declarations.is_empty() {
+            None
+        } else {
+            Some(vec![Tool {
+                function_declarations: Some(declarations),
+                code_execution: None,
+                google_search: None,
+                google_search_retrieval: None,
+            }])
+        };
+
+        let tool_config = tool_choice
+            .and_then(transform_tool_choice)
+            .map(|config| ToolConfig {
+                function_calling_config: Some(config),
+                code_execution_config: None,
+            });
+
+        (tools, tool_config)
+    }
+
+    fn transform_tool_choice(
+        tool_choice: openai_types::ToolChoice,
+    ) -> Option<FunctionCallingConfig> {
+        match tool_choice {
+            openai_types::ToolChoice::Mode(mode) => Some(FunctionCallingConfig {
+                mode: Some(match mode {
+                    openai_types::ToolChoiceMode::None => "NONE".to_string(),
+                    openai_types::ToolChoiceMode::Auto => "AUTO".to_string(),
+                    openai_types::ToolChoiceMode::Required => "ANY".to_string(),
+                }),
+                allowed_function_names: None,
+            }),
+            openai_types::ToolChoice::Function(function) => Some(FunctionCallingConfig {
+                mode: Some("ANY".to_string()),
+                allowed_function_names: Some(vec![function.name]),
+            }),
+            openai_types::ToolChoice::Tool(_) => None,
+        }
+    }
+
+    fn transform_generation_config(
+        request: &openai::Request,
+    ) -> Option<GenerationConfig> {
+        let response_config = request.text.clone().and_then(transform_text_config);
+        let max_output_tokens = request.max_output_tokens;
+
+        if response_config.is_none()
+            && max_output_tokens.is_none()
+            && request.temperature.is_none()
+            && request.top_p.is_none()
+        {
+            return None;
+        }
+
+        let (response_mime_type, response_schema) =
+            response_config.unwrap_or((None, None));
+
+        Some(GenerationConfig {
+            stop_sequences: None,
+            response_mime_type,
+            response_schema,
+            response_json_schema_proto: None,
+            response_json_schema: None,
+            response_modalities: None,
+            candidate_count: None,
+            max_output_tokens,
+            temperature: request.temperature,
+            top_p: request.top_p,
+            top_k: None,
+            seed: None,
+            presence_penalty: None,
+            frequency_penalty: None,
+            response_logprobs: None,
+            logprobs: None,
+            enable_enhanced_civic_answers: None,
+            speech_config: None,
+            thinking_config: None,
+            image_config: None,
+            media_resolution: None,
+        })
+    }
+
+    fn transform_text_config(
+        text: openai_types::TextConfig,
+    ) -> Option<(Option<String>, Option<Value>)> {
+        let format = text.format?;
+        match format {
+            openai_types::TextResponseFormatConfiguration::Text => Some((None, None)),
+            openai_types::TextResponseFormatConfiguration::JsonObject => {
+                Some((Some("application/json".to_string()), None))
+            }
+            openai_types::TextResponseFormatConfiguration::JsonSchema { schema, .. } => Some((
+                Some("application/json".to_string()),
+                Some(schema),
+            )),
+        }
+    }
+
+    fn text_part(text: String) -> Part {
+        Part {
+            text: Some(text),
+            inline_data: None,
+            file_data: None,
+            function_call: None,
+            function_response: None,
+            executable_code: None,
+            code_execution_result: None,
+        }
+    }
+
+    fn parse_data_url(url: &str) -> Option<InlineData> {
+        if !url.starts_with("data:") {
+            return None;
+        }
+
+        let data = &url["data:".len()..];
+        let mut segments = data.splitn(2, ',');
+        let metadata = segments.next()?;
+        let payload = segments.next()?;
+
+        let mut metadata_iter = metadata.split(';');
+        let mime_type = metadata_iter.next().filter(|value| !value.is_empty());
+        let is_base64 = metadata_iter.any(|value| value == "base64");
+
+        if !is_base64 {
+            return None;
+        }
+
+        Some(InlineData {
+            mime_type: mime_type.unwrap_or("application/octet-stream").to_string(),
+            data: payload.to_string(),
+        })
+    }
+
+    fn guess_mime_type(url: &str) -> Option<String> {
+        let extension = url
+            .split('?')
+            .next()
+            .and_then(|value| value.rsplit('.').next())
+            .map(|value| value.to_ascii_lowercase())?;
+
+        let mime_type = match extension.as_str() {
+            "png" => "image/png",
+            "jpg" | "jpeg" => "image/jpeg",
+            "gif" => "image/gif",
+            "webp" => "image/webp",
+            "bmp" => "image/bmp",
+            "svg" => "image/svg+xml",
+            _ => return None,
+        };
+
+        Some(mime_type.to_string())
+    }
+}
 // endregion: --- Transform methods
 
 #[cfg(test)]
 mod tests {
-    use super::{from_openai_transform, Request};
-    use crate::providers::openai::chat_completions::request::Request as OpenAiRequest;
+    use super::{Request, from_openai_responses_transform, from_openai_transform};
     use crate::providers::Transformer;
+    use crate::providers::openai::chat_completions::request::Request as OpenAiRequest;
+    use crate::providers::openai::responses::request::Request as OpenAiResponsesRequest;
 
     #[test]
     fn request_text_generation_example_roundtrip() {
@@ -1038,8 +1498,7 @@ mod tests {
         assert_eq!(request.contents.len(), 1);
         assert_eq!(request.contents[0].parts.len(), 2);
         assert_eq!(
-            request.contents[0]
-                .parts[1]
+            request.contents[0].parts[1]
                 .inline_data
                 .as_ref()
                 .map(|data| data.mime_type.as_str()),
@@ -1080,10 +1539,7 @@ mod tests {
             value["safetySettings"][0]["category"],
             "HARM_CATEGORY_HARASSMENT"
         );
-        assert_eq!(
-            value["safetySettings"][0]["threshold"],
-            "BLOCK_ONLY_HIGH"
-        );
+        assert_eq!(value["safetySettings"][0]["threshold"], "BLOCK_ONLY_HIGH");
     }
 
     #[test]
@@ -1124,12 +1580,16 @@ mod tests {
             "response_format": { "type": "json_object" }
         }"#;
 
-        let openai_request: OpenAiRequest = serde_json::from_str(json).expect("parse openai request");
+        let openai_request: OpenAiRequest =
+            serde_json::from_str(json).expect("parse openai request");
         let transformed = openai_request.transform(from_openai_transform::Context { model: None });
 
         let request = transformed.result;
         let system_instruction = request.system_instruction.expect("system instruction");
-        assert_eq!(system_instruction.parts[0].text.as_deref(), Some("You are a helper."));
+        assert_eq!(
+            system_instruction.parts[0].text.as_deref(),
+            Some("You are a helper.")
+        );
 
         assert_eq!(request.contents.len(), 3);
         assert_eq!(request.contents[0].role.as_deref(), Some("user"));
@@ -1138,7 +1598,13 @@ mod tests {
 
         let user_parts = &request.contents[0].parts;
         assert_eq!(user_parts.len(), 2);
-        assert_eq!(user_parts[1].inline_data.as_ref().map(|d| d.mime_type.as_str()), Some("image/png"));
+        assert_eq!(
+            user_parts[1]
+                .inline_data
+                .as_ref()
+                .map(|d| d.mime_type.as_str()),
+            Some("image/png")
+        );
 
         let tool_config = request.tool_config.expect("tool config");
         assert_eq!(
@@ -1150,15 +1616,75 @@ mod tests {
         );
 
         let tools = request.tools.expect("tools");
-        let declarations = tools[0].function_declarations.as_ref().expect("function declarations");
+        let declarations = tools[0]
+            .function_declarations
+            .as_ref()
+            .expect("function declarations");
         assert_eq!(declarations[0].name, "getWeather");
 
         let generation_config = request.generation_config.expect("generation config");
         assert_eq!(generation_config.candidate_count, Some(2));
         assert_eq!(generation_config.max_output_tokens, Some(50));
-        assert_eq!(generation_config.response_mime_type.as_deref(), Some("application/json"));
+        assert_eq!(
+            generation_config.response_mime_type.as_deref(),
+            Some("application/json")
+        );
 
         let tool_response = &request.contents[2].parts[0].function_response;
-        assert_eq!(tool_response.as_ref().map(|resp| resp.name.as_str()), Some("call_1"));
+        assert_eq!(
+            tool_response.as_ref().map(|resp| resp.name.as_str()),
+            Some("call_1")
+        );
+    }
+
+    #[test]
+    fn transform_openai_responses_request_to_gemini() {
+        let json = r#"{
+            "model": "gpt-4o",
+            "input": [
+                { "role": "system", "content": "Be concise." },
+                { "role": "user", "content": [{ "type": "input_text", "text": "Hello" }] },
+                { "role": "assistant", "content": "Hi there!" }
+            ],
+            "tools": [{
+                "type": "function",
+                "name": "getWeather",
+                "description": "Returns weather",
+                "parameters": { "type": "object" }
+            }],
+            "tool_choice": "auto",
+            "max_output_tokens": 42,
+            "text": { "format": { "type": "json_object" } }
+        }"#;
+
+        let openai_request: OpenAiResponsesRequest =
+            serde_json::from_str(json).expect("parse openai responses request");
+        let transformed =
+            openai_request.transform(from_openai_responses_transform::Context { model: None });
+
+        let request = transformed.result;
+        let system_instruction = request.system_instruction.expect("system instruction");
+        assert_eq!(
+            system_instruction.parts[0].text.as_deref(),
+            Some("Be concise.")
+        );
+
+        assert_eq!(request.contents.len(), 2);
+        assert_eq!(request.contents[0].role.as_deref(), Some("user"));
+        assert_eq!(request.contents[1].role.as_deref(), Some("model"));
+
+        let generation_config = request.generation_config.expect("generation config");
+        assert_eq!(generation_config.max_output_tokens, Some(42));
+        assert_eq!(
+            generation_config.response_mime_type.as_deref(),
+            Some("application/json")
+        );
+
+        let tools = request.tools.expect("tools");
+        let declarations = tools[0]
+            .function_declarations
+            .as_ref()
+            .expect("function declarations");
+        assert_eq!(declarations[0].name, "getWeather");
     }
 }

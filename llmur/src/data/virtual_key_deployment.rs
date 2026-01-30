@@ -1,15 +1,18 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
-use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, Postgres, QueryBuilder};
-use uuid::Uuid;
-use crate::data::utils::ConvertInto;
-use crate::{default_access_fns, default_database_access_fns, impl_structured_id_utils, impl_with_id_parameter_for_struct};
 use crate::data::DataAccess;
 use crate::data::deployment::DeploymentId;
+use crate::data::utils::ConvertInto;
 use crate::data::virtual_key::VirtualKeyId;
 use crate::errors::{DataAccessError, DbRecordConversionError};
 use crate::metrics::Metrics;
+use crate::{
+    default_access_fns, default_database_access_fns, impl_structured_id_utils,
+    impl_with_id_parameter_for_struct,
+};
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, Postgres, QueryBuilder};
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+use uuid::Uuid;
 
 // region:    --- Main Model
 #[derive(
@@ -24,7 +27,7 @@ use crate::metrics::Metrics;
     sqlx::Type,
     Serialize,
     Deserialize,
-    FromRow
+    FromRow,
 )]
 #[sqlx(transparent)]
 pub struct VirtualKeyDeploymentId(pub Uuid);
@@ -36,7 +39,11 @@ pub struct VirtualKeyDeployment {
 }
 
 impl VirtualKeyDeployment {
-    pub fn new(id: VirtualKeyDeploymentId, virtual_key_id: VirtualKeyId, deployment_id: DeploymentId) -> Self {
+    pub fn new(
+        id: VirtualKeyDeploymentId,
+        virtual_key_id: VirtualKeyId,
+        deployment_id: DeploymentId,
+    ) -> Self {
         VirtualKeyDeployment {
             id,
             virtual_key_id,
@@ -51,7 +58,6 @@ impl_with_id_parameter_for_struct!(VirtualKeyDeployment, VirtualKeyDeploymentId)
 
 // region:    --- Data Access
 impl DataAccess {
-
     #[tracing::instrument(
         level="trace",
         name = "get.virtual_key_deployment",
@@ -60,7 +66,11 @@ impl DataAccess {
             id = %id.0
         )
     )]
-    pub async fn get_virtual_key_deployment(&self, id: &VirtualKeyDeploymentId, metrics: &Option<Arc<Metrics>>) -> Result<Option<VirtualKeyDeployment>, DataAccessError> {
+    pub async fn get_virtual_key_deployment(
+        &self,
+        id: &VirtualKeyDeploymentId,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<Option<VirtualKeyDeployment>, DataAccessError> {
         self.__get_virtual_key_deployment(id, &None, metrics).await
     }
 
@@ -72,8 +82,14 @@ impl DataAccess {
             ids = ?ids.iter().map(|id| id.0).collect::<Vec<Uuid>>()
         )
     )]
-    pub async fn get_virtual_key_deployments(&self, ids: &BTreeSet<VirtualKeyDeploymentId>, metrics: &Option<Arc<Metrics>>) -> Result<BTreeMap<VirtualKeyDeploymentId, Option<VirtualKeyDeployment>>, DataAccessError> {
-        self.__get_virtual_key_deployments(ids, &None, metrics).await
+    pub async fn get_virtual_key_deployments(
+        &self,
+        ids: &BTreeSet<VirtualKeyDeploymentId>,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<BTreeMap<VirtualKeyDeploymentId, Option<VirtualKeyDeployment>>, DataAccessError>
+    {
+        self.__get_virtual_key_deployments(ids, &None, metrics)
+            .await
     }
 
     #[tracing::instrument(
@@ -85,11 +101,17 @@ impl DataAccess {
             deployment_id = %deployment_id.0
         )
     )]
-    pub async fn create_virtual_key_deployment(&self, virtual_key_id: &VirtualKeyId, deployment_id: &DeploymentId, metrics: &Option<Arc<Metrics>>) -> Result<VirtualKeyDeployment, DataAccessError> {
+    pub async fn create_virtual_key_deployment(
+        &self,
+        virtual_key_id: &VirtualKeyId,
+        deployment_id: &DeploymentId,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<VirtualKeyDeployment, DataAccessError> {
         //self.cache.delete_cached_virtual_key(virtual_key_id).await;
-        self.__create_virtual_key_deployment(virtual_key_id, deployment_id, &None, metrics).await
+        self.__create_virtual_key_deployment(virtual_key_id, deployment_id, &None, metrics)
+            .await
     }
-    
+
     #[tracing::instrument(
         level="trace",
         name = "delete.virtual_key_deployment",
@@ -98,7 +120,11 @@ impl DataAccess {
             id = %id.0
         )
     )]
-    pub async fn delete_virtual_key_deployment(&self, id: &VirtualKeyDeploymentId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+    pub async fn delete_virtual_key_deployment(
+        &self,
+        id: &VirtualKeyDeploymentId,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<u64, DataAccessError> {
         self.__delete_virtual_key_deployment(id, metrics).await
     }
 
@@ -111,26 +137,31 @@ impl DataAccess {
             deployment_id = %deployment_id.map(|id| id.0.to_string()).unwrap_or("*".to_string()),
         )
     )]
-    pub async fn search_virtual_key_deployments(&self, virtual_key_id: &Option<VirtualKeyId>, deployment_id: &Option<DeploymentId>, metrics: &Option<Arc<Metrics>>) -> Result<Vec<VirtualKeyDeployment>, DataAccessError> {
-        self.__search_virtual_key_deployments(virtual_key_id, deployment_id, &None, metrics).await
+    pub async fn search_virtual_key_deployments(
+        &self,
+        virtual_key_id: &Option<VirtualKeyId>,
+        deployment_id: &Option<DeploymentId>,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<Vec<VirtualKeyDeployment>, DataAccessError> {
+        self.__search_virtual_key_deployments(virtual_key_id, deployment_id, &None, metrics)
+            .await
     }
-
 }
 
 default_access_fns!(
-        VirtualKeyDeployment,
-        VirtualKeyDeploymentId,
-        virtual_key_deployment,
-        virtual_key_deployments,
-        create => {
-            virtual_key_id: &VirtualKeyId,
-            deployment_id: &DeploymentId
-        },
-        search => {
-            virtual_key_id: &Option<VirtualKeyId>,
-            deployment_id: &Option<DeploymentId>
-        }
-    );
+    VirtualKeyDeployment,
+    VirtualKeyDeploymentId,
+    virtual_key_deployment,
+    virtual_key_deployments,
+    create => {
+        virtual_key_id: &VirtualKeyId,
+        deployment_id: &DeploymentId
+    },
+    search => {
+        virtual_key_id: &Option<VirtualKeyId>,
+        deployment_id: &Option<DeploymentId>
+    }
+);
 // endregion: --- Data Access
 
 // region:    --- Database Access
@@ -149,15 +180,19 @@ default_database_access_fns!(
     }
 );
 // region:      --- Postgres Queries
-pub(crate) fn pg_search<'a>(virtual_key_id: &'a Option<VirtualKeyId>, deployment_id: &'a Option<DeploymentId>) -> QueryBuilder<'a,  Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+pub(crate) fn pg_search<'a>(
+    virtual_key_id: &'a Option<VirtualKeyId>,
+    deployment_id: &'a Option<DeploymentId>,
+) -> QueryBuilder<'a, Postgres> {
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         SELECT
             id,
             virtual_key_id,
             deployment_id
         FROM
             virtual_keys_deployments_map
-        WHERE true=true"
+        WHERE true=true",
     );
     // If virtual_key_id is passed as a search parameter
     if let Some(virtual_key_id) = virtual_key_id {
@@ -175,7 +210,8 @@ pub(crate) fn pg_search<'a>(virtual_key_id: &'a Option<VirtualKeyId>, deployment
     query
 }
 pub(crate) fn pg_get(id: &'_ VirtualKeyDeploymentId) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         SELECT
             id,
             virtual_key_id,
@@ -183,7 +219,7 @@ pub(crate) fn pg_get(id: &'_ VirtualKeyDeploymentId) -> QueryBuilder<'_, Postgre
         FROM
             virtual_keys_deployments_map
         WHERE
-            id ="
+            id =",
     );
     // Push id
     query.push_bind(id);
@@ -192,7 +228,8 @@ pub(crate) fn pg_get(id: &'_ VirtualKeyDeploymentId) -> QueryBuilder<'_, Postgre
 }
 
 pub(crate) fn pg_getm(ids: &'_ Vec<VirtualKeyDeploymentId>) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         SELECT
             id,
             virtual_key_id,
@@ -200,7 +237,7 @@ pub(crate) fn pg_getm(ids: &'_ Vec<VirtualKeyDeploymentId>) -> QueryBuilder<'_, 
         FROM
             virtual_keys_deployments_map
         WHERE
-            id IN ( "
+            id IN ( ",
     );
     // Push ids
     let mut separated = query.separated(", ");
@@ -213,9 +250,10 @@ pub(crate) fn pg_getm(ids: &'_ Vec<VirtualKeyDeploymentId>) -> QueryBuilder<'_, 
 }
 
 pub(crate) fn pg_delete(id: &'_ VirtualKeyDeploymentId) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         DELETE FROM virtual_keys_deployments_map
-        WHERE id="
+        WHERE id=",
     );
     // Push id
     query.push_bind(id);
@@ -223,12 +261,16 @@ pub(crate) fn pg_delete(id: &'_ VirtualKeyDeploymentId) -> QueryBuilder<'_, Post
     query
 }
 
-pub(crate) fn pg_insert<'a>(virtual_key_id: &'a VirtualKeyId, deployment_id: &'a DeploymentId) -> QueryBuilder<'a, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+pub(crate) fn pg_insert<'a>(
+    virtual_key_id: &'a VirtualKeyId,
+    deployment_id: &'a DeploymentId,
+) -> QueryBuilder<'a, Postgres> {
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         INSERT INTO virtual_keys_deployments_map
             (id, virtual_key_id, deployment_id)
         VALUES
-            (gen_random_uuid(), "
+            (gen_random_uuid(), ",
     );
     // Push name
     query.push_bind(virtual_key_id);
@@ -253,14 +295,15 @@ pub(crate) struct DbVirtualKeyDeploymentRecord {
 }
 
 impl ConvertInto<VirtualKeyDeployment> for DbVirtualKeyDeploymentRecord {
-    fn convert(self, _application_secret: &Option<Uuid>) -> Result<VirtualKeyDeployment, DbRecordConversionError> {
-        Ok(
-            VirtualKeyDeployment::new(
-                self.id,
-                self.virtual_key_id,
-                self.deployment_id,
-            )
-        )
+    fn convert(
+        self,
+        _application_secret: &Option<Uuid>,
+    ) -> Result<VirtualKeyDeployment, DbRecordConversionError> {
+        Ok(VirtualKeyDeployment::new(
+            self.id,
+            self.virtual_key_id,
+            self.deployment_id,
+        ))
     }
 }
 

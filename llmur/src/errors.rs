@@ -1,16 +1,15 @@
-use std::string::FromUtf8Error;
-use std::sync::Arc;
 use aes_gcm::aead;
-use axum::extract::rejection::JsonRejection;
 use axum::Json;
-use serde_json::json;
+use axum::extract::rejection::JsonRejection;
 use axum::response::{IntoResponse, Response};
 use hex::FromHexError;
 use redis::RedisError;
+use serde_json::json;
 use sqlx::migrate::MigrateError;
+use std::string::FromUtf8Error;
+use std::sync::Arc;
 use tracing::info;
 use uuid::Uuid;
-
 
 #[derive(thiserror::Error, Debug)]
 pub enum LLMurError {
@@ -54,7 +53,6 @@ pub enum ProxyErrorMessage {
     Text(String),
     Json(serde_json::Value),
 }
-
 
 #[derive(thiserror::Error, Debug)]
 pub enum GraphError {
@@ -114,10 +112,12 @@ pub enum DataAccessError {
     ResourceNotFound,
 
     // TODO: These are used on the DB record creation methods. Should be replaced either by a single transaction or by returning the created record from the insert query instead of just the id
-    #[error("Successfully created {1} resource but failed to retrieve it afterward. Resource id: {2}. Reason: {0}"
+    #[error(
+        "Successfully created {1} resource but failed to retrieve it afterward. Resource id: {2}. Reason: {0}"
     )]
     FailedToGetCreatedResource(Box<DataAccessError>, String, Uuid),
-    #[error("Successfully created {0} resource but failed to retrieve it afterward. Resource id: {1}. Reason: Resource not found"
+    #[error(
+        "Successfully created {0} resource but failed to retrieve it afterward. Resource id: {1}. Reason: Resource not found"
     )]
     CreatedResourceNotFound(String, Uuid),
 }
@@ -157,7 +157,7 @@ pub enum DbRecordConversionError {
 #[derive(thiserror::Error, Debug)]
 pub enum CacheAccessError {
     #[error(transparent)]
-    RedisError(#[from] RedisError)
+    RedisError(#[from] RedisError),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -277,31 +277,75 @@ impl IntoResponse for LLMurError {
         info!("Responding with error: {:?}", self);
         match self {
             LLMurError::AuthenticationError(e) => match e {
-                AuthenticationError::AsyncError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "AuthenticationError").into_response(),
-                AuthenticationError::PasswordSchemeParsingFailed => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "PasswordSchemeParsingFailed").into_response(),
-                AuthenticationError::UnableToFetchSessionToken => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "UnableToFetchSessionToken").into_response(),
-                AuthenticationError::UnableToFetchTokenUser => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "UnableToFetchTokenUser").into_response(),
-                AuthenticationError::HashError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "HashError").into_response(),
-                AuthenticationError::InternalError(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
-                _ => (axum::http::StatusCode::UNAUTHORIZED, "Not allowed").into_response()
-            }
+                AuthenticationError::AsyncError(_) => (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "AuthenticationError",
+                )
+                    .into_response(),
+                AuthenticationError::PasswordSchemeParsingFailed => (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "PasswordSchemeParsingFailed",
+                )
+                    .into_response(),
+                AuthenticationError::UnableToFetchSessionToken => (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "UnableToFetchSessionToken",
+                )
+                    .into_response(),
+                AuthenticationError::UnableToFetchTokenUser => (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "UnableToFetchTokenUser",
+                )
+                    .into_response(),
+                AuthenticationError::HashError(_) => {
+                    (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "HashError").into_response()
+                }
+                AuthenticationError::InternalError(e) => {
+                    (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+                }
+                _ => (axum::http::StatusCode::UNAUTHORIZED, "Not allowed").into_response(),
+            },
             LLMurError::AuthorizationError(e) => match e {
-                AuthorizationError::AccessDenied => (axum::http::StatusCode::FORBIDDEN, "Access denied").into_response(),
+                AuthorizationError::AccessDenied => {
+                    (axum::http::StatusCode::FORBIDDEN, "Access denied").into_response()
+                }
             },
             LLMurError::DataAccessError(e) => e.into_response(),
             LLMurError::GraphError(e) => match e {
                 GraphError::GraphLoadError(ge) => match ge {
                     GraphLoadError::DataAccessError(e) => e.into_response(),
-                    GraphLoadError::InvalidVirtualKey => (axum::http::StatusCode::UNAUTHORIZED, "Not allowed").into_response(),
-                    GraphLoadError::InvalidDeploymentName => (axum::http::StatusCode::NOT_FOUND, "Model not found").into_response(),
-                    GraphLoadError::InconsistentGraphDataError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "InconsistentGraphDataError").into_response(),
-                    GraphLoadError::InvalidVirtualKeyDeployment => (axum::http::StatusCode::FORBIDDEN, "Not allowed").into_response(),
-                }
-                GraphError::NoConnectionAvailable(_) => (axum::http::StatusCode::SERVICE_UNAVAILABLE, "No connection available").into_response(),
-                GraphError::UsageExceededError(_) => (axum::http::StatusCode::TOO_MANY_REQUESTS, "Too many requests").into_response(),
+                    GraphLoadError::InvalidVirtualKey => {
+                        (axum::http::StatusCode::UNAUTHORIZED, "Not allowed").into_response()
+                    }
+                    GraphLoadError::InvalidDeploymentName => {
+                        (axum::http::StatusCode::NOT_FOUND, "Model not found").into_response()
+                    }
+                    GraphLoadError::InconsistentGraphDataError(_) => (
+                        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                        "InconsistentGraphDataError",
+                    )
+                        .into_response(),
+                    GraphLoadError::InvalidVirtualKeyDeployment => {
+                        (axum::http::StatusCode::FORBIDDEN, "Not allowed").into_response()
+                    }
+                },
+                GraphError::NoConnectionAvailable(_) => (
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                    "No connection available",
+                )
+                    .into_response(),
+                GraphError::UsageExceededError(_) => (
+                    axum::http::StatusCode::TOO_MANY_REQUESTS,
+                    "Too many requests",
+                )
+                    .into_response(),
             },
             LLMurError::ProxyError(e) => e.into_response(),
-            LLMurError::UnhealthyState(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Service unhealthy. Reason: {:?}", e)).into_response(),
+            LLMurError::UnhealthyState(e) => (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Service unhealthy. Reason: {:?}", e),
+            )
+                .into_response(),
         }
     }
 }
@@ -315,15 +359,25 @@ impl From<Arc<AuthenticationError>> for LLMurError {
 impl IntoResponse for &ProxyError {
     fn into_response(self) -> Response {
         let resp = match self {
-            ProxyError::InvalidRequest(e) => (axum::http::StatusCode::BAD_REQUEST, format!("Invalid payload. Reason: {}", e)).into_response(),
+            ProxyError::InvalidRequest(e) => (
+                axum::http::StatusCode::BAD_REQUEST,
+                format!("Invalid payload. Reason: {}", e),
+            )
+                .into_response(),
             ProxyError::ProxyReturnError(s, v) => match v {
                 ProxyErrorMessage::Text(v) => (*s, v.to_string()).into_response(),
-                ProxyErrorMessage::Json(v) => (*s, Json(v)).into_response()
+                ProxyErrorMessage::Json(v) => (*s, Json(v)).into_response(),
             },
             ProxyError::ProxyReqwestError(s, e) => (*s, e.to_string()).into_response(),
-            ProxyError::SerdeJsonError(e) => (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response(),
-            ProxyError::ReqwestError(e) => (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response(),
-            ProxyError::InternalError(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+            ProxyError::SerdeJsonError(e) => {
+                (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response()
+            }
+            ProxyError::ReqwestError(e) => {
+                (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response()
+            }
+            ProxyError::InternalError(e) => {
+                (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+            }
         };
 
         resp
@@ -344,16 +398,48 @@ impl IntoResponse for DataAccessError {
                     )
                         .into_response();
                 }
-                (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DataAccessError").into_response()
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "DataAccessError",
+                )
+                    .into_response()
             }
-            DataAccessError::DbRecordConversionError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DataAccessError").into_response(),
-            DataAccessError::EncryptionError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DataAccessError").into_response(),
-            DataAccessError::InvalidTimeFormatError(e) => (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response(),
-            DataAccessError::HashError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DataAccessError").into_response(),
-            DataAccessError::CacheAccessError(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "DataAccessError").into_response(),
-            DataAccessError::ResourceNotFound => (axum::http::StatusCode::NOT_FOUND, "Not Found").into_response(),
-            DataAccessError::FailedToGetCreatedResource(_, _, _) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "FailedToGetCreatedResource").into_response(),
-            DataAccessError::CreatedResourceNotFound(_, _) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "CreatedResourceNotFound").into_response(),
+            DataAccessError::DbRecordConversionError(_) => (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "DataAccessError",
+            )
+                .into_response(),
+            DataAccessError::EncryptionError(_) => (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "DataAccessError",
+            )
+                .into_response(),
+            DataAccessError::InvalidTimeFormatError(e) => {
+                (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response()
+            }
+            DataAccessError::HashError(_) => (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "DataAccessError",
+            )
+                .into_response(),
+            DataAccessError::CacheAccessError(_) => (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "DataAccessError",
+            )
+                .into_response(),
+            DataAccessError::ResourceNotFound => {
+                (axum::http::StatusCode::NOT_FOUND, "Not Found").into_response()
+            }
+            DataAccessError::FailedToGetCreatedResource(_, _, _) => (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "FailedToGetCreatedResource",
+            )
+                .into_response(),
+            DataAccessError::CreatedResourceNotFound(_, _) => (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "CreatedResourceNotFound",
+            )
+                .into_response(),
         }
     }
 }

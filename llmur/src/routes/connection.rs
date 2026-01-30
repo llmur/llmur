@@ -308,7 +308,7 @@ impl From<Connection> for GetConnectionResult {
                 model,
                 api_endpoint,
                 api_version,
-            }
+            },
         }
     }
 }

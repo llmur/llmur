@@ -1,15 +1,18 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
+use crate::data::DataAccess;
 use crate::data::connection::ConnectionId;
 use crate::data::deployment::DeploymentId;
 use crate::data::utils::ConvertInto;
-use crate::{default_access_fns, default_database_access_fns, impl_structured_id_utils, impl_with_id_parameter_for_struct};
-use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, Postgres, QueryBuilder};
-use uuid::Uuid;
-use crate::data::DataAccess;
 use crate::errors::{DataAccessError, DbRecordConversionError};
 use crate::metrics::Metrics;
+use crate::{
+    default_access_fns, default_database_access_fns, impl_structured_id_utils,
+    impl_with_id_parameter_for_struct,
+};
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, Postgres, QueryBuilder};
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+use uuid::Uuid;
 
 // region:    --- Main Model
 #[derive(
@@ -24,7 +27,7 @@ use crate::metrics::Metrics;
     sqlx::Type,
     Serialize,
     Deserialize,
-    FromRow
+    FromRow,
 )]
 #[sqlx(transparent)]
 pub struct ConnectionDeploymentId(pub Uuid);
@@ -34,20 +37,24 @@ pub struct ConnectionDeployment {
     pub id: ConnectionDeploymentId,
     pub connection_id: ConnectionId,
     pub deployment_id: DeploymentId,
-    pub weight: u16
+    pub weight: u16,
 }
 
 impl ConnectionDeployment {
-    pub fn new(id: ConnectionDeploymentId, connection_id: ConnectionId, deployment_id: DeploymentId, weight: u16) -> Self {
+    pub fn new(
+        id: ConnectionDeploymentId,
+        connection_id: ConnectionId,
+        deployment_id: DeploymentId,
+        weight: u16,
+    ) -> Self {
         ConnectionDeployment {
             id,
             connection_id,
             deployment_id,
-            weight
+            weight,
         }
     }
 }
-
 
 impl_structured_id_utils!(ConnectionDeploymentId);
 impl_with_id_parameter_for_struct!(ConnectionDeployment, ConnectionDeploymentId);
@@ -63,7 +70,11 @@ impl DataAccess {
             id = %id.0
         )
     )]
-    pub async fn get_connection_deployment(&self, id: &ConnectionDeploymentId, metrics: &Option<Arc<Metrics>>) -> Result<Option<ConnectionDeployment>, DataAccessError> {
+    pub async fn get_connection_deployment(
+        &self,
+        id: &ConnectionDeploymentId,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<Option<ConnectionDeployment>, DataAccessError> {
         self.__get_connection_deployment(id, &None, metrics).await
     }
 
@@ -75,7 +86,12 @@ impl DataAccess {
             ids = ?ids.iter().map(|id| id.0).collect::<Vec<Uuid>>()
         )
     )]
-    pub async fn get_connection_deployments(&self, ids: &BTreeSet<ConnectionDeploymentId>, metrics: &Option<Arc<Metrics>>) -> Result<BTreeMap<ConnectionDeploymentId, Option<ConnectionDeployment>>, DataAccessError> {
+    pub async fn get_connection_deployments(
+        &self,
+        ids: &BTreeSet<ConnectionDeploymentId>,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<BTreeMap<ConnectionDeploymentId, Option<ConnectionDeployment>>, DataAccessError>
+    {
         self.__get_connection_deployments(ids, &None, metrics).await
     }
 
@@ -88,8 +104,15 @@ impl DataAccess {
             deployment_id = %deployment_id.0
         )
     )]
-    pub async fn create_connection_deployment(&self, connection_id: &ConnectionId, deployment_id: &DeploymentId, weight: i16, metrics: &Option<Arc<Metrics>>) -> Result<ConnectionDeployment, DataAccessError> {
-        self.__create_connection_deployment(connection_id, deployment_id, weight, &None, metrics).await
+    pub async fn create_connection_deployment(
+        &self,
+        connection_id: &ConnectionId,
+        deployment_id: &DeploymentId,
+        weight: i16,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<ConnectionDeployment, DataAccessError> {
+        self.__create_connection_deployment(connection_id, deployment_id, weight, &None, metrics)
+            .await
     }
 
     #[tracing::instrument(
@@ -100,10 +123,13 @@ impl DataAccess {
             id = %id.0
         )
     )]
-    pub async fn delete_connection_deployment(&self, id: &ConnectionDeploymentId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+    pub async fn delete_connection_deployment(
+        &self,
+        id: &ConnectionDeploymentId,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<u64, DataAccessError> {
         self.__delete_connection_deployment(id, metrics).await
     }
-
 
     #[tracing::instrument(
         level="trace",
@@ -114,26 +140,32 @@ impl DataAccess {
             deployment_id = %deployment_id.map(|id| id.0.to_string()).unwrap_or("*".to_string()),
         )
     )]
-    pub async fn search_connection_deployments(&self, connection_id: &Option<ConnectionId>, deployment_id: &Option<DeploymentId>, metrics: &Option<Arc<Metrics>>) -> Result<Vec<ConnectionDeployment>, DataAccessError> {
-        self.__search_connection_deployments(connection_id, deployment_id, &None, metrics).await
+    pub async fn search_connection_deployments(
+        &self,
+        connection_id: &Option<ConnectionId>,
+        deployment_id: &Option<DeploymentId>,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<Vec<ConnectionDeployment>, DataAccessError> {
+        self.__search_connection_deployments(connection_id, deployment_id, &None, metrics)
+            .await
     }
 }
 
 default_access_fns!(
-        ConnectionDeployment,
-        ConnectionDeploymentId,
-        connection_deployment,
-        connection_deployments,
-        create => {
-            connection_id: &ConnectionId,
-            deployment_id: &DeploymentId,
-            weight: i16
-        },
-        search => {
-            connection_id: &Option<ConnectionId>,
-            deployment_id: &Option<DeploymentId>
-        }
-    );
+    ConnectionDeployment,
+    ConnectionDeploymentId,
+    connection_deployment,
+    connection_deployments,
+    create => {
+        connection_id: &ConnectionId,
+        deployment_id: &DeploymentId,
+        weight: i16
+    },
+    search => {
+        connection_id: &Option<ConnectionId>,
+        deployment_id: &Option<DeploymentId>
+    }
+);
 // endregion: --- Data Access
 
 // region:    --- Database Access
@@ -153,8 +185,12 @@ default_database_access_fns!(
     }
 );
 // region:      --- Postgres Queries
-pub(crate) fn pg_search<'a>(connection_id: &'a Option<ConnectionId>, deployment_id: &'a Option<DeploymentId>) -> QueryBuilder<'a, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+pub(crate) fn pg_search<'a>(
+    connection_id: &'a Option<ConnectionId>,
+    deployment_id: &'a Option<DeploymentId>,
+) -> QueryBuilder<'a, Postgres> {
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         SELECT
             id,
             connection_id,
@@ -162,7 +198,7 @@ pub(crate) fn pg_search<'a>(connection_id: &'a Option<ConnectionId>, deployment_
             weight
         FROM
             deployments_connections_map
-        WHERE true=true"
+        WHERE true=true",
     );
     // If connection_id is passed as a search parameter
     if let Some(connection_id) = connection_id {
@@ -180,7 +216,8 @@ pub(crate) fn pg_search<'a>(connection_id: &'a Option<ConnectionId>, deployment_
     query
 }
 pub(crate) fn pg_get(id: &'_ ConnectionDeploymentId) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         SELECT
             id,
             connection_id,
@@ -189,7 +226,7 @@ pub(crate) fn pg_get(id: &'_ ConnectionDeploymentId) -> QueryBuilder<'_, Postgre
         FROM
             deployments_connections_map
         WHERE
-            id ="
+            id =",
     );
     // Push id
     query.push_bind(id);
@@ -197,9 +234,9 @@ pub(crate) fn pg_get(id: &'_ ConnectionDeploymentId) -> QueryBuilder<'_, Postgre
     query
 }
 
-
 pub(crate) fn pg_getm(ids: &'_ Vec<ConnectionDeploymentId>) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         SELECT
             id,
             connection_id,
@@ -208,7 +245,7 @@ pub(crate) fn pg_getm(ids: &'_ Vec<ConnectionDeploymentId>) -> QueryBuilder<'_, 
         FROM
             deployments_connections_map
         WHERE
-            id IN ( "
+            id IN ( ",
     );
     // Push ids
     let mut separated = query.separated(", ");
@@ -221,9 +258,10 @@ pub(crate) fn pg_getm(ids: &'_ Vec<ConnectionDeploymentId>) -> QueryBuilder<'_, 
 }
 
 pub(crate) fn pg_delete(id: &'_ ConnectionDeploymentId) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         DELETE FROM deployments_connections_map
-        WHERE id="
+        WHERE id=",
     );
     // Push id
     query.push_bind(id);
@@ -231,12 +269,17 @@ pub(crate) fn pg_delete(id: &'_ ConnectionDeploymentId) -> QueryBuilder<'_, Post
     query
 }
 
-pub(crate) fn pg_insert<'a>(connection_id: &'a ConnectionId, deployment_id: &'a DeploymentId, weight: i16) -> QueryBuilder<'a, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+pub(crate) fn pg_insert<'a>(
+    connection_id: &'a ConnectionId,
+    deployment_id: &'a DeploymentId,
+    weight: i16,
+) -> QueryBuilder<'a, Postgres> {
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         INSERT INTO deployments_connections_map
             (id, connection_id, deployment_id, weight)
         VALUES
-            (gen_random_uuid(), "
+            (gen_random_uuid(), ",
     );
     // Push name
     query.push_bind(connection_id);
@@ -266,15 +309,16 @@ pub(crate) struct DbConnectionDeploymentRecord {
 }
 
 impl ConvertInto<ConnectionDeployment> for DbConnectionDeploymentRecord {
-    fn convert(self, _application_secret: &Option<Uuid>) -> Result<ConnectionDeployment, DbRecordConversionError> {
-        Ok(
-            ConnectionDeployment::new(
-                self.id,
-                self.connection_id,
-                self.deployment_id,
-                self.weight as u16
-            )
-        )
+    fn convert(
+        self,
+        _application_secret: &Option<Uuid>,
+    ) -> Result<ConnectionDeployment, DbRecordConversionError> {
+        Ok(ConnectionDeployment::new(
+            self.id,
+            self.connection_id,
+            self.deployment_id,
+            self.weight as u16,
+        ))
     }
 }
 

@@ -1,9 +1,9 @@
+use crate::LLMurState;
 use crate::data::membership::{Membership, MembershipId};
 use crate::data::project::{ProjectId, ProjectRole};
 use crate::data::session_token::SessionToken;
 use crate::data::user::{ApplicationRole, User, UserId};
 use crate::errors::{AuthenticationError, LLMurError};
-use crate::LLMurState;
 use axum::extract::{Request, State};
 use axum::http::HeaderValue;
 use axum::middleware::Next;
@@ -164,38 +164,29 @@ impl UserContext {
                     .filter_map(|(k, v)| v.map(|val| (k, val)))
                     .collect();
 
-                Ok(memberships
-                    .values()
-                    .any(|v| v.project_id == *project_id)
-                )
+                Ok(memberships.values().any(|v| v.project_id == *project_id))
             }
         }
     }
 
     /// Check if user has admin permissions. Either an Application Admin or a Master User
-    pub(crate) fn has_admin_access(
-        &self
-    ) -> bool {
+    pub(crate) fn has_admin_access(&self) -> bool {
         match self {
             UserContext::MasterUser => true,
-            UserContext::WebAppUser { user, .. } => user.role == ApplicationRole::Admin
+            UserContext::WebAppUser { user, .. } => user.role == ApplicationRole::Admin,
         }
     }
 
     /// Check if it's a Master User
-    pub(crate) fn is_master_user(
-        &self
-    ) -> bool {
+    pub(crate) fn is_master_user(&self) -> bool {
         match self {
             UserContext::MasterUser => true,
-            UserContext::WebAppUser { .. } => false
+            UserContext::WebAppUser { .. } => false,
         }
     }
 
     /// Retrieve the user id - None if it's a Master Key
-    pub(crate) fn get_user_id(
-        &self
-    ) -> Option<UserId> {
+    pub(crate) fn get_user_id(&self) -> Option<UserId> {
         match self {
             UserContext::MasterUser => None,
             UserContext::WebAppUser { user, .. } => Some(user.id),
@@ -209,13 +200,10 @@ pub(crate) trait AuthorizationManager {
 }
 
 impl AuthorizationManager for UserContextExtractionResult {
-
     fn require_authenticated_user(self) -> Result<UserContext, LLMurError> {
         match self {
             Ok(c) => Ok(c),
-            Err(e ) => {
-                Err(LLMurError::from(e))
-            }
+            Err(e) => Err(LLMurError::from(e)),
         }
     }
 }

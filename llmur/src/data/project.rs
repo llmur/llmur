@@ -208,12 +208,8 @@ impl Database {
                         let start = std::time::Instant::now();
                         let mut tx = pool.begin().await?;
 
-                        let mut insert_project_query = pg_insert(
-                            name,
-                            budget_limits,
-                            request_limits,
-                            token_limits,
-                        );
+                        let mut insert_project_query =
+                            pg_insert(name, budget_limits, request_limits, token_limits);
                         let sql = insert_project_query.build_query_as::<ProjectId>();
                         let project_id = sql.fetch_one(&mut *tx).await?;
 
@@ -227,7 +223,11 @@ impl Database {
 
                         let result = tx.commit().await;
 
-                        metrics.register_database_request(operation, start.elapsed().as_millis() as u64, result.is_ok());
+                        metrics.register_database_request(
+                            operation,
+                            start.elapsed().as_millis() as u64,
+                            result.is_ok(),
+                        );
 
                         Ok((project_id, membership_id))
                     }

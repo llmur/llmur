@@ -1,8 +1,8 @@
-use crate::data::connection::{ConnectionId};
+use crate::data::connection::ConnectionId;
 use crate::data::deployment::DeploymentId;
 use crate::data::graph::usage_stats::{
-    ConnectionUsageStats, DeploymentUsageStats, MetricsUsageStats, ProjectUsageStats,
-    StatValue, VirtualKeyUsageStats,
+    ConnectionUsageStats, DeploymentUsageStats, MetricsUsageStats, ProjectUsageStats, StatValue,
+    VirtualKeyUsageStats,
 };
 use crate::data::project::ProjectId;
 use crate::data::request_log::RequestLogData;
@@ -210,9 +210,7 @@ impl Database {
                 let mut query = pg_get_project_usage(project_id, now_utc);
                 let sql = query.build_query_as::<DbUsageStatsRecord>();
                 // TODO: Handle errors properly
-                let result = sql
-                    .fetch_one(pool)
-                    .await?;
+                let result = sql.fetch_one(pool).await?;
 
                 Ok(result)
             }
@@ -234,9 +232,7 @@ impl Database {
             Database::Postgres { pool } => {
                 let mut query = pg_get_virtual_key_usage(virtual_key_id, now_utc);
                 let sql = query.build_query_as::<DbUsageStatsRecord>();
-                let result = sql
-                    .fetch_one(pool)
-                    .await?;
+                let result = sql.fetch_one(pool).await?;
                 Ok(result)
             }
         }
@@ -257,9 +253,7 @@ impl Database {
             Database::Postgres { pool } => {
                 let mut query = pg_get_deployment_usage(deployment_id, now_utc);
                 let sql = query.build_query_as::<DbUsageStatsRecord>();
-                let result = sql
-                    .fetch_one(pool)
-                    .await?;
+                let result = sql.fetch_one(pool).await?;
                 Ok(result)
             }
         }
@@ -280,9 +274,7 @@ impl Database {
                 let mut query = pg_get_connection_usage(connection_id, now_utc);
                 let sql = query.build_query_as::<DbUsageStatsRecord>();
                 // TODO: Handle errors properly
-                let result = sql
-                    .fetch_one(pool)
-                    .await?;
+                let result = sql.fetch_one(pool).await?;
 
                 Ok(result)
             }
@@ -291,11 +283,7 @@ impl Database {
 }
 
 impl Cache {
-    #[tracing::instrument(        
-        level="trace",
-        name = "cache.set.usage_stats", 
-        skip(self, stats)
-    )]
+    #[tracing::instrument(level = "trace", name = "cache.set.usage_stats", skip(self, stats))]
     pub(crate) async fn set_usage_stats(
         &self,
         stats: &MetricsUsageStats,
@@ -347,8 +335,8 @@ impl Cache {
     }
 
     #[tracing::instrument(
-        level="trace",
-        name = "cache.increment.usage_stats", 
+        level = "trace",
+        name = "cache.increment.usage_stats",
         skip(self, records)
     )]
     pub(crate) async fn increment_usage_data(

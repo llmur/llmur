@@ -52,7 +52,7 @@ def sample_azure_openai_connection_data():
         "deployment_name": "gpt-4o",
         "api_endpoint": "https://aoairesource.openai.azure.com",
         "api_key": "dummy-key",
-        "api_version": "2024-10-21"
+        "api_version": "v1"
     }
 
 @pytest.fixture

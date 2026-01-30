@@ -9,17 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
 // region:    --- Auxiliary Graph Model
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct GraphDataId {
     pub(crate) model_name: String,
     pub(crate) virtual_key_id: VirtualKeyId,
@@ -36,7 +26,11 @@ impl GraphDataId {
 
 impl Display for GraphDataId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "GraphDataId({}:{})", self.model_name, self.virtual_key_id)
+        write!(
+            f,
+            "GraphDataId({}:{})",
+            self.model_name, self.virtual_key_id
+        )
     }
 }
 
@@ -48,7 +42,7 @@ pub struct GraphData {
     pub(crate) project: Project,
     pub(crate) virtual_key_deployment: VirtualKeyDeployment,
     pub(crate) connection_deployments: Vec<ConnectionDeployment>,
-    pub(crate) connections: Vec<Connection>
+    pub(crate) connections: Vec<Connection>,
 }
 
 impl_with_id_parameter_for_struct!(GraphData, GraphDataId);

@@ -2,11 +2,9 @@ use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::project::ProjectId;
 use crate::data::virtual_key::{VirtualKey, VirtualKeyId};
 use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
-use crate::routes::middleware::user_context::{
-    AuthorizationManager, UserContextExtractionResult,
-};
 use crate::routes::StatusResponse;
-use crate::{impl_from_vec_result, LLMurState};
+use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
+use crate::{LLMurState, impl_from_vec_result};
 use axum::extract::{Path, Query, State};
 use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
@@ -31,7 +29,10 @@ pub(crate) async fn create_key(
 ) -> Result<Json<GetVirtualKeyResult>, LLMurError> {
     let user_context = ctx.require_authenticated_user()?;
 
-    if !user_context.has_project_admin_access(state.clone(), &payload.project_id).await? {
+    if !user_context
+        .has_project_admin_access(state.clone(), &payload.project_id)
+        .await?
+    {
         return Err(AuthorizationError::AccessDenied)?;
     }
 
@@ -74,7 +75,10 @@ pub(crate) async fn get_key(
         .await?
         .ok_or(DataAccessError::ResourceNotFound)?;
 
-    if !user_context.has_project_developer_access(state.clone(), &key.project_id).await? {
+    if !user_context
+        .has_project_developer_access(state.clone(), &key.project_id)
+        .await?
+    {
         return Err(AuthorizationError::AccessDenied)?;
     }
 
@@ -101,7 +105,10 @@ pub(crate) async fn delete_key(
         .await?
         .ok_or(DataAccessError::ResourceNotFound)?;
 
-    if !user_context.has_project_admin_access(state.clone(), &key.project_id).await? {
+    if !user_context
+        .has_project_admin_access(state.clone(), &key.project_id)
+        .await?
+    {
         return Err(AuthorizationError::AccessDenied)?;
     }
 
@@ -116,10 +123,7 @@ pub(crate) async fn delete_key(
     }))
 }
 
-#[tracing::instrument(
-    name = "handler.search.virtual_keys",
-    skip(state, ctx, params)
-)]
+#[tracing::instrument(name = "handler.search.virtual_keys", skip(state, ctx, params))]
 pub(crate) async fn search_keys(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
@@ -130,7 +134,10 @@ pub(crate) async fn search_keys(
     let project_id = params.project_id;
 
     if let Some(project_id) = project_id {
-        if !user_context.has_project_developer_access(state.clone(), &project_id).await? {
+        if !user_context
+            .has_project_developer_access(state.clone(), &project_id)
+            .await?
+        {
             return Err(AuthorizationError::AccessDenied)?;
         }
     } else if !user_context.has_admin_access() {
