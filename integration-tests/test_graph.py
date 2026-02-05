@@ -57,6 +57,7 @@ class TestGraph:
             assert response.status_code == 200
             data = response.json()
             assert "virtual_key" in data
+            assert "virtual_key_deployment" in data
             assert "deployment" in data
             assert "project" in data
             assert "connection" in data

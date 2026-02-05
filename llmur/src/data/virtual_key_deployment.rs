@@ -1,5 +1,6 @@
 use crate::data::DataAccess;
 use crate::data::deployment::DeploymentId;
+use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::utils::ConvertInto;
 use crate::data::virtual_key::VirtualKeyId;
 use crate::errors::{DataAccessError, DbRecordConversionError};
@@ -9,6 +10,7 @@ use crate::{
     impl_with_id_parameter_for_struct,
 };
 use serde::{Deserialize, Serialize};
+use sqlx::types::Json;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -36,6 +38,9 @@ pub struct VirtualKeyDeployment {
     pub id: VirtualKeyDeploymentId,
     pub virtual_key_id: VirtualKeyId,
     pub deployment_id: DeploymentId,
+    pub budget_limits: BudgetLimits,
+    pub request_limits: RequestLimits,
+    pub token_limits: TokenLimits,
 }
 
 impl VirtualKeyDeployment {
@@ -43,11 +48,17 @@ impl VirtualKeyDeployment {
         id: VirtualKeyDeploymentId,
         virtual_key_id: VirtualKeyId,
         deployment_id: DeploymentId,
+        budget_limits: BudgetLimits,
+        request_limits: RequestLimits,
+        token_limits: TokenLimits,
     ) -> Self {
         VirtualKeyDeployment {
             id,
             virtual_key_id,
             deployment_id,
+            budget_limits,
+            request_limits,
+            token_limits,
         }
     }
 }
@@ -105,10 +116,21 @@ impl DataAccess {
         &self,
         virtual_key_id: &VirtualKeyId,
         deployment_id: &DeploymentId,
+        budget_limits: &Option<BudgetLimits>,
+        request_limits: &Option<RequestLimits>,
+        token_limits: &Option<TokenLimits>,
         metrics: &Option<Arc<Metrics>>,
     ) -> Result<VirtualKeyDeployment, DataAccessError> {
         //self.cache.delete_cached_virtual_key(virtual_key_id).await;
-        self.__create_virtual_key_deployment(virtual_key_id, deployment_id, &None, metrics)
+        self.__create_virtual_key_deployment(
+            virtual_key_id,
+            deployment_id,
+            budget_limits,
+            request_limits,
+            token_limits,
+            &None,
+            metrics,
+        )
             .await
     }
 
@@ -155,7 +177,10 @@ default_access_fns!(
     virtual_key_deployments,
     create => {
         virtual_key_id: &VirtualKeyId,
-        deployment_id: &DeploymentId
+        deployment_id: &DeploymentId,
+        budget_limits: &Option<BudgetLimits>,
+        request_limits: &Option<RequestLimits>,
+        token_limits: &Option<TokenLimits>
     },
     search => {
         virtual_key_id: &Option<VirtualKeyId>,
@@ -172,7 +197,10 @@ default_database_access_fns!(
     virtual_key_deployments,
     insert => {
         virtual_key_id: &VirtualKeyId,
-        deployment_id: &DeploymentId
+        deployment_id: &DeploymentId,
+        budget_limits: &Option<BudgetLimits>,
+        request_limits: &Option<RequestLimits>,
+        token_limits: &Option<TokenLimits>
     },
     search => {
         virtual_key_id: &Option<VirtualKeyId>,
@@ -189,7 +217,10 @@ pub(crate) fn pg_search<'a>(
         SELECT
             id,
             virtual_key_id,
-            deployment_id
+            deployment_id,
+            budget_limits,
+            request_limits,
+            token_limits
         FROM
             virtual_keys_deployments_map
         WHERE true=true",
@@ -215,7 +246,10 @@ pub(crate) fn pg_get(id: &'_ VirtualKeyDeploymentId) -> QueryBuilder<'_, Postgre
         SELECT
             id,
             virtual_key_id,
-            deployment_id
+            deployment_id,
+            budget_limits,
+            request_limits,
+            token_limits
         FROM
             virtual_keys_deployments_map
         WHERE
@@ -233,7 +267,10 @@ pub(crate) fn pg_getm(ids: &'_ Vec<VirtualKeyDeploymentId>) -> QueryBuilder<'_, 
         SELECT
             id,
             virtual_key_id,
-            deployment_id
+            deployment_id,
+            budget_limits,
+            request_limits,
+            token_limits
         FROM
             virtual_keys_deployments_map
         WHERE
@@ -264,11 +301,26 @@ pub(crate) fn pg_delete(id: &'_ VirtualKeyDeploymentId) -> QueryBuilder<'_, Post
 pub(crate) fn pg_insert<'a>(
     virtual_key_id: &'a VirtualKeyId,
     deployment_id: &'a DeploymentId,
+    budget_limits: &'a Option<BudgetLimits>,
+    request_limits: &'a Option<RequestLimits>,
+    token_limits: &'a Option<TokenLimits>,
 ) -> QueryBuilder<'a, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
         "
         INSERT INTO virtual_keys_deployments_map
-            (id, virtual_key_id, deployment_id)
+            (id, virtual_key_id, deployment_id",
+    );
+    if budget_limits.is_some() {
+        query.push(", budget_limits");
+    }
+    if request_limits.is_some() {
+        query.push(", request_limits");
+    }
+    if token_limits.is_some() {
+        query.push(", token_limits");
+    }
+    query.push(
+        ")
         VALUES
             (gen_random_uuid(), ",
     );
@@ -277,6 +329,21 @@ pub(crate) fn pg_insert<'a>(
     query.push(", ");
     // Push access
     query.push_bind(deployment_id);
+
+    if let Some(limits) = budget_limits {
+        query.push(", ");
+        query.push_bind(Json::from(limits));
+    }
+
+    if let Some(limits) = request_limits {
+        query.push(", ");
+        query.push_bind(Json::from(limits));
+    }
+
+    if let Some(limits) = token_limits {
+        query.push(", ");
+        query.push_bind(Json::from(limits));
+    }
 
     // Push the rest of the query
     query.push(") RETURNING id");
@@ -292,6 +359,9 @@ pub(crate) struct DbVirtualKeyDeploymentRecord {
     pub(crate) id: VirtualKeyDeploymentId,
     pub(crate) virtual_key_id: VirtualKeyId,
     pub(crate) deployment_id: DeploymentId,
+    pub(crate) budget_limits: Option<sqlx::types::Json<BudgetLimits>>,
+    pub(crate) request_limits: Option<sqlx::types::Json<RequestLimits>>,
+    pub(crate) token_limits: Option<sqlx::types::Json<TokenLimits>>,
 }
 
 impl ConvertInto<VirtualKeyDeployment> for DbVirtualKeyDeploymentRecord {
@@ -303,6 +373,9 @@ impl ConvertInto<VirtualKeyDeployment> for DbVirtualKeyDeploymentRecord {
             self.id,
             self.virtual_key_id,
             self.deployment_id,
+            self.budget_limits.map(|l| l.0).unwrap_or_default(),
+            self.request_limits.map(|l| l.0).unwrap_or_default(),
+            self.token_limits.map(|l| l.0).unwrap_or_default(),
         ))
     }
 }

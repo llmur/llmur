@@ -3,11 +3,12 @@ use crate::data::connection::Connection;
 use crate::data::deployment::Deployment;
 use crate::data::graph::local_store::{GraphData, GraphDataId};
 use crate::data::graph::usage_stats::{
-    ConnectionUsageStats, DeploymentUsageStats, ProjectUsageStats, VirtualKeyUsageStats,
+    ConnectionUsageStats, DeploymentUsageStats, ProjectUsageStats, VirtualKeyDeploymentUsageStats,
+    VirtualKeyUsageStats,
 };
 use crate::data::project::Project;
 use crate::data::virtual_key::VirtualKey;
-use crate::data::virtual_key_deployment::VirtualKeyDeploymentId;
+use crate::data::virtual_key_deployment::VirtualKeyDeployment;
 use crate::errors::{
     DataAccessError, GraphLoadError, InconsistentGraphDataError, UsageExceededError,
 };
@@ -27,6 +28,7 @@ pub(crate) mod usage_stats;
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct Graph {
     pub(crate) virtual_key: VirtualKeyNode,
+    pub(crate) virtual_key_deployment: VirtualKeyDeploymentNode,
     pub(crate) deployment: DeploymentNode,
     pub(crate) project: ProjectNode,
     pub(crate) connection: ConnectionNode,
@@ -125,12 +127,91 @@ impl NodeLimitsChecker for VirtualKeyNode {
 
 // endregion: --- Virtual Key Node
 
+// region:    --- Virtual Key Deployment Node
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct VirtualKeyDeploymentNode {
+    pub(crate) data: VirtualKeyDeployment,
+    pub(crate) usage_stats: VirtualKeyDeploymentUsageStats,
+}
+
+impl NodeLimitsChecker for VirtualKeyDeploymentNode {
+    fn validate_limits(&self) -> Result<(), UsageExceededError> {
+        let b = self.usage_stats.budget();
+        check_limit!(
+            b.current_month.value().as_f64(),
+            self.data.budget_limits.cost_per_month,
+            MonthBudgetOverLimit
+        );
+        check_limit!(
+            b.current_day.value().as_f64(),
+            self.data.budget_limits.cost_per_day,
+            DayBudgetOverLimit
+        );
+        check_limit!(
+            b.current_hour.value().as_f64(),
+            self.data.budget_limits.cost_per_hour,
+            HourBudgetOverLimit
+        );
+        check_limit!(
+            b.current_minute.value().as_f64(),
+            self.data.budget_limits.cost_per_minute,
+            MinuteBudgetOverLimit
+        );
+
+        let r = &self.usage_stats.requests();
+        check_limit!(
+            r.current_month.value().as_i64(),
+            self.data.request_limits.requests_per_month,
+            MonthRequestsOverLimit
+        );
+        check_limit!(
+            r.current_day.value().as_i64(),
+            self.data.request_limits.requests_per_day,
+            DayRequestsOverLimit
+        );
+        check_limit!(
+            r.current_hour.value().as_i64(),
+            self.data.request_limits.requests_per_hour,
+            HourRequestsOverLimit
+        );
+        check_limit!(
+            r.current_minute.value().as_i64(),
+            self.data.request_limits.requests_per_minute,
+            MinuteRequestsOverLimit
+        );
+
+        let r = &self.usage_stats.tokens();
+        check_limit!(
+            r.current_month.value().as_i64(),
+            self.data.token_limits.tokens_per_month,
+            MonthTokensOverLimit
+        );
+        check_limit!(
+            r.current_day.value().as_i64(),
+            self.data.token_limits.tokens_per_day,
+            DayTokensOverLimit
+        );
+        check_limit!(
+            r.current_hour.value().as_i64(),
+            self.data.token_limits.tokens_per_hour,
+            HourTokensOverLimit
+        );
+        check_limit!(
+            r.current_minute.value().as_i64(),
+            self.data.token_limits.tokens_per_minute,
+            MinuteTokensOverLimit
+        );
+
+        Ok(())
+    }
+}
+// endregion: --- Virtual Key Deployment Node
+
 // region:    --- Deployment Node
 // Simplified version of Deployment for graph representation
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct DeploymentNode {
     pub(crate) data: Deployment,
-    pub(crate) association_id: VirtualKeyDeploymentId,
     pub(crate) usage_stats: DeploymentUsageStats,
 }
 
@@ -437,17 +518,29 @@ impl DataAccess {
                 usage_stats: virtual_key_stats,
             };
 
-            // Part 2: Deployment Node
+            // Part 2: Virtual Key Deployment Node
+            let virtual_key_deployment_stats = self
+                .load_virtual_key_deployment_usage_and_set_cache(
+                    &graph_data.virtual_key_deployment,
+                    &stats_map,
+                    &ts,
+                )
+                .await?;
+            let virtual_key_deployment_node = VirtualKeyDeploymentNode {
+                data: graph_data.virtual_key_deployment.clone(),
+                usage_stats: virtual_key_deployment_stats,
+            };
+
+            // Part 3: Deployment Node
             let deployment_stats = self
                 .load_deployment_usage_and_set_cache(&graph_data.deployment.id, &stats_map, &ts)
                 .await?;
             let deployment_node = DeploymentNode {
                 data: graph_data.deployment.clone(),
-                association_id: graph_data.virtual_key_deployment.id.clone(),
                 usage_stats: deployment_stats,
             };
 
-            // Part 3: Project Node
+            // Part 4: Project Node
             let project_stats = self
                 .load_project_usage_and_set_cache(&graph_data.project.id, &stats_map, &ts)
                 .await?;
@@ -456,7 +549,7 @@ impl DataAccess {
                 usage_stats: project_stats,
             };
 
-            // Part 4: Connection Nodes
+            // Part 5: Connection Nodes
             let connection_stats = self
                 .load_connection_usage_and_set_cache(&graph_data.connection.id, &stats_map, &ts)
                 .await?;
@@ -467,6 +560,7 @@ impl DataAccess {
 
             Ok::<Graph, DataAccessError>(Graph {
                 virtual_key: virtual_key_node,
+                virtual_key_deployment: virtual_key_deployment_node,
                 deployment: deployment_node,
                 project: project_node,
                 connection: connection_node,

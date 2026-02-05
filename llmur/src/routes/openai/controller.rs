@@ -199,6 +199,7 @@ where
     I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
 {
     data.graph.virtual_key.validate_limits()?;
+    data.graph.virtual_key_deployment.validate_limits()?;
     data.graph.project.validate_limits()?;
     data.graph.deployment.validate_limits()?;
 

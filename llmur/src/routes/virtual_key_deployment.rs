@@ -1,4 +1,5 @@
 use crate::data::deployment::DeploymentId;
+use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::virtual_key::VirtualKeyId;
 use crate::data::virtual_key_deployment::{VirtualKeyDeployment, VirtualKeyDeploymentId};
 use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
@@ -58,6 +59,9 @@ pub(crate) async fn create_virtual_key_deployment(
         .create_virtual_key_deployment(
             &payload.virtual_key_id,
             &payload.deployment_id,
+            &payload.budget_limits,
+            &payload.request_limits,
+            &payload.token_limits,
             &state.metrics,
         )
         .await?;
@@ -202,6 +206,9 @@ pub(crate) async fn search_virtual_key_deployments(
 pub(crate) struct CreateVirtualKeyDeploymentPayload {
     pub(crate) virtual_key_id: VirtualKeyId,
     pub(crate) deployment_id: DeploymentId,
+    pub(crate) budget_limits: Option<BudgetLimits>,
+    pub(crate) request_limits: Option<RequestLimits>,
+    pub(crate) token_limits: Option<TokenLimits>,
 }
 
 #[derive(Deserialize)]
@@ -215,6 +222,9 @@ pub(crate) struct GetVirtualKeyDeploymentResult {
     pub(crate) id: VirtualKeyDeploymentId,
     pub(crate) virtual_key_id: VirtualKeyId,
     pub(crate) deployment_id: DeploymentId,
+    pub(crate) budget_limits: BudgetLimits,
+    pub(crate) request_limits: RequestLimits,
+    pub(crate) token_limits: TokenLimits,
 }
 
 #[derive(Serialize)]
@@ -235,6 +245,9 @@ impl From<VirtualKeyDeployment> for GetVirtualKeyDeploymentResult {
             id: value.id,
             virtual_key_id: value.virtual_key_id,
             deployment_id: value.deployment_id,
+            budget_limits: value.budget_limits,
+            request_limits: value.request_limits,
+            token_limits: value.token_limits,
         }
     }
 }

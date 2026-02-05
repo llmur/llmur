@@ -345,6 +345,38 @@ class TestChatCompletions:
         assert last_response is not None
         assert last_response.status_code == 429
 
+    def test_chat_completions_virtual_key_deployment_request_limit(
+        self,
+        api_client,
+        azure_chat_virtual_key_deployment_rate_limited_setup,
+    ):
+        """Test virtual key deployment request limit returns 429 after limit is reached"""
+        payload = {
+            "model": azure_chat_virtual_key_deployment_rate_limited_setup["deployment_name"],
+            "messages": [{"role": "user", "content": "Hello"}],
+        }
+
+        first = api_client.create_chat_completion(
+            payload,
+            azure_chat_virtual_key_deployment_rate_limited_setup["virtual_key"],
+        )
+        assert first.status_code == 200
+
+        last_response = None
+        for _ in range(6):
+            resp = api_client.create_chat_completion(
+                payload,
+                azure_chat_virtual_key_deployment_rate_limited_setup["virtual_key"],
+            )
+            last_response = resp
+            if resp.status_code == 429:
+                break
+            assert resp.status_code == 200
+            time.sleep(0.3)
+
+        assert last_response is not None
+        assert last_response.status_code == 429
+
     def test_chat_completions_invalid_payload(self, api_client, azure_chat_provider_setup):
         """Test invalid payload returns bad request"""
         response = api_client.create_chat_completion({}, azure_chat_provider_setup["virtual_key"])

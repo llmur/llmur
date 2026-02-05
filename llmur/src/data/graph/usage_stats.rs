@@ -62,6 +62,7 @@ impl Period {
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Resource {
     VirtualKey,
+    VirtualKeyDeployment,
     Deployment,
     Connection,
     Project,
@@ -71,6 +72,7 @@ impl Resource {
     fn as_str(&self) -> &'static str {
         match self {
             Resource::VirtualKey => "virtualkey",
+            Resource::VirtualKeyDeployment => "virtualkeydeployment",
             Resource::Deployment => "deployment",
             Resource::Connection => "connection",
             Resource::Project => "project",
@@ -638,6 +640,10 @@ macro_rules! impl_resource_usage_stats {
 }
 
 impl_resource_usage_stats!(VirtualKeyUsageStats, Resource::VirtualKey);
+impl_resource_usage_stats!(
+    VirtualKeyDeploymentUsageStats,
+    Resource::VirtualKeyDeployment
+);
 impl_resource_usage_stats!(DeploymentUsageStats, Resource::Deployment);
 impl_resource_usage_stats!(ProjectUsageStats, Resource::Project);
 impl_resource_usage_stats!(ConnectionUsageStats, Resource::Connection);
@@ -645,11 +651,16 @@ impl_resource_usage_stats!(ConnectionUsageStats, Resource::Connection);
 // ---------- Graph Model Usage Stats Keys Generation ----------
 impl GraphData {
     pub fn generate_all_usage_stats_keys(&self, now_utc: &DateTime<Utc>) -> Vec<String> {
-        let mut keys = Vec::with_capacity(48);
+        let mut keys = Vec::with_capacity(60);
 
         keys.extend(MetricsUsageStats::generate_all_keys(
             Resource::VirtualKey,
             &self.virtual_key.id,
+            now_utc,
+        ));
+        keys.extend(MetricsUsageStats::generate_all_keys(
+            Resource::VirtualKeyDeployment,
+            &self.virtual_key_deployment.id,
             now_utc,
         ));
         keys.extend(MetricsUsageStats::generate_all_keys(

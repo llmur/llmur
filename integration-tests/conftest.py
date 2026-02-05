@@ -201,7 +201,10 @@ def created_virtual_key_deployment_map(api_client, created_virtual_key, created_
     """Create a Virtual Key <-> Deployment map for testing and clean up after"""
     payload = {
         'virtual_key_id': created_virtual_key,
-        'deployment_id': created_deployment
+        'deployment_id': created_deployment,
+        'budget_limits': {"cost_per_day": 1.5},
+        'request_limits': {"requests_per_day": 5},
+        'token_limits': {"tokens_per_day": 10},
     }
 
     vkd_map = api_client.create_virtual_key_deployment_map(payload)
@@ -528,6 +531,70 @@ def azure_chat_rate_limited_setup(api_client):
     vkd_resp = api_client.create_virtual_key_deployment_map({
         "virtual_key_id": key_payload["id"],
         "deployment_id": deployment_id,
+    })
+    assert vkd_resp.status_code == 200
+    vkd_id = vkd_resp.json()["id"]
+
+    yield {
+        "project_id": project_id,
+        "deployment_id": deployment_id,
+        "deployment_name": deployment_name,
+        "connection_id": connection_id,
+        "virtual_key_id": key_payload["id"],
+        "virtual_key": key_payload["key"],
+        "virtual_key_deployment_id": vkd_id,
+    }
+
+    api_client.delete_virtual_key_deployment_map(vkd_id)
+    api_client.delete_virtual_key(key_payload["id"])
+    api_client.delete_deployment(deployment_id)
+    api_client.delete_connection(connection_id)
+    api_client.delete_project(project_id)
+
+
+@pytest.fixture
+def azure_chat_virtual_key_deployment_rate_limited_setup(api_client):
+    if not _provider_ready([
+        Config.AZURE_OPENAI_API_KEY,
+        Config.AZURE_OPENAI_ENDPOINT,
+        Config.AZURE_OPENAI_CHAT_COMPLETIONS_DEPLOYMENT,
+    ]):
+        pytest.skip("Azure OpenAI chat config not fully set")
+
+    project_resp = api_client.create_project({
+        "name": f"vkd-rl-project-{uuid.uuid4().hex[:8]}",
+    })
+    assert project_resp.status_code == 200
+    project_id = project_resp.json()["id"]
+
+    connection_resp = api_client.create_connection({
+        "provider": "azure/openai",
+        "deployment_name": Config.AZURE_OPENAI_CHAT_COMPLETIONS_DEPLOYMENT,
+        "api_endpoint": Config.AZURE_OPENAI_ENDPOINT,
+        "api_key": Config.AZURE_OPENAI_API_KEY,
+        "api_version": Config.AZURE_OPENAI_API_VERSION,
+    })
+    assert connection_resp.status_code == 200
+    connection_id = connection_resp.json()["id"]
+    deployment_name = f"vkd-rl-deployment-{uuid.uuid4().hex[:8]}"
+    deployment_resp = api_client.create_deployment({
+        "name": deployment_name,
+        "access": "public",
+        "connection_id": connection_id,
+    })
+    assert deployment_resp.status_code == 200
+    deployment_id = deployment_resp.json()["id"]
+
+    key_resp = api_client.create_virtual_key({
+        "project_id": project_id,
+    })
+    assert key_resp.status_code == 200
+    key_payload = key_resp.json()
+
+    vkd_resp = api_client.create_virtual_key_deployment_map({
+        "virtual_key_id": key_payload["id"],
+        "deployment_id": deployment_id,
+        "request_limits": {"requests_per_day": 1},
     })
     assert vkd_resp.status_code == 200
     vkd_id = vkd_resp.json()["id"]
