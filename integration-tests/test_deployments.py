@@ -1,15 +1,18 @@
 import pytest
 
 class TestDeployments:
-    def test_create_deployment_success(self, api_client, sample_deployment_data):
+    def test_create_deployment_success(self, api_client, sample_deployment_data, created_azure_openai_connection):
         """Test successful deployment creation"""
-        response = api_client.create_deployment(sample_deployment_data)
+        payload = dict(sample_deployment_data)
+        payload["connection_id"] = created_azure_openai_connection
+        response = api_client.create_deployment(payload)
 
         assert response.status_code == 200
         data = response.json()
         assert 'id' in data
-        assert data['name'] == sample_deployment_data['name']
-        assert data['access'] == sample_deployment_data['access']
+        assert data['name'] == payload['name']
+        assert data['access'] == payload['access']
+        assert data['connection_id'] == created_azure_openai_connection
 
         # Cleanup
         api_client.delete_deployment(data['id'])
@@ -23,6 +26,7 @@ class TestDeployments:
         assert data['id'] == created_deployment
         assert 'name' in data
         assert 'access' in data
+        assert 'connection_id' in data
 
     def test_get_deployment_via_session(self, api_client, created_deployment, created_user_with_password):
         """Test deployment retrieval via session token"""
@@ -45,10 +49,12 @@ class TestDeployments:
 
         assert response.status_code == 404
 
-    def test_delete_deployment_success(self, api_client, sample_deployment_data):
+    def test_delete_deployment_success(self, api_client, sample_deployment_data, created_azure_openai_connection):
         """Test successful deployment deletion"""
         # Create deployment first
-        create_response = api_client.create_deployment(sample_deployment_data)
+        payload = dict(sample_deployment_data)
+        payload["connection_id"] = created_azure_openai_connection
+        create_response = api_client.create_deployment(payload)
         assert create_response.status_code == 200
         deployment_id = create_response.json()['id']
 

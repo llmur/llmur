@@ -94,15 +94,6 @@ def sample_virtual_key_data():
     }
 
 @pytest.fixture
-def sample_connection_deployment_map_data():
-    """Sample connection <-> deployment map data for testing"""
-    return {
-        "connection_id": 1,
-        "deployment_id": 1,
-    }
-
-
-@pytest.fixture
 def sample_virtual_key_deployment_map_data():
     """Sample virtual_key <-> deployment map data for testing"""
     return {
@@ -174,9 +165,11 @@ def created_azure_openai_connection(api_client, sample_azure_openai_connection_d
 
 
 @pytest.fixture
-def created_deployment(api_client, sample_deployment_data):
+def created_deployment(api_client, sample_deployment_data, created_azure_openai_connection):
     """Create a deployment for testing and clean up after"""
-    response = api_client.create_deployment(sample_deployment_data)
+    payload = dict(sample_deployment_data)
+    payload["connection_id"] = created_azure_openai_connection
+    response = api_client.create_deployment(payload)
     assert response.status_code == 200
     deployment_id = response.json()['id']
 
@@ -184,23 +177,6 @@ def created_deployment(api_client, sample_deployment_data):
 
     # Cleanup
     api_client.delete_deployment(deployment_id)
-
-@pytest.fixture
-def created_connection_deployment_map(api_client, created_azure_openai_connection, created_deployment):
-    """Create a connection <-> deployment map for testing and clean up after"""
-    payload = {
-        'connection_id': created_azure_openai_connection,
-        'deployment_id': created_deployment
-    }
-
-    cd_map = api_client.create_connection_deployment_map(payload)
-    assert cd_map.status_code == 200
-    cd_map_id = cd_map.json()['id']
-
-    yield cd_map_id
-
-    # Cleanup
-    api_client.delete_connection_deployment_map(cd_map_id)
 
 
 
@@ -243,23 +219,17 @@ def _provider_ready(values):
 
 
 def _create_provider_setup(api_client, project_id, deployment_name, connection_payload):
-    deployment_resp = api_client.create_deployment({
-        "name": deployment_name,
-        "access": "public",
-    })
-    assert deployment_resp.status_code == 200
-    deployment_id = deployment_resp.json()['id']
-
     connection_resp = api_client.create_connection(connection_payload)
     assert connection_resp.status_code == 200
     connection_id = connection_resp.json()['id']
 
-    map_resp = api_client.create_connection_deployment_map({
+    deployment_resp = api_client.create_deployment({
+        "name": deployment_name,
+        "access": "public",
         "connection_id": connection_id,
-        "deployment_id": deployment_id,
     })
-    assert map_resp.status_code == 200
-    connection_deployment_id = map_resp.json()['id']
+    assert deployment_resp.status_code == 200
+    deployment_id = deployment_resp.json()['id']
 
     key_resp = api_client.create_virtual_key({
         "project_id": project_id,
@@ -280,7 +250,6 @@ def _create_provider_setup(api_client, project_id, deployment_name, connection_p
         "deployment_id": deployment_id,
         "deployment_name": deployment_name,
         "connection_id": connection_id,
-        "connection_deployment_id": connection_deployment_id,
         "virtual_key_id": virtual_key_id,
         "virtual_key": virtual_key,
         "virtual_key_deployment_id": virtual_key_deployment_id,
@@ -290,7 +259,6 @@ def _create_provider_setup(api_client, project_id, deployment_name, connection_p
 def _cleanup_provider_setup(api_client, setup):
     api_client.delete_virtual_key_deployment_map(setup["virtual_key_deployment_id"])
     api_client.delete_virtual_key(setup["virtual_key_id"])
-    api_client.delete_connection_deployment_map(setup["connection_deployment_id"])
     api_client.delete_deployment(setup["deployment_id"])
     api_client.delete_connection(setup["connection_id"])
 
@@ -531,15 +499,6 @@ def azure_chat_rate_limited_setup(api_client):
     assert project_resp.status_code == 200
     project_id = project_resp.json()["id"]
 
-    deployment_name = f"rl-deployment-{uuid.uuid4().hex[:8]}"
-    deployment_resp = api_client.create_deployment({
-        "name": deployment_name,
-        "access": "public",
-        "request_limits": {"requests_per_day": 1},
-    })
-    assert deployment_resp.status_code == 200
-    deployment_id = deployment_resp.json()["id"]
-
     connection_resp = api_client.create_connection({
         "provider": "azure/openai",
         "deployment_name": Config.AZURE_OPENAI_CHAT_COMPLETIONS_DEPLOYMENT,
@@ -549,13 +508,15 @@ def azure_chat_rate_limited_setup(api_client):
     })
     assert connection_resp.status_code == 200
     connection_id = connection_resp.json()["id"]
-
-    map_resp = api_client.create_connection_deployment_map({
+    deployment_name = f"rl-deployment-{uuid.uuid4().hex[:8]}"
+    deployment_resp = api_client.create_deployment({
+        "name": deployment_name,
+        "access": "public",
+        "request_limits": {"requests_per_day": 1},
         "connection_id": connection_id,
-        "deployment_id": deployment_id,
     })
-    assert map_resp.status_code == 200
-    connection_deployment_id = map_resp.json()["id"]
+    assert deployment_resp.status_code == 200
+    deployment_id = deployment_resp.json()["id"]
 
     key_resp = api_client.create_virtual_key({
         "project_id": project_id,
@@ -576,7 +537,6 @@ def azure_chat_rate_limited_setup(api_client):
         "deployment_id": deployment_id,
         "deployment_name": deployment_name,
         "connection_id": connection_id,
-        "connection_deployment_id": connection_deployment_id,
         "virtual_key_id": key_payload["id"],
         "virtual_key": key_payload["key"],
         "virtual_key_deployment_id": vkd_id,
@@ -584,7 +544,6 @@ def azure_chat_rate_limited_setup(api_client):
 
     api_client.delete_virtual_key_deployment_map(vkd_id)
     api_client.delete_virtual_key(key_payload["id"])
-    api_client.delete_connection_deployment_map(connection_deployment_id)
     api_client.delete_deployment(deployment_id)
     api_client.delete_connection(connection_id)
     api_client.delete_project(project_id)

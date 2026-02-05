@@ -1,6 +1,5 @@
 use crate::data::DataAccess;
 use crate::data::connection::Connection;
-use crate::data::connection_deployment::{ConnectionDeployment, ConnectionDeploymentId};
 use crate::data::deployment::Deployment;
 use crate::data::graph::local_store::{GraphData, GraphDataId};
 use crate::data::graph::usage_stats::{
@@ -14,7 +13,6 @@ use crate::errors::{
 };
 use crate::metrics::Metrics;
 use chrono::{DateTime, Utc};
-use futures::future::try_join_all;
 use log::error;
 use serde::Serialize;
 use std::sync::Arc;
@@ -31,7 +29,7 @@ pub(crate) struct Graph {
     pub(crate) virtual_key: VirtualKeyNode,
     pub(crate) deployment: DeploymentNode,
     pub(crate) project: ProjectNode,
-    pub(crate) connections: Vec<ConnectionNode>,
+    pub(crate) connection: ConnectionNode,
 }
 
 macro_rules! check_limit {
@@ -214,8 +212,6 @@ impl NodeLimitsChecker for DeploymentNode {
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct ConnectionNode {
     pub(crate) data: Connection,
-    pub(crate) association_id: ConnectionDeploymentId,
-    pub(crate) weight: u16,
     pub(crate) usage_stats: ConnectionUsageStats,
 }
 
@@ -461,30 +457,19 @@ impl DataAccess {
             };
 
             // Part 4: Connection Nodes
-            let connection_nodes = try_join_all(graph_data.connections.iter().map(|conn| async {
-                let conn_stats = self
-                    .load_connection_usage_and_set_cache(&conn.id, &stats_map, &ts)
-                    .await?;
-                let (association_id, weight) = graph_data
-                    .connection_deployments
-                    .iter()
-                    .find(|cd| &cd.connection_id == &conn.id)
-                    .map(|cd| (cd.id.clone(), cd.weight))
-                    .unwrap();
-                Ok::<_, DataAccessError>(ConnectionNode {
-                    data: conn.clone(),
-                    association_id,
-                    weight,
-                    usage_stats: conn_stats,
-                })
-            }))
-            .await?;
+            let connection_stats = self
+                .load_connection_usage_and_set_cache(&graph_data.connection.id, &stats_map, &ts)
+                .await?;
+            let connection_node = ConnectionNode {
+                data: graph_data.connection.clone(),
+                usage_stats: connection_stats,
+            };
 
             Ok::<Graph, DataAccessError>(Graph {
                 virtual_key: virtual_key_node,
                 deployment: deployment_node,
                 project: project_node,
-                connections: connection_nodes,
+                connection: connection_node,
             })
         }
         .instrument(stats_span)
@@ -568,40 +553,13 @@ impl DataAccess {
             .clone();
         println!("Loaded virtual key deployment");
 
-        let (connection_deployments, connections) = if deployment.connections.is_empty() {
-            (Vec::new(), Vec::new())
-        } else {
-            // Load connection deployments - If any None values are found it is an inconsistency and should error out
-            let connection_deployments = self
-                .get_connection_deployments(&deployment.connections, metrics)
-                .await?
-                .into_values()
-                .collect::<Option<Vec<ConnectionDeployment>>>()
-                .ok_or(GraphLoadError::InconsistentGraphDataError(
-                    InconsistentGraphDataError::InvalidConnectionDeployments,
-                ))?;
-            println!("Loaded connection deployments");
-
-            // Load connections - If any None values are found it is an inconsistency and should error out
-            let connections = self
-                .get_connections(
-                    &connection_deployments
-                        .iter()
-                        .map(|cd| cd.connection_id)
-                        .collect(),
-                    application_secret,
-                    metrics,
-                )
-                .await?
-                .into_values()
-                .collect::<Option<Vec<Connection>>>()
-                .ok_or(GraphLoadError::InconsistentGraphDataError(
-                    InconsistentGraphDataError::InvalidConnection,
-                ))?;
-            println!("Loaded connections");
-
-            (connection_deployments, connections)
-        };
+        let connection = self
+            .get_connection(&deployment.connection_id, application_secret, metrics)
+            .await?
+            .ok_or(GraphLoadError::InconsistentGraphDataError(
+                InconsistentGraphDataError::InvalidConnection,
+            ))?;
+        println!("Loaded connection");
 
         Ok(GraphData {
             id,
@@ -609,8 +567,7 @@ impl DataAccess {
             deployment,
             project,
             virtual_key_deployment,
-            connection_deployments,
-            connections,
+            connection,
         })
     }
 }

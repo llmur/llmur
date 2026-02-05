@@ -1,5 +1,4 @@
 use crate::data::connection::Connection;
-use crate::data::connection_deployment::ConnectionDeployment;
 use crate::data::deployment::Deployment;
 use crate::data::project::Project;
 use crate::data::virtual_key::{VirtualKey, VirtualKeyId};
@@ -41,8 +40,7 @@ pub struct GraphData {
     pub(crate) deployment: Deployment,
     pub(crate) project: Project,
     pub(crate) virtual_key_deployment: VirtualKeyDeployment,
-    pub(crate) connection_deployments: Vec<ConnectionDeployment>,
-    pub(crate) connections: Vec<Connection>,
+    pub(crate) connection: Connection,
 }
 
 impl_with_id_parameter_for_struct!(GraphData, GraphDataId);

@@ -148,16 +148,6 @@ class APIClient:
         params = {"project_id": project_id} if project_id else None
         return self._make_request('GET', '/admin/virtual-key', params=params)
 
-    # Connection <-> Deployment maps endpoint
-    def get_connection_deployment_map(self, map_id: int) -> requests.Response:
-        return self._make_request('GET', f'/admin/connection-deployment/{map_id}')
-
-    def create_connection_deployment_map(self, map_data: Dict[str, Any]) -> requests.Response:
-        return self._make_request('POST', '/admin/connection-deployment', map_data)
-
-    def delete_connection_deployment_map(self, map_id: int) -> requests.Response:
-        return self._make_request('DELETE', f'/admin/connection-deployment/{map_id}')
-
     # Virtual Key <-> Deployment maps endpoint
     def get_virtual_key_deployment_map(self, map_id: int) -> requests.Response:
         return self._make_request('GET', f'/admin/virtual-key-deployment/{map_id}')

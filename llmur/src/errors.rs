@@ -58,16 +58,8 @@ pub enum ProxyErrorMessage {
 pub enum GraphError {
     #[error(transparent)]
     GraphLoadError(#[from] GraphLoadError),
-    #[error("No connection available for deployment")]
-    NoConnectionAvailable(MissingConnectionReason),
     #[error(transparent)]
     UsageExceededError(#[from] UsageExceededError),
-}
-
-#[derive(Debug)]
-pub enum MissingConnectionReason {
-    NoUsageAvailable,
-    DeploymentConnectionsNotSetup,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -88,8 +80,6 @@ pub enum GraphLoadError {
 pub enum InconsistentGraphDataError {
     #[error("Invalid Project")]
     InvalidProject,
-    #[error("Invalid Connection - Deployment association")]
-    InvalidConnectionDeployments,
     #[error("Connection")]
     InvalidConnection,
 }
@@ -329,11 +319,6 @@ impl IntoResponse for LLMurError {
                         (axum::http::StatusCode::FORBIDDEN, "Not allowed").into_response()
                     }
                 },
-                GraphError::NoConnectionAvailable(_) => (
-                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                    "No connection available",
-                )
-                    .into_response(),
                 GraphError::UsageExceededError(_) => (
                     axum::http::StatusCode::TOO_MANY_REQUESTS,
                     "Too many requests",

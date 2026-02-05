@@ -645,7 +645,7 @@ impl_resource_usage_stats!(ConnectionUsageStats, Resource::Connection);
 // ---------- Graph Model Usage Stats Keys Generation ----------
 impl GraphData {
     pub fn generate_all_usage_stats_keys(&self, now_utc: &DateTime<Utc>) -> Vec<String> {
-        let mut keys = Vec::with_capacity(self.connections.len() * 12 + 36);
+        let mut keys = Vec::with_capacity(48);
 
         keys.extend(MetricsUsageStats::generate_all_keys(
             Resource::VirtualKey,
@@ -663,7 +663,7 @@ impl GraphData {
             now_utc,
         ));
 
-        let connection_ids: Vec<_> = self.connections.iter().map(|c| &c.id).collect();
+        let connection_ids = [&self.connection.id];
         keys.extend(MetricsUsageStats::generate_keys_for_ids(
             Resource::Connection,
             &connection_ids,

@@ -17,7 +17,6 @@ use std::sync::Arc;
 
 mod chat_completions;
 mod connection;
-mod connection_deployment;
 mod deployment;
 mod embeddings;
 mod membership;
@@ -46,10 +45,6 @@ pub(crate) fn admin_routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .nest("/connection", connection::routes(state.clone()))
         .nest("/deployment", deployment::routes(state.clone()))
         .nest("/virtual-key", virtual_key::routes(state.clone()))
-        .nest(
-            "/connection-deployment",
-            connection_deployment::routes(state.clone()),
-        )
         .nest(
             "/virtual-key-deployment",
             virtual_key_deployment::routes(state.clone()),
@@ -127,10 +122,5 @@ pub(crate) async fn get_graph(
         .await
         .map_err(|e| e.into());
     let graph = graph?;
-    if graph.connections.is_empty() {
-        return Err(GraphError::NoConnectionAvailable(
-            crate::errors::MissingConnectionReason::DeploymentConnectionsNotSetup,
-        ))?;
-    }
     Ok(Json(graph))
 }

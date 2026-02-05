@@ -1,5 +1,5 @@
 use crate::LLMurState;
-use crate::errors::{GraphError, LLMurError, MissingConnectionReason, ProxyError};
+use crate::errors::{GraphError, LLMurError, ProxyError};
 use crate::providers::{ExposesDeployment, ExposesUsage};
 use crate::routes::openai::logging::{RequestLogContext, RequestLogSenders, send_request_log};
 use crate::routes::openai::request::OpenAiRequestData;
@@ -30,18 +30,9 @@ where
     println!("Executing openai_route_controller_mw");
     let (request_id, request_data) = load_request_details::<I>(request, state.clone()).await?;
 
-    if request_data.graph.connections.is_empty() {
-        Err(GraphError::NoConnectionAvailable(
-            MissingConnectionReason::DeploymentConnectionsNotSetup,
-        ))?;
-    }
-
     validate_usage(Arc::clone(&request_data))?;
 
-    let connection = state.data.get_next_connection(&request_data.graph)?;
-    state
-        .data
-        .increment_opened_connection_count(&connection.data.id);
+    let connection = &request_data.graph.connection;
 
     // Create a child span for this attempt
     let primary_attempt_span = tracing::debug_span!(
@@ -80,8 +71,6 @@ where
         });
 
         let response = next.clone().run(attempt_req).await;
-        state.data.decrement_opened_connection_count(&connection.data.id);
-
         let result = response
             .extensions()
             .get::<Arc<ProxyResponse<O>>>()

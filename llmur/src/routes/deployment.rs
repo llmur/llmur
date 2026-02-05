@@ -1,6 +1,6 @@
+use crate::data::connection::ConnectionId;
 use crate::data::deployment::{Deployment, DeploymentAccess, DeploymentId};
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
-use crate::data::load_balancer::LoadBalancingStrategy;
 use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
 use crate::routes::StatusResponse;
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
@@ -32,14 +32,22 @@ pub(crate) async fn create_deployment(
         return Err(AuthorizationError::AccessDenied)?;
     }
 
+    let _connection = state
+        .data
+        .get_connection(
+            &payload.connection_id,
+            &state.application_secret,
+            &state.metrics,
+        )
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
     let result = state
         .data
         .create_deployment(
             &payload.name,
             &payload.access.unwrap_or(DeploymentAccess::Private),
-            &payload
-                .strategy
-                .unwrap_or(LoadBalancingStrategy::RoundRobin),
+            &payload.connection_id,
             &payload.budget_limits,
             &payload.request_limits,
             &payload.token_limits,
@@ -114,7 +122,7 @@ pub(crate) async fn delete_deployment(
 pub(crate) struct CreateDeploymentPayload {
     pub(crate) name: String,
     pub(crate) access: Option<DeploymentAccess>,
-    pub(crate) strategy: Option<LoadBalancingStrategy>,
+    pub(crate) connection_id: ConnectionId,
 
     pub(crate) budget_limits: Option<BudgetLimits>,
     pub(crate) request_limits: Option<RequestLimits>,
@@ -126,6 +134,7 @@ pub(crate) struct GetDeploymentResult {
     pub(crate) id: DeploymentId,
     pub(crate) name: String,
     pub(crate) access: DeploymentAccess,
+    pub(crate) connection_id: ConnectionId,
 }
 
 #[derive(Serialize)]
@@ -142,6 +151,7 @@ impl From<Deployment> for GetDeploymentResult {
             id: value.id,
             name: value.name,
             access: value.access,
+            connection_id: value.connection_id,
         }
     }
 }

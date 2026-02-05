@@ -43,12 +43,6 @@ pub fn router(state: Arc<LLMurState>) -> Router {
 #[tracing::instrument(name = "handler.health", skip(state))]
 async fn health_route(State(state): State<Arc<LLMurState>>) -> Result<Json<Value>, LLMurError> {
     let poisoned = state.data.cache.local.session_tokens.is_poisoned()
-        || state
-            .data
-            .cache
-            .local
-            .opened_connections_counter
-            .is_poisoned()
         || state.data.cache.local.graphs.is_poisoned()
         || state.data.cache.local.session_tokens.is_poisoned();
 

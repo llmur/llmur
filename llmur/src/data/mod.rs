@@ -1,5 +1,3 @@
-use crate::data::connection::ConnectionId;
-use crate::data::deployment::DeploymentId;
 use crate::data::graph::local_store::{GraphData, GraphDataId};
 use crate::data::request_log::RequestLogData;
 use crate::data::session_token::{SessionToken, SessionTokenId};
@@ -25,11 +23,9 @@ pub(crate) mod password;
 pub(crate) mod utils;
 
 pub mod connection;
-pub mod connection_deployment;
 pub mod deployment;
 pub mod graph;
 pub mod limits;
-pub mod load_balancer;
 pub mod membership;
 pub mod project;
 pub mod project_invite_code;
@@ -404,12 +400,6 @@ impl<T> LocallyStoredValue<T> {
 pub(crate) struct LocalStore {
     pub(crate) session_tokens: Mutex<BTreeMap<SessionTokenId, LocallyStoredValue<SessionToken>>>,
     pub(crate) graphs: Mutex<BTreeMap<GraphDataId, LocallyStoredValue<GraphData>>>,
-
-    // Tracks current connections per ConnectionId
-    pub(crate) opened_connections_counter: Mutex<BTreeMap<ConnectionId, LocallyStoredValue<u32>>>,
-
-    // Tracks round-robin index per deployment
-    pub(crate) deployment_rr_index: Mutex<BTreeMap<DeploymentId, LocallyStoredValue<usize>>>,
 }
 
 impl LocalStore {
@@ -417,8 +407,6 @@ impl LocalStore {
         LocalStore {
             session_tokens: Default::default(),
             graphs: Default::default(),
-            opened_connections_counter: Default::default(),
-            deployment_rr_index: Default::default(),
         }
     }
 }
