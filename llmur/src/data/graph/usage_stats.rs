@@ -62,6 +62,7 @@ impl Period {
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Resource {
     VirtualKey,
+    VirtualKeyDeployment,
     Deployment,
     Connection,
     Project,
@@ -71,6 +72,7 @@ impl Resource {
     fn as_str(&self) -> &'static str {
         match self {
             Resource::VirtualKey => "virtualkey",
+            Resource::VirtualKeyDeployment => "virtualkeydeployment",
             Resource::Deployment => "deployment",
             Resource::Connection => "connection",
             Resource::Project => "project",
@@ -83,7 +85,7 @@ impl Resource {
 pub(crate) enum StatValue {
     Int(i64),
     Float(f64),
-    NotSet
+    NotSet,
 }
 
 impl Default for StatValue {
@@ -147,19 +149,16 @@ impl UsageStat {
         match data
             .get(&key)
             .and_then(|opt| opt.as_ref())
-            .and_then(|s| s.parse::<i64>().ok()) {
-            None => {
-                UsageStat {
-                    key,
-                    value: StatValue::NotSet,
-                }
-            }
-            Some(value) => {
-                UsageStat {
-                    key,
-                    value: StatValue::Int(value),
-                }
-            }
+            .and_then(|s| s.parse::<i64>().ok())
+        {
+            None => UsageStat {
+                key,
+                value: StatValue::NotSet,
+            },
+            Some(value) => UsageStat {
+                key,
+                value: StatValue::Int(value),
+            },
         }
     }
 
@@ -175,22 +174,19 @@ impl UsageStat {
         match data
             .get(&key)
             .and_then(|opt| opt.as_ref())
-            .and_then(|s| s.parse::<f64>().ok()) {
-            None => {
-                UsageStat {
-                    key,
-                    value: StatValue::NotSet,
-                }
-            }
-            Some(value) => {
-                UsageStat {
-                    key,
-                    value: StatValue::Float(value),
-                }
-            }
+            .and_then(|s| s.parse::<f64>().ok())
+        {
+            None => UsageStat {
+                key,
+                value: StatValue::NotSet,
+            },
+            Some(value) => UsageStat {
+                key,
+                value: StatValue::Float(value),
+            },
         }
     }
-    
+
     pub fn value(&self) -> &StatValue {
         &self.value
     }
@@ -198,11 +194,11 @@ impl UsageStat {
     pub fn into_parts(self) -> (String, StatValue) {
         (self.key, self.value)
     }
-    
+
     pub fn is_value_missing(&self) -> bool {
         match &self.value {
             StatValue::NotSet => true,
-            _ => false
+            _ => false,
         }
     }
 }
@@ -218,10 +214,10 @@ pub(crate) struct PeriodStats {
 
 impl PeriodStats {
     fn has_value_missing(&self) -> bool {
-        self.current_minute.is_value_missing() ||   
-            self.current_hour.is_value_missing() ||
-            self.current_day.is_value_missing() ||
-            self.current_month.is_value_missing()
+        self.current_minute.is_value_missing()
+            || self.current_hour.is_value_missing()
+            || self.current_day.is_value_missing()
+            || self.current_month.is_value_missing()
     }
     fn extract_i64(
         resource: Resource,
@@ -231,10 +227,38 @@ impl PeriodStats {
         data: &BTreeMap<String, Option<String>>,
     ) -> Self {
         PeriodStats {
-            current_minute: UsageStat::extract_i64(resource, id, metric, Period::CurrentMinute, now_utc, data),
-            current_hour: UsageStat::extract_i64(resource, id, metric, Period::CurrentHour, now_utc, data),
-            current_day: UsageStat::extract_i64(resource, id, metric, Period::CurrentDay, now_utc, data),
-            current_month: UsageStat::extract_i64(resource, id, metric, Period::CurrentMonth, now_utc, data),
+            current_minute: UsageStat::extract_i64(
+                resource,
+                id,
+                metric,
+                Period::CurrentMinute,
+                now_utc,
+                data,
+            ),
+            current_hour: UsageStat::extract_i64(
+                resource,
+                id,
+                metric,
+                Period::CurrentHour,
+                now_utc,
+                data,
+            ),
+            current_day: UsageStat::extract_i64(
+                resource,
+                id,
+                metric,
+                Period::CurrentDay,
+                now_utc,
+                data,
+            ),
+            current_month: UsageStat::extract_i64(
+                resource,
+                id,
+                metric,
+                Period::CurrentMonth,
+                now_utc,
+                data,
+            ),
         }
     }
 
@@ -246,10 +270,38 @@ impl PeriodStats {
         data: &BTreeMap<String, Option<String>>,
     ) -> Self {
         PeriodStats {
-            current_minute: UsageStat::extract_f64(resource, id, metric, Period::CurrentMinute, now_utc, data),
-            current_hour: UsageStat::extract_f64(resource, id, metric, Period::CurrentHour, now_utc, data),
-            current_day: UsageStat::extract_f64(resource, id, metric, Period::CurrentDay, now_utc, data),
-            current_month: UsageStat::extract_f64(resource, id, metric, Period::CurrentMonth, now_utc, data),
+            current_minute: UsageStat::extract_f64(
+                resource,
+                id,
+                metric,
+                Period::CurrentMinute,
+                now_utc,
+                data,
+            ),
+            current_hour: UsageStat::extract_f64(
+                resource,
+                id,
+                metric,
+                Period::CurrentHour,
+                now_utc,
+                data,
+            ),
+            current_day: UsageStat::extract_f64(
+                resource,
+                id,
+                metric,
+                Period::CurrentDay,
+                now_utc,
+                data,
+            ),
+            current_month: UsageStat::extract_f64(
+                resource,
+                id,
+                metric,
+                Period::CurrentMonth,
+                now_utc,
+                data,
+            ),
         }
     }
 
@@ -264,14 +316,16 @@ impl PeriodStats {
             .map(|period| UsageStat::generate_key(resource, id, metric, *period, now_utc))
             .collect()
     }
-    
+
     fn into_usage_stat_map(self) -> BTreeMap<String, StatValue> {
         [
             self.current_minute.into_parts(),
             self.current_hour.into_parts(),
             self.current_day.into_parts(),
-            self.current_month.into_parts()
-        ].into_iter().collect()
+            self.current_month.into_parts(),
+        ]
+        .into_iter()
+        .collect()
     }
 }
 
@@ -285,18 +339,20 @@ pub(crate) struct MetricsUsageStats {
 
 impl MetricsUsageStats {
     pub(crate) fn into_usage_stat_map(self) -> BTreeMap<String, StatValue> {
-        self.requests.into_usage_stat_map().into_iter()
+        self.requests
+            .into_usage_stat_map()
+            .into_iter()
             .chain(self.budget.into_usage_stat_map().into_iter())
             .chain(self.tokens.into_usage_stat_map().into_iter())
             .collect()
     }
-    
+
     pub fn has_value_missing(&self) -> bool {
-        self.budget.has_value_missing() ||
-            self.tokens.has_value_missing() ||
-            self.requests.has_value_missing()
+        self.budget.has_value_missing()
+            || self.tokens.has_value_missing()
+            || self.requests.has_value_missing()
     }
-    
+
     pub fn extract_from_map(
         resource: Resource,
         id: &impl std::fmt::Display,
@@ -316,9 +372,24 @@ impl MetricsUsageStats {
         now_utc: &DateTime<Utc>,
     ) -> Vec<String> {
         let mut keys = Vec::with_capacity(12);
-        keys.extend(PeriodStats::generate_keys(resource, id, Metric::Requests, now_utc));
-        keys.extend(PeriodStats::generate_keys(resource, id, Metric::Budget, now_utc));
-        keys.extend(PeriodStats::generate_keys(resource, id, Metric::Tokens, now_utc));
+        keys.extend(PeriodStats::generate_keys(
+            resource,
+            id,
+            Metric::Requests,
+            now_utc,
+        ));
+        keys.extend(PeriodStats::generate_keys(
+            resource,
+            id,
+            Metric::Budget,
+            now_utc,
+        ));
+        keys.extend(PeriodStats::generate_keys(
+            resource,
+            id,
+            Metric::Tokens,
+            now_utc,
+        ));
         keys
     }
 
@@ -381,13 +452,15 @@ macro_rules! impl_resource_usage_stats {
             pub fn has_value_missing(&self) -> bool {
                 self.0.has_value_missing()
             }
-            
+
             pub fn extract_from_map(
                 id: &impl std::fmt::Display,
                 now_utc: &DateTime<Utc>,
                 data: &BTreeMap<String, Option<String>>,
             ) -> Self {
-                $name(MetricsUsageStats::extract_from_map($resource, id, now_utc, data))
+                $name(MetricsUsageStats::extract_from_map(
+                    $resource, id, now_utc, data,
+                ))
             }
 
             pub fn generate_request_keys_with_values(
@@ -395,7 +468,9 @@ macro_rules! impl_resource_usage_stats {
                 now_utc: &DateTime<Utc>,
                 requests: i64,
             ) -> BTreeMap<String, i64> {
-                MetricsUsageStats::generate_request_keys_with_values($resource, id, now_utc, requests)
+                MetricsUsageStats::generate_request_keys_with_values(
+                    $resource, id, now_utc, requests,
+                )
             }
 
             pub fn generate_budget_keys_with_values(
@@ -425,7 +500,7 @@ macro_rules! impl_resource_usage_stats {
             pub fn tokens(&self) -> &PeriodStats {
                 &self.0.tokens
             }
-            
+
             pub fn from_db_record(
                 id: &impl std::fmt::Display,
                 now_utc: &DateTime<Utc>,
@@ -434,56 +509,128 @@ macro_rules! impl_resource_usage_stats {
                 $name(MetricsUsageStats {
                     requests: PeriodStats {
                         current_minute: UsageStat {
-                            key: UsageStat::generate_key($resource, id, Metric::Requests, Period::CurrentMinute, now_utc),
-                            value: StatValue::Int(value.current_minute_requests)
+                            key: UsageStat::generate_key(
+                                $resource,
+                                id,
+                                Metric::Requests,
+                                Period::CurrentMinute,
+                                now_utc,
+                            ),
+                            value: StatValue::Int(value.current_minute_requests),
                         },
                         current_hour: UsageStat {
-                            key: UsageStat::generate_key($resource, id, Metric::Requests, Period::CurrentHour, now_utc),
-                            value: StatValue::Int(value.current_hour_requests)
+                            key: UsageStat::generate_key(
+                                $resource,
+                                id,
+                                Metric::Requests,
+                                Period::CurrentHour,
+                                now_utc,
+                            ),
+                            value: StatValue::Int(value.current_hour_requests),
                         },
                         current_day: UsageStat {
-                            key: UsageStat::generate_key($resource, id, Metric::Requests, Period::CurrentDay, now_utc),
-                            value: StatValue::Int(value.current_day_requests)
+                            key: UsageStat::generate_key(
+                                $resource,
+                                id,
+                                Metric::Requests,
+                                Period::CurrentDay,
+                                now_utc,
+                            ),
+                            value: StatValue::Int(value.current_day_requests),
                         },
                         current_month: UsageStat {
-                            key: UsageStat::generate_key($resource, id, Metric::Requests, Period::CurrentMonth, now_utc),
-                            value: StatValue::Int(value.current_month_requests)
+                            key: UsageStat::generate_key(
+                                $resource,
+                                id,
+                                Metric::Requests,
+                                Period::CurrentMonth,
+                                now_utc,
+                            ),
+                            value: StatValue::Int(value.current_month_requests),
                         },
                     },
                     budget: PeriodStats {
                         current_minute: UsageStat {
-                            key: UsageStat::generate_key($resource, id, Metric::Budget, Period::CurrentMinute, now_utc),
-                            value: StatValue::Float(value.current_minute_cost)
+                            key: UsageStat::generate_key(
+                                $resource,
+                                id,
+                                Metric::Budget,
+                                Period::CurrentMinute,
+                                now_utc,
+                            ),
+                            value: StatValue::Float(value.current_minute_cost),
                         },
                         current_hour: UsageStat {
-                            key: UsageStat::generate_key($resource, id, Metric::Budget, Period::CurrentHour, now_utc),
-                            value: StatValue::Float(value.current_hour_cost)
+                            key: UsageStat::generate_key(
+                                $resource,
+                                id,
+                                Metric::Budget,
+                                Period::CurrentHour,
+                                now_utc,
+                            ),
+                            value: StatValue::Float(value.current_hour_cost),
                         },
                         current_day: UsageStat {
-                            key: UsageStat::generate_key($resource, id, Metric::Budget, Period::CurrentDay, now_utc),
-                            value: StatValue::Float(value.current_day_cost)
+                            key: UsageStat::generate_key(
+                                $resource,
+                                id,
+                                Metric::Budget,
+                                Period::CurrentDay,
+                                now_utc,
+                            ),
+                            value: StatValue::Float(value.current_day_cost),
                         },
                         current_month: UsageStat {
-                            key: UsageStat::generate_key($resource, id, Metric::Budget, Period::CurrentMonth, now_utc),
-                            value: StatValue::Float(value.current_month_cost)
+                            key: UsageStat::generate_key(
+                                $resource,
+                                id,
+                                Metric::Budget,
+                                Period::CurrentMonth,
+                                now_utc,
+                            ),
+                            value: StatValue::Float(value.current_month_cost),
                         },
                     },
                     tokens: PeriodStats {
                         current_minute: UsageStat {
-                            key: UsageStat::generate_key($resource, id, Metric::Tokens, Period::CurrentMinute, now_utc),
-                            value: StatValue::Int(value.current_minute_tokens)
+                            key: UsageStat::generate_key(
+                                $resource,
+                                id,
+                                Metric::Tokens,
+                                Period::CurrentMinute,
+                                now_utc,
+                            ),
+                            value: StatValue::Int(value.current_minute_tokens),
                         },
                         current_hour: UsageStat {
-                            key: UsageStat::generate_key($resource, id, Metric::Tokens, Period::CurrentHour, now_utc),
-                            value: StatValue::Int(value.current_hour_tokens)
+                            key: UsageStat::generate_key(
+                                $resource,
+                                id,
+                                Metric::Tokens,
+                                Period::CurrentHour,
+                                now_utc,
+                            ),
+                            value: StatValue::Int(value.current_hour_tokens),
                         },
                         current_day: UsageStat {
-                            key: UsageStat::generate_key($resource, id, Metric::Tokens, Period::CurrentDay, now_utc),
-                            value: StatValue::Int(value.current_day_tokens)
+                            key: UsageStat::generate_key(
+                                $resource,
+                                id,
+                                Metric::Tokens,
+                                Period::CurrentDay,
+                                now_utc,
+                            ),
+                            value: StatValue::Int(value.current_day_tokens),
                         },
                         current_month: UsageStat {
-                            key: UsageStat::generate_key($resource, id, Metric::Tokens, Period::CurrentMonth, now_utc),
-                            value: StatValue::Int(value.current_month_tokens)
+                            key: UsageStat::generate_key(
+                                $resource,
+                                id,
+                                Metric::Tokens,
+                                Period::CurrentMonth,
+                                now_utc,
+                            ),
+                            value: StatValue::Int(value.current_month_tokens),
                         },
                     },
                 })
@@ -493,20 +640,27 @@ macro_rules! impl_resource_usage_stats {
 }
 
 impl_resource_usage_stats!(VirtualKeyUsageStats, Resource::VirtualKey);
+impl_resource_usage_stats!(
+    VirtualKeyDeploymentUsageStats,
+    Resource::VirtualKeyDeployment
+);
 impl_resource_usage_stats!(DeploymentUsageStats, Resource::Deployment);
 impl_resource_usage_stats!(ProjectUsageStats, Resource::Project);
 impl_resource_usage_stats!(ConnectionUsageStats, Resource::Connection);
 
-
-
 // ---------- Graph Model Usage Stats Keys Generation ----------
 impl GraphData {
     pub fn generate_all_usage_stats_keys(&self, now_utc: &DateTime<Utc>) -> Vec<String> {
-        let mut keys = Vec::with_capacity(self.connections.len() * 12 + 36);
+        let mut keys = Vec::with_capacity(60);
 
         keys.extend(MetricsUsageStats::generate_all_keys(
             Resource::VirtualKey,
             &self.virtual_key.id,
+            now_utc,
+        ));
+        keys.extend(MetricsUsageStats::generate_all_keys(
+            Resource::VirtualKeyDeployment,
+            &self.virtual_key_deployment.id,
             now_utc,
         ));
         keys.extend(MetricsUsageStats::generate_all_keys(
@@ -520,7 +674,7 @@ impl GraphData {
             now_utc,
         ));
 
-        let connection_ids: Vec<_> = self.connections.iter().map(|c| &c.id).collect();
+        let connection_ids = [&self.connection.id];
         keys.extend(MetricsUsageStats::generate_keys_for_ids(
             Resource::Connection,
             &connection_ids,

@@ -1,12 +1,11 @@
 CREATE TYPE deployment_access AS ENUM ('private', 'public');
-CREATE TYPE load_balancing_strategy AS ENUM ('round_robin', 'weighted_round_robin', 'least_connections', 'weighted_least_connections');
 
 CREATE TABLE IF NOT EXISTS deployments (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
 
     access deployment_access NOT NULL DEFAULT 'private',
-    strategy load_balancing_strategy NOT NULL DEFAULT 'round_robin',
+    connection_id UUID NOT NULL,
 
     -- Limits
     budget_limits JSONB,
@@ -14,7 +13,9 @@ CREATE TABLE IF NOT EXISTS deployments (
     token_limits JSONB,
 
     created_at TIMESTAMP NOT NULL DEFAULT (timezone('utc', now())),
-    updated_at TIMESTAMP NOT NULL DEFAULT (timezone('utc', now()))
+    updated_at TIMESTAMP NOT NULL DEFAULT (timezone('utc', now())),
+
+    FOREIGN KEY (connection_id) REFERENCES connections (id)
 );
 
 

@@ -1,15 +1,11 @@
-use crate::data::connection::ConnectionId;
-use crate::data::deployment::DeploymentId;
 use crate::data::graph::local_store::{GraphData, GraphDataId};
 use crate::data::request_log::RequestLogData;
 use crate::data::session_token::{SessionToken, SessionTokenId};
 use crate::data::utils::current_timestamp_ms;
 use crate::errors::{CacheAccessError, SetupError};
+use crate::metrics::Metrics;
 use chrono::{DateTime, Utc};
-use redis::{
-    AsyncCommands, ConnectionAddr, ConnectionInfo, ProtocolVersion,
-    RedisConnectionInfo,
-};
+use redis::{AsyncCommands, ConnectionAddr, ConnectionInfo, ProtocolVersion, RedisConnectionInfo};
 use reqwest::Client;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::PgPoolOptions;
@@ -20,7 +16,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::{select, sync::mpsc, time::interval};
-use crate::metrics::Metrics;
 
 pub(crate) mod commons;
 pub(crate) mod macros;
@@ -28,11 +23,9 @@ pub(crate) mod password;
 pub(crate) mod utils;
 
 pub mod connection;
-pub mod connection_deployment;
 pub mod deployment;
 pub mod graph;
 pub mod limits;
-pub mod load_balancer;
 pub mod membership;
 pub mod project;
 pub mod project_invite_code;
@@ -121,10 +114,7 @@ impl DataAccessBuilder {
     }
 
     // HTTP client
-    pub fn with_http_client(
-        mut self,
-        builder: reqwest::ClientBuilder,
-    ) -> Result<Self, SetupError> {
+    pub fn with_http_client(mut self, builder: reqwest::ClientBuilder) -> Result<Self, SetupError> {
         if self.http_client.is_some() {
             return Err(SetupError::HttpClientAlreadySet);
         }
@@ -134,7 +124,7 @@ impl DataAccessBuilder {
     }
 
     // Finalize
-    pub fn build(self, metrics: Option<Arc<Metrics>>,) -> Result<DataAccess, SetupError> {
+    pub fn build(self, metrics: Option<Arc<Metrics>>) -> Result<DataAccess, SetupError> {
         let database = self.database.ok_or(SetupError::MissingDatabase)?;
         let cache = Arc::new(self.cache.unwrap_or(Cache::local_only()));
         let http_client = self.http_client.unwrap_or_else(Client::new);
@@ -149,7 +139,7 @@ impl DataAccessBuilder {
             request_log_rx,
             Duration::from_millis(750),
             500,
-            metrics
+            metrics,
         );
         spawn_usage_writer(cache.clone(), usage_log_rx, Duration::from_millis(50), 10);
 
@@ -252,9 +242,7 @@ impl Cache {
             },
         })?;
 
-        let con = client
-            .get_multiplexed_async_connection()
-            .await?;
+        let con = client.get_multiplexed_async_connection().await?;
 
         Ok(Cache {
             local: LocalStore::new(),
@@ -372,9 +360,7 @@ impl ExternalCache {
                 let keys_vec: Vec<&String> = keys.iter().collect();
 
                 // Use mget to retrieve all values for the given keys
-                let values: Vec<Option<String>> =
-                    conn.mget(keys_vec)
-                        .await?;
+                let values: Vec<Option<String>> = conn.mget(keys_vec).await?;
 
                 // Convert into BTreeMap
                 let result = keys
@@ -414,12 +400,6 @@ impl<T> LocallyStoredValue<T> {
 pub(crate) struct LocalStore {
     pub(crate) session_tokens: Mutex<BTreeMap<SessionTokenId, LocallyStoredValue<SessionToken>>>,
     pub(crate) graphs: Mutex<BTreeMap<GraphDataId, LocallyStoredValue<GraphData>>>,
-
-    // Tracks current connections per ConnectionId
-    pub(crate) opened_connections_counter: Mutex<BTreeMap<ConnectionId, LocallyStoredValue<u32>>>,
-
-    // Tracks round-robin index per deployment
-    pub(crate) deployment_rr_index: Mutex<BTreeMap<DeploymentId, LocallyStoredValue<usize>>>,
 }
 
 impl LocalStore {
@@ -427,8 +407,6 @@ impl LocalStore {
         LocalStore {
             session_tokens: Default::default(),
             graphs: Default::default(),
-            opened_connections_counter: Default::default(),
-            deployment_rr_index: Default::default(),
         }
     }
 }

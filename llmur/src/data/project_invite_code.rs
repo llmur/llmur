@@ -1,14 +1,19 @@
-use std::sync::Arc;
-use crate::data::project::{ProjectId, ProjectRole};
-use crate::data::utils::{generate_random_alphanumeric_string, parse_and_add_to_current_ts, ConvertInto};
 use crate::data::DataAccess;
+use crate::data::project::{ProjectId, ProjectRole};
+use crate::data::utils::{
+    ConvertInto, generate_random_alphanumeric_string, parse_and_add_to_current_ts,
+};
 use crate::errors::{DataAccessError, DbRecordConversionError, InvalidTimeFormatError};
-use crate::{default_access_fns, default_database_access_fns, impl_structured_id_utils, impl_with_id_parameter_for_struct};
+use crate::metrics::Metrics;
+use crate::{
+    default_access_fns, default_database_access_fns, impl_structured_id_utils,
+    impl_with_id_parameter_for_struct,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Postgres, QueryBuilder};
+use std::sync::Arc;
 use uuid::Uuid;
-use crate::metrics::Metrics;
 
 // region:    --- Main Model
 #[derive(
@@ -23,7 +28,7 @@ use crate::metrics::Metrics;
     sqlx::Type,
     Serialize,
     Deserialize,
-    FromRow
+    FromRow,
 )]
 #[sqlx(transparent)]
 pub struct ProjectInviteCodeId(pub Uuid);
@@ -38,7 +43,13 @@ pub struct ProjectInviteCode {
 }
 
 impl ProjectInviteCode {
-    pub(crate) fn new(id: ProjectInviteCodeId, project_id: ProjectId, code: String, assign_role: ProjectRole, valid_until: Option<i64>) -> Self {
+    pub(crate) fn new(
+        id: ProjectInviteCodeId,
+        project_id: ProjectId,
+        code: String,
+        assign_role: ProjectRole,
+        valid_until: Option<i64>,
+    ) -> Self {
         ProjectInviteCode {
             id,
             project_id,
@@ -55,7 +66,6 @@ impl_with_id_parameter_for_struct!(ProjectInviteCode, ProjectInviteCodeId);
 
 // region:    --- Data Access
 impl DataAccess {
-
     #[tracing::instrument(
         level="trace",
         name = "get.project_invite_code",
@@ -64,10 +74,14 @@ impl DataAccess {
             id = %id.0
         )
     )]
-    pub async fn get_invite_code(&self, id: &ProjectInviteCodeId, metrics: &Option<Arc<Metrics>>) -> Result<Option<ProjectInviteCode>, DataAccessError> {
+    pub async fn get_invite_code(
+        &self,
+        id: &ProjectInviteCodeId,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<Option<ProjectInviteCode>, DataAccessError> {
         self.__get_project_invite_code(id, &None, metrics).await
     }
-    
+
     #[tracing::instrument(
         level="trace",
         name = "create.project_invite_code",
@@ -78,17 +92,35 @@ impl DataAccess {
             code_length = %code_length.unwrap_or(10)
         )
     )]
-    pub async fn create_invite_code(&self, project_id: &ProjectId, assign_role: &ProjectRole, validity: &Option<String>, code_length: &Option<usize>, metrics: &Option<Arc<Metrics>>) -> Result<ProjectInviteCode, DataAccessError> {
+    pub async fn create_invite_code(
+        &self,
+        project_id: &ProjectId,
+        assign_role: &ProjectRole,
+        validity: &Option<String>,
+        code_length: &Option<usize>,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<ProjectInviteCode, DataAccessError> {
         let code = &generate_random_alphanumeric_string(code_length.unwrap_or(10));
 
         let valid_until: Option<DateTime<Utc>> = if let Some(validity) = validity {
             let seconds = parse_and_add_to_current_ts(&validity)?;
             Some(
-                chrono::DateTime::from_timestamp(seconds, 0).ok_or(InvalidTimeFormatError::TimestampOutOfRange(seconds))?
+                chrono::DateTime::from_timestamp(seconds, 0)
+                    .ok_or(InvalidTimeFormatError::TimestampOutOfRange(seconds))?,
             )
-        } else { None };
+        } else {
+            None
+        };
 
-        self.__create_project_invite_code(project_id, &code, assign_role, &valid_until, &None, metrics).await
+        self.__create_project_invite_code(
+            project_id,
+            &code,
+            assign_role,
+            &valid_until,
+            &None,
+            metrics,
+        )
+        .await
     }
 
     #[tracing::instrument(
@@ -99,24 +131,28 @@ impl DataAccess {
             id = %id.0
         )
     )]
-    pub async fn delete_invite_code(&self, id: &ProjectInviteCodeId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+    pub async fn delete_invite_code(
+        &self,
+        id: &ProjectInviteCodeId,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<u64, DataAccessError> {
         self.__delete_project_invite_code(id, metrics).await
     }
 }
 
 default_access_fns!(
-        ProjectInviteCode,
-        ProjectInviteCodeId,
-        project_invite_code,
-        project_invite_codes,
-        create => {
-            project_id: &ProjectId,
-            code: &str,
-            assign_role: &ProjectRole,
-            valid_until: &Option<DateTime<Utc>>
-        },
-        search => {}
-    );
+    ProjectInviteCode,
+    ProjectInviteCodeId,
+    project_invite_code,
+    project_invite_codes,
+    create => {
+        project_id: &ProjectId,
+        code: &str,
+        assign_role: &ProjectRole,
+        valid_until: &Option<DateTime<Utc>>
+    },
+    search => {}
+);
 // endregion: --- Data Access
 
 // region:    --- Database Access
@@ -141,7 +177,8 @@ pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
 }
 
 pub(crate) fn pg_get(invite_id: &'_ ProjectInviteCodeId) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
     SELECT
         id,
         project_id,
@@ -152,7 +189,8 @@ pub(crate) fn pg_get(invite_id: &'_ ProjectInviteCodeId) -> QueryBuilder<'_, Pos
     FROM
         project_invites
     WHERE
-        id = ");
+        id = ",
+    );
     // Push code
     query.push_bind(invite_id);
     // Build query
@@ -165,9 +203,10 @@ pub(crate) fn pg_getm(ids: &'_ Vec<ProjectInviteCodeId>) -> QueryBuilder<'_, Pos
 }
 
 pub(crate) fn pg_delete(invite_id: &'_ ProjectInviteCodeId) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         DELETE FROM project_invites
-        WHERE id = "
+        WHERE id = ",
     );
     // Push id
     query.push_bind(invite_id);
@@ -175,12 +214,18 @@ pub(crate) fn pg_delete(invite_id: &'_ ProjectInviteCodeId) -> QueryBuilder<'_, 
     query
 }
 
-pub(crate) fn pg_insert<'a>(project_id: &'a ProjectId, code: &'a str, assign_role: &'a ProjectRole, valid_until: &'a Option<DateTime<Utc>>) -> QueryBuilder<'a, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+pub(crate) fn pg_insert<'a>(
+    project_id: &'a ProjectId,
+    code: &'a str,
+    assign_role: &'a ProjectRole,
+    valid_until: &'a Option<DateTime<Utc>>,
+) -> QueryBuilder<'a, Postgres> {
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         INSERT INTO project_invites
             (id, project_id, code, assign_role, valid_until)
         VALUES
-            (gen_random_uuid(), "
+            (gen_random_uuid(), ",
     );
 
     // Push project id
@@ -214,7 +259,10 @@ pub(crate) struct DbProjectInviteCodeRecord {
 }
 
 impl ConvertInto<ProjectInviteCode> for DbProjectInviteCodeRecord {
-    fn convert(self, _application_secret: &Option<Uuid>) -> Result<ProjectInviteCode, DbRecordConversionError> {
+    fn convert(
+        self,
+        _application_secret: &Option<Uuid>,
+    ) -> Result<ProjectInviteCode, DbRecordConversionError> {
         Ok(ProjectInviteCode::new(
             self.id,
             self.project_id,
@@ -226,4 +274,4 @@ impl ConvertInto<ProjectInviteCode> for DbProjectInviteCodeRecord {
 }
 
 impl_with_id_parameter_for_struct!(DbProjectInviteCodeRecord, ProjectInviteCodeId);
-// endregion: --- Database Model   
+// endregion: --- Database Model

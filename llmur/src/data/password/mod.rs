@@ -1,6 +1,6 @@
-use std::str::FromStr;
 use crate::errors::{AsyncError, AuthenticationError, HashError};
 use lazy_regex::regex_captures;
+use std::str::FromStr;
 use uuid::Uuid;
 
 mod scheme01;

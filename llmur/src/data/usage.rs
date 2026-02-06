@@ -1,12 +1,13 @@
-use crate::data::connection::{ConnectionId};
+use crate::data::connection::ConnectionId;
 use crate::data::deployment::DeploymentId;
 use crate::data::graph::usage_stats::{
-    ConnectionUsageStats, DeploymentUsageStats, MetricsUsageStats, ProjectUsageStats,
-    StatValue, VirtualKeyUsageStats,
+    ConnectionUsageStats, DeploymentUsageStats, MetricsUsageStats, ProjectUsageStats, StatValue,
+    VirtualKeyDeploymentUsageStats, VirtualKeyUsageStats,
 };
 use crate::data::project::ProjectId;
 use crate::data::request_log::RequestLogData;
 use crate::data::virtual_key::VirtualKeyId;
+use crate::data::virtual_key_deployment::VirtualKeyDeployment;
 use crate::data::{Cache, DataAccess, Database, ExternalCache};
 use crate::errors::{CacheAccessError, DataAccessError};
 use chrono::{DateTime, Datelike, TimeZone, Timelike, Utc};
@@ -56,6 +57,60 @@ impl DataAccess {
                 println!(
                     "Failed to update usage stats for {}: {:?}",
                     virtual_key_id, e
+                );
+            }
+        }
+
+        Ok(stats)
+    }
+
+    #[tracing::instrument(
+        level="trace",
+        name = "get.virtual_key_deployment.usage",
+        skip(self, virtual_key_deployment, cached_stats_map, now_utc),
+        fields(id = %virtual_key_deployment.id.0)
+    )]
+    pub(crate) async fn load_virtual_key_deployment_usage_and_set_cache(
+        &self,
+        virtual_key_deployment: &VirtualKeyDeployment,
+        cached_stats_map: &BTreeMap<String, Option<String>>,
+        now_utc: &DateTime<Utc>,
+    ) -> Result<VirtualKeyDeploymentUsageStats, DataAccessError> {
+        let vkd_cached_stats = VirtualKeyDeploymentUsageStats::extract_from_map(
+            &virtual_key_deployment.id,
+            now_utc,
+            cached_stats_map,
+        );
+
+        if !vkd_cached_stats.has_value_missing() {
+            return Ok(vkd_cached_stats);
+        }
+
+        let record: DbUsageStatsRecord = self
+            .database
+            .load_virtual_key_deployment_usage(
+                &virtual_key_deployment.virtual_key_id,
+                &virtual_key_deployment.deployment_id,
+                now_utc,
+            )
+            .await?;
+
+        let stats = VirtualKeyDeploymentUsageStats::from_db_record(
+            &virtual_key_deployment.id,
+            now_utc,
+            record,
+        );
+        match self.cache.set_usage_stats(&stats.0).await {
+            Ok(_) => {
+                println!(
+                    "Successfully updated cached usage stats for {}",
+                    virtual_key_deployment.id
+                );
+            }
+            Err(e) => {
+                println!(
+                    "Failed to update usage stats for {}: {:?}",
+                    virtual_key_deployment.id, e
                 );
             }
         }
@@ -210,9 +265,7 @@ impl Database {
                 let mut query = pg_get_project_usage(project_id, now_utc);
                 let sql = query.build_query_as::<DbUsageStatsRecord>();
                 // TODO: Handle errors properly
-                let result = sql
-                    .fetch_one(pool)
-                    .await?;
+                let result = sql.fetch_one(pool).await?;
 
                 Ok(result)
             }
@@ -234,9 +287,33 @@ impl Database {
             Database::Postgres { pool } => {
                 let mut query = pg_get_virtual_key_usage(virtual_key_id, now_utc);
                 let sql = query.build_query_as::<DbUsageStatsRecord>();
-                let result = sql
-                    .fetch_one(pool)
-                    .await?;
+                let result = sql.fetch_one(pool).await?;
+                Ok(result)
+            }
+        }
+    }
+
+    #[tracing::instrument(
+        level="trace",
+        name = "db.get.virtual_key_deployment.usage",
+        skip(self, virtual_key_id, deployment_id, now_utc),
+        fields(
+            virtual_key_id = %virtual_key_id.0,
+            deployment_id = %deployment_id.0
+        )
+    )]
+    pub(crate) async fn load_virtual_key_deployment_usage(
+        &self,
+        virtual_key_id: &VirtualKeyId,
+        deployment_id: &DeploymentId,
+        now_utc: &DateTime<Utc>,
+    ) -> Result<DbUsageStatsRecord, DataAccessError> {
+        match self {
+            Database::Postgres { pool } => {
+                let mut query =
+                    pg_get_virtual_key_deployment_usage(virtual_key_id, deployment_id, now_utc);
+                let sql = query.build_query_as::<DbUsageStatsRecord>();
+                let result = sql.fetch_one(pool).await?;
                 Ok(result)
             }
         }
@@ -257,9 +334,7 @@ impl Database {
             Database::Postgres { pool } => {
                 let mut query = pg_get_deployment_usage(deployment_id, now_utc);
                 let sql = query.build_query_as::<DbUsageStatsRecord>();
-                let result = sql
-                    .fetch_one(pool)
-                    .await?;
+                let result = sql.fetch_one(pool).await?;
                 Ok(result)
             }
         }
@@ -280,9 +355,7 @@ impl Database {
                 let mut query = pg_get_connection_usage(connection_id, now_utc);
                 let sql = query.build_query_as::<DbUsageStatsRecord>();
                 // TODO: Handle errors properly
-                let result = sql
-                    .fetch_one(pool)
-                    .await?;
+                let result = sql.fetch_one(pool).await?;
 
                 Ok(result)
             }
@@ -291,11 +364,7 @@ impl Database {
 }
 
 impl Cache {
-    #[tracing::instrument(        
-        level="trace",
-        name = "cache.set.usage_stats", 
-        skip(self, stats)
-    )]
+    #[tracing::instrument(level = "trace", name = "cache.set.usage_stats", skip(self, stats))]
     pub(crate) async fn set_usage_stats(
         &self,
         stats: &MetricsUsageStats,
@@ -347,8 +416,8 @@ impl Cache {
     }
 
     #[tracing::instrument(
-        level="trace",
-        name = "cache.increment.usage_stats", 
+        level = "trace",
+        name = "cache.increment.usage_stats",
         skip(self, records)
     )]
     pub(crate) async fn increment_usage_data(
@@ -414,6 +483,13 @@ fn convert_records_to_cache_maps(
                     &record.request_ts,
                     requests,
                 ))
+                .chain(
+                    VirtualKeyDeploymentUsageStats::generate_request_keys_with_values(
+                        &record.graph.virtual_key_deployment.data.id,
+                        &record.request_ts,
+                        requests,
+                    ),
+                )
                 .chain(DeploymentUsageStats::generate_request_keys_with_values(
                     &record.graph.deployment.data.id,
                     &record.request_ts,
@@ -439,6 +515,13 @@ fn convert_records_to_cache_maps(
                     &record.request_ts,
                     cost,
                 ))
+                .chain(
+                    VirtualKeyDeploymentUsageStats::generate_budget_keys_with_values(
+                        &record.graph.virtual_key_deployment.data.id,
+                        &record.request_ts,
+                        cost,
+                    ),
+                )
                 .chain(DeploymentUsageStats::generate_budget_keys_with_values(
                     &record.graph.deployment.data.id,
                     &record.request_ts,
@@ -464,6 +547,13 @@ fn convert_records_to_cache_maps(
                     &record.request_ts,
                     tokens,
                 ))
+                .chain(
+                    VirtualKeyDeploymentUsageStats::generate_token_keys_with_values(
+                        &record.graph.virtual_key_deployment.data.id,
+                        &record.request_ts,
+                        tokens,
+                    ),
+                )
                 .chain(DeploymentUsageStats::generate_token_keys_with_values(
                     &record.graph.deployment.data.id,
                     &record.request_ts,
@@ -622,6 +712,73 @@ pub(crate) fn pg_get_virtual_key_usage<'a>(
 
     query.push("FROM request_logs WHERE virtual_key_id = ");
     query.push_bind(virtual_key_id);
+    query.push(" AND request_ts >= ");
+    query.push_bind(current_month);
+
+    query
+}
+
+pub(crate) fn pg_get_virtual_key_deployment_usage<'a>(
+    virtual_key_id: &'a VirtualKeyId,
+    deployment_id: &'a DeploymentId,
+    ts: &'a DateTime<Utc>,
+) -> QueryBuilder<'a, Postgres> {
+    let current_minute = Utc
+        .with_ymd_and_hms(ts.year(), ts.month(), ts.day(), ts.hour(), ts.minute(), 0)
+        .unwrap();
+    let current_hour = Utc
+        .with_ymd_and_hms(ts.year(), ts.month(), ts.day(), ts.hour(), 0, 0)
+        .unwrap();
+    let current_day = Utc
+        .with_ymd_and_hms(ts.year(), ts.month(), ts.day(), 0, 0, 0)
+        .unwrap();
+    let current_month = Utc
+        .with_ymd_and_hms(ts.year(), ts.month(), 1, 0, 0, 0)
+        .unwrap();
+
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        r#"
+        SELECT
+            COALESCE(SUM(CASE WHEN request_ts >= "#,
+    );
+
+    query.push_bind(current_minute);
+    query.push(" THEN cost ELSE 0 END), 0) as current_minute_cost,");
+    query.push("COALESCE(COUNT(CASE WHEN request_ts >= ");
+    query.push_bind(current_minute);
+    query.push(" THEN 1 END), 0) as current_minute_requests,");
+    query.push("COALESCE(SUM(CASE WHEN request_ts >= ");
+    query.push_bind(current_minute);
+    query.push(" THEN input_tokens + output_tokens ELSE 0 END), 0) as current_minute_tokens,");
+
+    query.push("COALESCE(SUM(CASE WHEN request_ts >= ");
+    query.push_bind(current_hour);
+    query.push(" THEN cost ELSE 0 END), 0) as current_hour_cost,");
+    query.push("COALESCE(COUNT(CASE WHEN request_ts >= ");
+    query.push_bind(current_hour);
+    query.push(" THEN 1 END), 0) as current_hour_requests,");
+    query.push("COALESCE(SUM(CASE WHEN request_ts >= ");
+    query.push_bind(current_hour);
+    query.push(" THEN input_tokens + output_tokens ELSE 0 END), 0) as current_hour_tokens,");
+
+    query.push("COALESCE(SUM(CASE WHEN request_ts >= ");
+    query.push_bind(current_day);
+    query.push(" THEN cost ELSE 0 END), 0) as current_day_cost,");
+    query.push("COALESCE(COUNT(CASE WHEN request_ts >= ");
+    query.push_bind(current_day);
+    query.push(" THEN 1 END), 0) as current_day_requests,");
+    query.push("COALESCE(SUM(CASE WHEN request_ts >= ");
+    query.push_bind(current_day);
+    query.push(" THEN input_tokens + output_tokens ELSE 0 END), 0) as current_day_tokens,");
+
+    query.push("COALESCE(SUM(cost), 0) as current_month_cost,");
+    query.push("COALESCE(COUNT(*), 0) as current_month_requests,");
+    query.push("COALESCE(SUM(input_tokens + output_tokens), 0) as current_month_tokens ");
+
+    query.push("FROM request_logs WHERE virtual_key_id = ");
+    query.push_bind(virtual_key_id);
+    query.push(" AND deployment_id = ");
+    query.push_bind(deployment_id);
     query.push(" AND request_ts >= ");
     query.push_bind(current_month);
 

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
-use tokio::sync::mpsc;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 
 use crate::data::graph::{ConnectionNode, Graph};
 use crate::data::request_log::{RequestLogData, RequestLogId};

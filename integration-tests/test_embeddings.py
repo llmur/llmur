@@ -113,7 +113,7 @@ class TestEmbeddings:
 
         response = api_client.create_embeddings(payload, azure_embeddings_invalid_provider_setup["virtual_key"])
 
-        assert response.status_code == 404
+        assert response.status_code == 400
 
     def test_embeddings_gemini_invalid_model(self, api_client, gemini_embeddings_invalid_provider_setup):
         """Test Gemini provider errors propagate (invalid model)"""

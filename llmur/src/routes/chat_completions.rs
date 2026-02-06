@@ -1,15 +1,15 @@
+use crate::LLMurState;
 use crate::data::connection::{ConnectionId, ConnectionInfo};
 use crate::metrics::RegisterProxyRequest;
 use crate::providers::openai::chat_completions::request::Request as ChatCompletionsRequest;
 use crate::providers::openai::chat_completions::response::Response as ChatCompletionsResponse;
+use crate::routes::openai::logging::{RequestLogContext, RequestLogSenders, send_request_log};
 use crate::routes::openai::request::OpenAiRequestData;
 use crate::routes::openai::response::ProxyResponse;
-use crate::routes::openai::logging::{RequestLogContext, RequestLogSenders, send_request_log};
+use axum::Extension;
+use axum::extract::State;
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
-use crate::LLMurState;
-use axum::extract::State;
-use axum::Extension;
 use std::time::Instant;
 
 // Connection is passed via extension
@@ -42,7 +42,12 @@ pub(crate) async fn chat_completions_route(
     };
 
     let response = match &connection_info {
-        ConnectionInfo::AzureOpenAiApiKey { api_key, api_endpoint, api_version, deployment_name } => {
+        ConnectionInfo::AzureOpenAiApiKey {
+            api_key,
+            api_endpoint,
+            api_version,
+            deployment_name,
+        } => {
             azure_openai_request::chat_completions(
                 &state.data.http_client,
                 deployment_name,
@@ -54,9 +59,14 @@ pub(crate) async fn chat_completions_route(
                 include_usage_requested,
                 request_log_context.clone(),
                 senders.clone(),
-            ).await
+            )
+            .await
         }
-        ConnectionInfo::OpenAiApiKey { api_key, api_endpoint, model } => {
+        ConnectionInfo::OpenAiApiKey {
+            api_key,
+            api_endpoint,
+            model,
+        } => {
             openai_v1_request::chat_completions(
                 &state.data.http_client,
                 model,
@@ -67,9 +77,15 @@ pub(crate) async fn chat_completions_route(
                 include_usage_requested,
                 request_log_context.clone(),
                 senders.clone(),
-            ).await
+            )
+            .await
         }
-        ConnectionInfo::GeminiApiKey { api_key, api_endpoint, api_version, model } => {
+        ConnectionInfo::GeminiApiKey {
+            api_key,
+            api_endpoint,
+            api_version,
+            model,
+        } => {
             gemini_v1beta_request::chat_completions(
                 &state.data.http_client,
                 model,
@@ -81,7 +97,8 @@ pub(crate) async fn chat_completions_route(
                 include_usage_requested,
                 request_log_context.clone(),
                 senders.clone(),
-            ).await
+            )
+            .await
         }
     };
 
@@ -90,10 +107,18 @@ pub(crate) async fn chat_completions_route(
         &connection_id,
         connection_info.get_provider_friendly_name().to_string(),
         request.path.clone(),
-        response.result.as_ref().map(|r| r.get_input_tokens()).unwrap_or_default(),
-        response.result.as_ref().map(|r| r.get_output_tokens()).unwrap_or_default(),
+        response
+            .result
+            .as_ref()
+            .map(|r| r.get_input_tokens())
+            .unwrap_or_default(),
+        response
+            .result
+            .as_ref()
+            .map(|r| r.get_output_tokens())
+            .unwrap_or_default(),
         start.elapsed().as_millis() as u64,
-        response.result.as_ref().map(|r| r.get_status_code()).ok()
+        response.result.as_ref().map(|r| r.get_status_code()).ok(),
     );
 
     response
@@ -101,19 +126,19 @@ pub(crate) async fn chat_completions_route(
 
 mod azure_openai_request {
     use crate::data::connection::AzureOpenAiApiVersion;
-    use crate::providers::azure::openai::v2024_10_21::chat_completions::request::from_openai_transform::Context as RequestContextV2024_10_21;
-    use crate::providers::azure::openai::v2024_10_21::chat_completions::response::to_openai_transform::Context as ResponseContextV2024_10_21;
+    use crate::providers::Transformer;
+    use crate::providers::azure::openai::v1::chat_completions::request::from_openai_transform::Context as RequestContextV1;
+    use crate::providers::azure::openai::v1::chat_completions::response::to_openai_transform::Context as ResponseContextV1;
     use crate::providers::openai::chat_completions::request::Request as OpenAiRequest;
     use crate::providers::openai::chat_completions::response::Response as OpenAiResponse;
     use crate::providers::utils::generic_post_proxy_request;
-    use crate::routes::openai::response::ProxyResponse;
-    use crate::routes::openai::logging::{RequestLogContext, RequestLogSenders};
-    use crate::providers::Transformer;
     use crate::routes::chat_completions::StreamLogHandler;
+    use crate::routes::openai::logging::{RequestLogContext, RequestLogSenders};
+    use crate::routes::openai::response::ProxyResponse;
+    use bytes::Bytes;
     use chrono::Utc;
     use futures::StreamExt;
     use reqwest::header::HeaderMap;
-    use bytes::Bytes;
     use std::sync::Arc;
 
     #[tracing::instrument(
@@ -135,58 +160,62 @@ mod azure_openai_request {
         let mut headers = HeaderMap::new();
         headers.insert("api-key", api_key.parse().unwrap());
         headers.insert("Content-Type", "application/json".parse().unwrap());
-        let generate_url_fn = |_| { format!("{}/openai/deployments/{}/chat/completions?api-version={}", api_endpoint, deployment_name, api_version.to_string()) };
 
-        match api_version {
-            AzureOpenAiApiVersion::V2024_10_21 => {
-                let request_context = RequestContextV2024_10_21 {
-                    data_sources: None,
-                    stream_include_usage: true,
-                };
-                let response_context = ResponseContextV2024_10_21 { model: Some(payload.model.clone()) };
+        let request_context = RequestContextV1 {
+            model: Some(deployment_name.to_string()),
+            safety_identifier: None,
+            prompt_cache_key: None,
+            prompt_cache_retention: None,
+            user_security_context: None,
+            stream_include_usage: true,
+        };
+        let response_context = ResponseContextV1 {
+            model: Some(payload.model.clone()),
+        };
+        let api_base = api_endpoint.trim_end_matches('/');
+        let api_base = if api_base.ends_with("/openai/v1") {
+            api_base.to_string()
+        } else {
+            format!("{}/openai/v1", api_base)
+        };
+        let generate_url_fn = |_| format!("{}/chat/completions", api_base);
 
-                let start_ts = Utc::now();
-                if stream {
-                    headers.insert("Accept", "text/event-stream".parse().unwrap());
-                    return chat_completions_stream(
-                        client,
-                        payload,
-                        request_context,
-                        generate_url_fn,
-                        headers,
-                        include_usage_requested,
-                        request_log_context,
-                        senders,
-                    )
-                    .await;
-                } else {
-                    match generic_post_proxy_request(
-                            client,
-                            payload,
-                            request_context,
-                            generate_url_fn,
-                            headers,
-                            response_context,
-                        ).await {
-                        Ok(response) => {
-                            ProxyResponse::new(Ok(response), start_ts)
-                        }
-                        Err(error) => {
-                            ProxyResponse::new(
-                                Err(error), start_ts
-                            )
-                        }
-                    }
-                }
+        let start_ts = Utc::now();
+        if stream {
+            headers.insert("Accept", "text/event-stream".parse().unwrap());
+            return chat_completions_stream_v1(
+                client,
+                payload,
+                request_context,
+                generate_url_fn,
+                headers,
+                include_usage_requested,
+                request_log_context,
+                senders,
+            )
+            .await;
+        } else {
+            match generic_post_proxy_request(
+                client,
+                payload,
+                request_context,
+                generate_url_fn,
+                headers,
+                response_context,
+            )
+            .await
+            {
+                Ok(response) => ProxyResponse::new(Ok(response), start_ts),
+                Err(error) => ProxyResponse::new(Err(error), start_ts),
             }
         }
     }
 
-    async fn chat_completions_stream(
+    async fn chat_completions_stream_v1(
         client: &reqwest::Client,
         payload: OpenAiRequest,
-        request_context: RequestContextV2024_10_21,
-        generate_url_fn: impl Fn(crate::providers::azure::openai::v2024_10_21::chat_completions::request::from_openai_transform::Loss) -> String,
+        request_context: RequestContextV1,
+        generate_url_fn: impl Fn(crate::providers::azure::openai::v1::chat_completions::request::from_openai_transform::Loss) -> String,
         headers: HeaderMap,
         include_usage_requested: bool,
         request_log_context: Arc<RequestLogContext>,
@@ -201,13 +230,7 @@ mod azure_openai_request {
             }
         };
         let url = generate_url_fn(request_transformation.loss);
-        let response = match client
-            .post(url)
-            .headers(headers)
-            .json(&body)
-            .send()
-            .await
-        {
+        let response = match client.post(url).headers(headers).json(&body).send().await {
             Ok(resp) => resp,
             Err(error) => return ProxyResponse::new(Err(error.into()), request_ts),
         };
@@ -219,10 +242,16 @@ mod azure_openai_request {
                 Err(error) => return ProxyResponse::new(Err(error.into()), request_ts),
             };
             let error = match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
-                Ok(value) => crate::errors::ProxyError::ProxyReturnError(status, crate::errors::ProxyErrorMessage::Json(value)),
+                Ok(value) => crate::errors::ProxyError::ProxyReturnError(
+                    status,
+                    crate::errors::ProxyErrorMessage::Json(value),
+                ),
                 Err(_) => {
                     let text = String::from_utf8_lossy(&body_bytes).to_string();
-                    crate::errors::ProxyError::ProxyReturnError(status, crate::errors::ProxyErrorMessage::Text(text))
+                    crate::errors::ProxyError::ProxyReturnError(
+                        status,
+                        crate::errors::ProxyErrorMessage::Text(text),
+                    )
                 }
             };
             return ProxyResponse::new(Err(error), request_ts);
@@ -352,7 +381,10 @@ mod azure_openai_request {
                 .map(|choices| choices.is_empty())
                 .unwrap_or(true);
             let has_prompt_filter_results = value.get("prompt_filter_results").is_some();
-            let has_usage = !value.get("usage").unwrap_or(&serde_json::Value::Null).is_null();
+            let has_usage = !value
+                .get("usage")
+                .unwrap_or(&serde_json::Value::Null)
+                .is_null();
 
             if choices_empty && has_prompt_filter_results {
                 return None;
@@ -411,21 +443,21 @@ mod azure_openai_request {
 }
 
 mod openai_v1_request {
-    use crate::providers::openai::chat_completions::request::to_self::Context as RequestContext;
-    use crate::providers::openai::chat_completions::request::Request as OpenAiRequest;
-    use crate::providers::openai::chat_completions::response::to_self::Context as ResponseContext;
-    use crate::providers::openai::chat_completions::response::Response as OpenAiResponse;
-    use crate::providers::utils::generic_post_proxy_request;
-    use crate::routes::openai::response::ProxyResponse;
-    use crate::routes::openai::logging::{RequestLogContext, RequestLogSenders};
     use crate::providers::Transformer;
+    use crate::providers::openai::chat_completions::request::Request as OpenAiRequest;
+    use crate::providers::openai::chat_completions::request::to_self::Context as RequestContext;
+    use crate::providers::openai::chat_completions::response::Response as OpenAiResponse;
+    use crate::providers::openai::chat_completions::response::to_self::Context as ResponseContext;
+    use crate::providers::utils::generic_post_proxy_request;
     use crate::routes::chat_completions::StreamLogHandler;
+    use crate::routes::openai::logging::{RequestLogContext, RequestLogSenders};
+    use crate::routes::openai::response::ProxyResponse;
+    use bytes::Bytes;
     use chrono::Utc;
     use futures::StreamExt;
     use reqwest::header::HeaderMap;
-    use bytes::Bytes;
     use std::sync::Arc;
-    
+
     #[tracing::instrument(
         name = "proxy.openai.v1.chat_completions",
         skip(client, api_key, payload)
@@ -442,15 +474,20 @@ mod openai_v1_request {
         senders: RequestLogSenders,
     ) -> ProxyResponse<OpenAiResponse> {
         let mut headers = HeaderMap::new();
-        headers.insert("Authorization", format!("Bearer {}", api_key).parse().unwrap());
+        headers.insert(
+            "Authorization",
+            format!("Bearer {}", api_key).parse().unwrap(),
+        );
         headers.insert("Content-Type", "application/json".parse().unwrap());
-        let generate_url_fn = |_| { format!("{}/v1/chat/completions", api_endpoint) };
+        let generate_url_fn = |_| format!("{}/v1/chat/completions", api_endpoint);
 
         let request_context = RequestContext {
             model: Some(model.to_string()),
             stream_include_usage: true,
         };
-        let response_context = ResponseContext { model: Some(payload.model.clone()) };
+        let response_context = ResponseContext {
+            model: Some(payload.model.clone()),
+        };
 
         let start_ts = Utc::now();
         if stream {
@@ -474,15 +511,11 @@ mod openai_v1_request {
                 generate_url_fn,
                 headers,
                 response_context,
-            ).await {
-                Ok(response) => {
-                    ProxyResponse::new(Ok(response), start_ts)
-                }
-                Err(error) => {
-                    ProxyResponse::new(
-                        Err(error), start_ts
-                    )
-                }
+            )
+            .await
+            {
+                Ok(response) => ProxyResponse::new(Ok(response), start_ts),
+                Err(error) => ProxyResponse::new(Err(error), start_ts),
             }
         }
     }
@@ -491,7 +524,9 @@ mod openai_v1_request {
         client: &reqwest::Client,
         payload: OpenAiRequest,
         request_context: RequestContext,
-        generate_url_fn: impl Fn(crate::providers::openai::chat_completions::request::to_self::Loss) -> String,
+        generate_url_fn: impl Fn(
+            crate::providers::openai::chat_completions::request::to_self::Loss,
+        ) -> String,
         headers: HeaderMap,
         include_usage_requested: bool,
         request_log_context: Arc<RequestLogContext>,
@@ -506,13 +541,7 @@ mod openai_v1_request {
             }
         };
         let url = generate_url_fn(request_transformation.loss);
-        let response = match client
-            .post(url)
-            .headers(headers)
-            .json(&body)
-            .send()
-            .await
-        {
+        let response = match client.post(url).headers(headers).json(&body).send().await {
             Ok(resp) => resp,
             Err(error) => return ProxyResponse::new(Err(error.into()), request_ts),
         };
@@ -524,10 +553,16 @@ mod openai_v1_request {
                 Err(error) => return ProxyResponse::new(Err(error.into()), request_ts),
             };
             let error = match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
-                Ok(value) => crate::errors::ProxyError::ProxyReturnError(status, crate::errors::ProxyErrorMessage::Json(value)),
+                Ok(value) => crate::errors::ProxyError::ProxyReturnError(
+                    status,
+                    crate::errors::ProxyErrorMessage::Json(value),
+                ),
                 Err(_) => {
                     let text = String::from_utf8_lossy(&body_bytes).to_string();
-                    crate::errors::ProxyError::ProxyReturnError(status, crate::errors::ProxyErrorMessage::Text(text))
+                    crate::errors::ProxyError::ProxyReturnError(
+                        status,
+                        crate::errors::ProxyErrorMessage::Text(text),
+                    )
                 }
             };
             return ProxyResponse::new(Err(error), request_ts);
@@ -656,7 +691,10 @@ mod openai_v1_request {
                 .and_then(|choices| choices.as_array())
                 .map(|choices| choices.is_empty())
                 .unwrap_or(true);
-            let has_usage = !value.get("usage").unwrap_or(&serde_json::Value::Null).is_null();
+            let has_usage = !value
+                .get("usage")
+                .unwrap_or(&serde_json::Value::Null)
+                .is_null();
 
             if choices_empty && has_usage && !self.include_usage_requested {
                 self.send_usage_log(&value);
@@ -713,22 +751,22 @@ mod openai_v1_request {
 
 mod gemini_v1beta_request {
     use crate::data::connection::GeminiApiVersion;
+    use crate::providers::Transformer;
     use crate::providers::gemini::v1beta::generate_content::request::from_openai_transform::Context as RequestContextV1Beta;
-    use crate::providers::gemini::v1beta::generate_content::response::to_openai_transform::Context as ResponseContextV1Beta;
     use crate::providers::gemini::v1beta::generate_content::response::Response as GeminiResponse;
-    use crate::providers::openai::chat_completions::stream as OpenAiStream;
+    use crate::providers::gemini::v1beta::generate_content::response::to_openai_transform::Context as ResponseContextV1Beta;
     use crate::providers::openai::chat_completions::request::Request as OpenAiRequest;
     use crate::providers::openai::chat_completions::response::Response as OpenAiResponse;
+    use crate::providers::openai::chat_completions::stream as OpenAiStream;
     use crate::providers::utils::generic_post_proxy_request;
-    use crate::providers::Transformer;
-    use crate::routes::openai::response::ProxyResponse;
-    use crate::routes::openai::logging::{RequestLogContext, RequestLogSenders};
     use crate::routes::chat_completions::StreamLogHandler;
+    use crate::routes::openai::logging::{RequestLogContext, RequestLogSenders};
+    use crate::routes::openai::response::ProxyResponse;
+    use bytes::Bytes;
     use chrono::Utc;
     use futures::StreamExt;
     use reqwest::header::HeaderMap;
     use std::collections::HashSet;
-    use bytes::Bytes;
     use std::sync::Arc;
 
     #[tracing::instrument(
@@ -777,8 +815,12 @@ mod gemini_v1beta_request {
                 )
             };
 
-            let request_context = RequestContextV1Beta { model: Some(model.to_string()) };
-            let response_context = ResponseContextV1Beta { model: Some(model.to_string()) };
+            let request_context = RequestContextV1Beta {
+                model: Some(model.to_string()),
+            };
+            let response_context = ResponseContextV1Beta {
+                model: Some(model.to_string()),
+            };
 
             let start_ts = Utc::now();
             match generic_post_proxy_request(
@@ -788,15 +830,11 @@ mod gemini_v1beta_request {
                 generate_url_fn,
                 headers,
                 response_context,
-            ).await {
-                Ok(response) => {
-                    ProxyResponse::new(Ok(response), start_ts)
-                }
-                Err(error) => {
-                    ProxyResponse::new(
-                        Err(error), start_ts
-                    )
-                }
+            )
+            .await
+            {
+                Ok(response) => ProxyResponse::new(Ok(response), start_ts),
+                Err(error) => ProxyResponse::new(Err(error), start_ts),
             }
         }
     }
@@ -829,7 +867,9 @@ mod gemini_v1beta_request {
             )
         };
 
-        let request_context = RequestContextV1Beta { model: Some(model.to_string()) };
+        let request_context = RequestContextV1Beta {
+            model: Some(model.to_string()),
+        };
         let request_transformation = payload.transform(request_context);
         let request_ts = Utc::now();
         let body = match serde_json::to_value(request_transformation.result) {
@@ -840,13 +880,7 @@ mod gemini_v1beta_request {
         };
 
         let url = generate_url_fn(request_transformation.loss);
-        let response = match client
-            .post(url)
-            .headers(headers)
-            .json(&body)
-            .send()
-            .await
-        {
+        let response = match client.post(url).headers(headers).json(&body).send().await {
             Ok(resp) => resp,
             Err(error) => return ProxyResponse::new(Err(error.into()), request_ts),
         };
@@ -858,10 +892,16 @@ mod gemini_v1beta_request {
                 Err(error) => return ProxyResponse::new(Err(error.into()), request_ts),
             };
             let error = match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
-                Ok(value) => crate::errors::ProxyError::ProxyReturnError(status, crate::errors::ProxyErrorMessage::Json(value)),
+                Ok(value) => crate::errors::ProxyError::ProxyReturnError(
+                    status,
+                    crate::errors::ProxyErrorMessage::Json(value),
+                ),
                 Err(_) => {
                     let text = String::from_utf8_lossy(&body_bytes).to_string();
-                    crate::errors::ProxyError::ProxyReturnError(status, crate::errors::ProxyErrorMessage::Text(text))
+                    crate::errors::ProxyError::ProxyReturnError(
+                        status,
+                        crate::errors::ProxyErrorMessage::Text(text),
+                    )
                 }
             };
             return ProxyResponse::new(Err(error), request_ts);
@@ -1001,7 +1041,10 @@ mod gemini_v1beta_request {
             Some(chunk)
         }
 
-        fn build_openai_chunk(&mut self, response: GeminiResponse) -> Option<Result<Bytes, std::io::Error>> {
+        fn build_openai_chunk(
+            &mut self,
+            response: GeminiResponse,
+        ) -> Option<Result<Bytes, std::io::Error>> {
             let candidates = response.candidates?;
             let mut choices = Vec::new();
 
@@ -1023,7 +1066,11 @@ mod gemini_v1beta_request {
                 }
 
                 let finish_reason = finish_reason.map(|value| value.to_string());
-                if delta.role.is_none() && delta.content.is_none() && delta.tool_calls.is_none() && finish_reason.is_none() {
+                if delta.role.is_none()
+                    && delta.content.is_none()
+                    && delta.tool_calls.is_none()
+                    && finish_reason.is_none()
+                {
                     continue;
                 }
 
@@ -1040,7 +1087,9 @@ mod gemini_v1beta_request {
             }
 
             let chunk = OpenAiStream::Response {
-                id: response.response_id.unwrap_or_else(|| self.response_id.clone()),
+                id: response
+                    .response_id
+                    .unwrap_or_else(|| self.response_id.clone()),
                 object: "chat.completion.chunk".to_string(),
                 created: 0,
                 model: response.model_version.unwrap_or_else(|| self.model.clone()),
@@ -1067,7 +1116,10 @@ mod gemini_v1beta_request {
     fn extract_candidate_delta(
         candidate: &crate::providers::gemini::v1beta::generate_content::response::Candidate,
         candidate_index: u64,
-    ) -> (Option<String>, Option<Vec<OpenAiStream::ResponseChoiceToolCall>>) {
+    ) -> (
+        Option<String>,
+        Option<Vec<OpenAiStream::ResponseChoiceToolCall>>,
+    ) {
         let content = match &candidate.content {
             Some(content) => content,
             None => return (None, None),
@@ -1081,8 +1133,8 @@ mod gemini_v1beta_request {
                 text_parts.push(text.clone());
             }
             if let Some(function_call) = &part.function_call {
-                let arguments = serde_json::to_string(&function_call.args)
-                    .unwrap_or_else(|_| "{}".to_string());
+                let arguments =
+                    serde_json::to_string(&function_call.args).unwrap_or_else(|_| "{}".to_string());
                 tool_calls.push(OpenAiStream::ResponseChoiceToolCall {
                     id: format!("gemini-call-{}-{}", candidate_index, idx),
                     tool_type: "function".to_string(),

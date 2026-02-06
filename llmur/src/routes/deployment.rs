@@ -1,10 +1,10 @@
+use crate::data::connection::ConnectionId;
 use crate::data::deployment::{Deployment, DeploymentAccess, DeploymentId};
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
-use crate::data::load_balancer::LoadBalancingStrategy;
 use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
-use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
 use crate::routes::StatusResponse;
-use crate::{impl_from_vec_result, LLMurState};
+use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
+use crate::{LLMurState, impl_from_vec_result};
 use axum::extract::{Path, State};
 use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
@@ -20,10 +20,7 @@ pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .with_state(state.clone())
 }
 
-#[tracing::instrument(
-    name = "handler.create.deployment",
-    skip(state, ctx, payload)
-)]
+#[tracing::instrument(name = "handler.create.deployment", skip(state, ctx, payload))]
 pub(crate) async fn create_deployment(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
@@ -35,9 +32,27 @@ pub(crate) async fn create_deployment(
         return Err(AuthorizationError::AccessDenied)?;
     }
 
+    let _connection = state
+        .data
+        .get_connection(
+            &payload.connection_id,
+            &state.application_secret,
+            &state.metrics,
+        )
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
     let result = state
         .data
-        .create_deployment(&payload.name, &payload.access.unwrap_or(DeploymentAccess::Private), &payload.strategy.unwrap_or(LoadBalancingStrategy::RoundRobin), &payload.budget_limits, &payload.request_limits, &payload.token_limits, &state.metrics)
+        .create_deployment(
+            &payload.name,
+            &payload.access.unwrap_or(DeploymentAccess::Private),
+            &payload.connection_id,
+            &payload.budget_limits,
+            &payload.request_limits,
+            &payload.token_limits,
+            &state.metrics,
+        )
         .await?;
 
     Ok(Json(result.into()))
@@ -107,7 +122,7 @@ pub(crate) async fn delete_deployment(
 pub(crate) struct CreateDeploymentPayload {
     pub(crate) name: String,
     pub(crate) access: Option<DeploymentAccess>,
-    pub(crate) strategy: Option<LoadBalancingStrategy>,
+    pub(crate) connection_id: ConnectionId,
 
     pub(crate) budget_limits: Option<BudgetLimits>,
     pub(crate) request_limits: Option<RequestLimits>,
@@ -118,13 +133,14 @@ pub(crate) struct CreateDeploymentPayload {
 pub(crate) struct GetDeploymentResult {
     pub(crate) id: DeploymentId,
     pub(crate) name: String,
-    pub(crate) access: DeploymentAccess
+    pub(crate) access: DeploymentAccess,
+    pub(crate) connection_id: ConnectionId,
 }
 
 #[derive(Serialize)]
 pub(crate) struct ListDeploymentsResult {
     pub(crate) deployments: Vec<GetDeploymentResult>,
-    pub(crate) total: usize
+    pub(crate) total: usize,
 }
 
 impl_from_vec_result!(GetDeploymentResult, ListDeploymentsResult, deployments);
@@ -135,6 +151,7 @@ impl From<Deployment> for GetDeploymentResult {
             id: value.id,
             name: value.name,
             access: value.access,
+            connection_id: value.connection_id,
         }
     }
 }

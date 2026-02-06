@@ -1,17 +1,22 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
-use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, Postgres, QueryBuilder};
-use sqlx::types::Json;
-use uuid::Uuid;
-use crate::data::utils::{decrypt, encrypt, generate_random_api_key, new_uuid_v5_from_string, ConvertInto};
-use crate::{default_access_fns, default_database_access_fns, impl_structured_id_utils, impl_with_id_parameter_for_struct};
 use crate::data::DataAccess;
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::project::ProjectId;
-use crate::data::virtual_key_deployment::{VirtualKeyDeploymentId};
+use crate::data::utils::{
+    ConvertInto, decrypt, encrypt, generate_random_api_key, new_uuid_v5_from_string,
+};
+use crate::data::virtual_key_deployment::VirtualKeyDeploymentId;
 use crate::errors::{DataAccessError, DbRecordConversionError};
 use crate::metrics::Metrics;
+use crate::{
+    default_access_fns, default_database_access_fns, impl_structured_id_utils,
+    impl_with_id_parameter_for_struct,
+};
+use serde::{Deserialize, Serialize};
+use sqlx::types::Json;
+use sqlx::{FromRow, Postgres, QueryBuilder};
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+use uuid::Uuid;
 
 // region:    --- Main Model
 #[derive(
@@ -26,7 +31,7 @@ use crate::metrics::Metrics;
     sqlx::Type,
     Serialize,
     Deserialize,
-    FromRow
+    FromRow,
 )]
 #[sqlx(transparent)]
 pub struct VirtualKeyId(pub Uuid);
@@ -48,7 +53,7 @@ pub struct VirtualKey {
     pub budget_limits: BudgetLimits,
     pub request_limits: RequestLimits,
     pub token_limits: TokenLimits,
-    
+
     pub deployments: BTreeSet<VirtualKeyDeploymentId>,
 }
 
@@ -64,10 +69,9 @@ impl VirtualKey {
         budget_limits: BudgetLimits,
         request_limits: RequestLimits,
         token_limits: TokenLimits,
-        
+
         deployments: BTreeSet<VirtualKeyDeploymentId>,
     ) -> Self {
-
         VirtualKey {
             id,
             key: decrypted_key,
@@ -78,7 +82,7 @@ impl VirtualKey {
             budget_limits,
             request_limits,
             token_limits,
-            deployments
+            deployments,
         }
     }
 }
@@ -89,8 +93,14 @@ impl_with_id_parameter_for_struct!(VirtualKey, VirtualKeyId);
 
 // region:    --- Data Access
 impl DataAccess {
-    pub async fn get_virtual_key(&self, id: &VirtualKeyId, application_secret: &Uuid, metrics: &Option<Arc<Metrics>>) -> Result<Option<VirtualKey>, DataAccessError> {
-        self.__get_virtual_key(id, &Some(application_secret.clone()), metrics).await
+    pub async fn get_virtual_key(
+        &self,
+        id: &VirtualKeyId,
+        application_secret: &Uuid,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<Option<VirtualKey>, DataAccessError> {
+        self.__get_virtual_key(id, &Some(application_secret.clone()), metrics)
+            .await
     }
 
     pub async fn create_virtual_key(
@@ -104,14 +114,17 @@ impl DataAccess {
         request_limits: &Option<RequestLimits>,
         token_limits: &Option<TokenLimits>,
         application_secret: &Uuid,
-        metrics: &Option<Arc<Metrics>>
+        metrics: &Option<Arc<Metrics>>,
     ) -> Result<VirtualKey, DataAccessError> {
         let key = generate_random_api_key(key_suffix_length);
         let salt = Uuid::now_v7();
         let encrypted_key = encrypt(&key, &salt, application_secret)?;
         let id = VirtualKeyId::from_decrypted_key(&key);
 
-        let alias = alias.clone().unwrap_or(format!("sk-...{}", key.char_indices().nth_back(4).unwrap().0));
+        let alias = alias.clone().unwrap_or(format!(
+            "sk-...{}",
+            key.char_indices().nth_back(4).unwrap().0
+        ));
 
         self.__create_virtual_key(
             &id,
@@ -125,14 +138,18 @@ impl DataAccess {
             request_limits,
             token_limits,
             &Some(application_secret.clone()),
-            metrics
-        ).await
+            metrics,
+        )
+        .await
     }
 
-    pub async fn delete_virtual_key(&self, id: &VirtualKeyId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+    pub async fn delete_virtual_key(
+        &self,
+        id: &VirtualKeyId,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<u64, DataAccessError> {
         self.__delete_virtual_key(id, metrics).await
     }
-
 
     #[tracing::instrument(
         level="trace",
@@ -142,8 +159,14 @@ impl DataAccess {
             ids = ?ids.iter().map(|id| id.0).collect::<Vec<Uuid>>()
         )
     )]
-    pub async fn get_virtual_keys(&self, ids: &BTreeSet<VirtualKeyId>, application_secret: &Uuid, metrics: &Option<Arc<Metrics>>) -> Result<BTreeMap<VirtualKeyId, Option<VirtualKey>>, DataAccessError> {
-        self.__get_virtual_keys(ids, &Some(*application_secret), metrics).await
+    pub async fn get_virtual_keys(
+        &self,
+        ids: &BTreeSet<VirtualKeyId>,
+        application_secret: &Uuid,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<BTreeMap<VirtualKeyId, Option<VirtualKey>>, DataAccessError> {
+        self.__get_virtual_keys(ids, &Some(*application_secret), metrics)
+            .await
     }
 
     #[tracing::instrument(
@@ -154,32 +177,38 @@ impl DataAccess {
             project_id = %project_id.map(|id| id.0.to_string()).unwrap_or("*".to_string())
         )
     )]
-    pub async fn search_virtual_keys(&self, project_id: &Option<ProjectId>, application_secret: &Uuid, metrics: &Option<Arc<Metrics>>) -> Result<Vec<VirtualKey>, DataAccessError> {
-        self.__search_virtual_keys(project_id, &Some(*application_secret), metrics).await
+    pub async fn search_virtual_keys(
+        &self,
+        project_id: &Option<ProjectId>,
+        application_secret: &Uuid,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<Vec<VirtualKey>, DataAccessError> {
+        self.__search_virtual_keys(project_id, &Some(*application_secret), metrics)
+            .await
     }
 }
 
 default_access_fns!(
-        VirtualKey,
-        VirtualKeyId,
-        virtual_key,
-        virtual_keys,
-        create => {
-            id: &VirtualKeyId,
-            alias: &str,
-            description: &Option<String>,
-            salt: &Uuid,
-            encrypted_key: &str,
-            blocked: bool,
-            project_id: &ProjectId,
-            budget_limits: &Option<BudgetLimits>,
-            request_limits: &Option<RequestLimits>,
-            token_limits: &Option<TokenLimits>
-        },
-        search => {
-            project_id: &Option<ProjectId>
-        }
-    );
+    VirtualKey,
+    VirtualKeyId,
+    virtual_key,
+    virtual_keys,
+    create => {
+        id: &VirtualKeyId,
+        alias: &str,
+        description: &Option<String>,
+        salt: &Uuid,
+        encrypted_key: &str,
+        blocked: bool,
+        project_id: &ProjectId,
+        budget_limits: &Option<BudgetLimits>,
+        request_limits: &Option<RequestLimits>,
+        token_limits: &Option<TokenLimits>
+    },
+    search => {
+        project_id: &Option<ProjectId>
+    }
+);
 // endregion: --- Data Access
 
 // region:    --- Database Access
@@ -205,7 +234,7 @@ default_database_access_fns!(
 );
 // region:      --- Postgres Queries
 
-pub(crate) fn pg_search(project_id: &'_ Option<ProjectId>) -> QueryBuilder<'_ , Postgres> {
+pub(crate) fn pg_search(project_id: &'_ Option<ProjectId>) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
         SELECT
             vk.id,
@@ -301,9 +330,10 @@ pub(crate) fn pg_getm(ids: &'_ Vec<VirtualKeyId>) -> QueryBuilder<'_, Postgres> 
 }
 
 pub(crate) fn pg_delete(id: &'_ VirtualKeyId) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         DELETE FROM virtual_keys
-        WHERE id="
+        WHERE id=",
     );
     // Push id
     query.push_bind(id);
@@ -321,9 +351,10 @@ pub(crate) fn pg_insert<'a>(
     project_id: &'a ProjectId,
     budget_limits: &'a Option<BudgetLimits>,
     request_limits: &'a Option<RequestLimits>,
-    token_limits: &'a Option<TokenLimits>
+    token_limits: &'a Option<TokenLimits>,
 ) -> QueryBuilder<'a, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         INSERT INTO virtual_keys
         (
             id,
@@ -332,7 +363,8 @@ pub(crate) fn pg_insert<'a>(
             salt,
             encrypted_key,
             blocked,
-            project_id");
+            project_id",
+    );
 
     if budget_limits.is_some() {
         query.push(", budget_limits");
@@ -343,7 +375,7 @@ pub(crate) fn pg_insert<'a>(
     if token_limits.is_some() {
         query.push(", token_limits");
     }
-    
+
     query.push(") VALUES (");
     // Push id
     query.push_bind(id);
@@ -408,9 +440,15 @@ pub(crate) struct DbVirtualKeyRecord {
 }
 
 impl ConvertInto<VirtualKey> for DbVirtualKeyRecord {
-    fn convert(self, application_secret: &Option<Uuid>) -> Result<VirtualKey, DbRecordConversionError> {
-        let application_secret = application_secret
-            .ok_or(DbRecordConversionError::InternalError("Application Secret not passed to convert method for DbVirtualKeyRecord".to_string()))?;
+    fn convert(
+        self,
+        application_secret: &Option<Uuid>,
+    ) -> Result<VirtualKey, DbRecordConversionError> {
+        let application_secret =
+            application_secret.ok_or(DbRecordConversionError::InternalError(
+                "Application Secret not passed to convert method for DbVirtualKeyRecord"
+                    .to_string(),
+            ))?;
         let key = decrypt(&self.encrypted_key, &self.salt, &application_secret)?;
 
         Ok(VirtualKey::new(

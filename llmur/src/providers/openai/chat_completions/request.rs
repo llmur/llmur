@@ -198,7 +198,7 @@ pub enum Message {
     #[serde(rename = "tool", alias = "tool")]
     ToolMessage {
         content: ToolMessageContent,
-        tool_call_id: String
+        tool_call_id: String,
     },
 
     #[serde(rename = "function", alias = "function")]
@@ -276,7 +276,7 @@ pub enum ToolMessageContentPart {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct AssistantMessageAudio {
-    id: String
+    id: String,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -362,7 +362,7 @@ pub enum ResponseFormat {
     #[serde(rename = "json_object", alias = "json_object")]
     JsonObject,
     #[serde(rename = "json_schema", alias = "json_schema")]
-    JsonSchema {json_schema: ResponseJsonSchema},
+    JsonSchema { json_schema: ResponseJsonSchema },
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -370,7 +370,7 @@ pub struct ResponseJsonSchema {
     pub name: String,
     pub description: Option<String>,
     pub schema: Option<serde_json::Value>,
-    pub strict: Option<bool>
+    pub strict: Option<bool>,
 }
 // endregion: --- Format structs
 
@@ -484,7 +484,7 @@ pub enum Prediction {
 #[serde(untagged)]
 pub enum PredictionStaticContent {
     Text(String),
-    Array(Vec<PredictionStaticContentPart>)
+    Array(Vec<PredictionStaticContentPart>),
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -542,7 +542,9 @@ pub struct WebSearchLocation {
 pub mod to_self {
     use crate::providers::openai::chat_completions::request::Request;
     use crate::providers::openai::chat_completions::request::StreamOptions;
-    use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
+    use crate::providers::{
+        Transformation, TransformationContext, TransformationLoss, Transformer,
+    };
 
     #[derive(Debug)]
     pub struct Loss {}
@@ -609,9 +611,7 @@ pub mod to_self {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ChatCompletionModality, Request, UserLocationType, WebSearchContextSize,
-    };
+    use super::{ChatCompletionModality, Request, UserLocationType, WebSearchContextSize};
 
     #[test]
     fn request_file_and_user_location_shapes() {
@@ -660,7 +660,11 @@ mod tests {
         assert!(matches!(user_location.kind, UserLocationType::Approximate));
         assert_eq!(user_location.approximate.country.as_deref(), Some("US"));
         assert!(matches!(
-            request.web_search_options.as_ref().unwrap().search_context_size,
+            request
+                .web_search_options
+                .as_ref()
+                .unwrap()
+                .search_context_size,
             Some(WebSearchContextSize::Medium)
         ));
     }
@@ -693,7 +697,10 @@ mod tests {
             tool_choice: None,
             service_tier: None,
             metadata: None,
-            modalities: Some(vec![ChatCompletionModality::Text, ChatCompletionModality::Audio]),
+            modalities: Some(vec![
+                ChatCompletionModality::Text,
+                ChatCompletionModality::Audio,
+            ]),
             parallel_tool_calls: None,
             prediction: None,
             reasoning_effort: None,

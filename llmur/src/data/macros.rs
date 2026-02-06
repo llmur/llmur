@@ -1,4 +1,3 @@
-
 // region:    --- Data Access Macros
 
 #[macro_export]
@@ -273,7 +272,7 @@ macro_rules! default_db_search_fn {
                                 let mut query = $pg_query_fn($( $param_name ),*);
                                 let sql = query.build_query_as::<$type>();
                                 let result = sql.fetch_all(pool).await;
-        
+
                                 metrics.register_database_request(&operation, start.elapsed().as_millis() as u64, result.is_ok());
 
                                 Ok(result?)
@@ -310,7 +309,7 @@ macro_rules! default_db_get_fn {
                                 let mut query = $pg_query_fn(id);
                                 let sql= query.build_query_as::<$type>();
                                 let result = sql.fetch_optional(pool).await;
-        
+
                                 metrics.register_database_request(&operation, start.elapsed().as_millis() as u64, result.is_ok());
 
                                 Ok(result?)
@@ -352,19 +351,19 @@ macro_rules! default_db_get_multiple_fn {
                                 metrics.register_database_request(&operation, start.elapsed().as_millis() as u64, result.is_ok());
 
                                 let result = result?;
-        
+
                                 // Create a map of found items using owned values
                                 let found_items: std::collections::BTreeMap<$id_type, $type> = result
                                     .into_iter()
                                     .map(|item| (<$type as crate::data::WithIdParameter<$id_type>>::get_id_ref(&item).clone(), item))
                                     .collect();
-        
+
                                 // Create final map with all requested IDs
                                 let map: std::collections::BTreeMap<$id_type, Option<$type>> = ids
                                     .iter()
                                     .map(|id| (id.clone(), found_items.get(id).cloned()))
                                     .collect();
-        
+
                                 Ok(map)
                             }
                         }
@@ -502,7 +501,11 @@ macro_rules! impl_locally_stored {
     ($type:ty, $id_type:ty, $field:ident) => {
         #[async_trait::async_trait]
         impl crate::data::LocallyStored<$id_type> for $type {
-            fn get_local_map(local: &crate::data::LocalStore) -> &std::sync::Mutex<std::collections::BTreeMap<$id_type, crate::data::LocallyStoredValue<Self>>> {
+            fn get_local_map(
+                local: &crate::data::LocalStore,
+            ) -> &std::sync::Mutex<
+                std::collections::BTreeMap<$id_type, crate::data::LocallyStoredValue<Self>>,
+            > {
                 &local.$field
             }
         }

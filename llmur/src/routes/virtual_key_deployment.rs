@@ -1,10 +1,11 @@
 use crate::data::deployment::DeploymentId;
+use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::virtual_key::VirtualKeyId;
 use crate::data::virtual_key_deployment::{VirtualKeyDeployment, VirtualKeyDeploymentId};
 use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
-use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
 use crate::routes::StatusResponse;
-use crate::{impl_from_vec_result, LLMurState};
+use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
+use crate::{LLMurState, impl_from_vec_result};
 use axum::extract::{Path, Query, State};
 use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
@@ -22,10 +23,7 @@ pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .with_state(state.clone())
 }
 
-#[tracing::instrument(
-    name = "handler.create.virtual_key",
-    skip(state, ctx, payload)
-)]
+#[tracing::instrument(name = "handler.create.virtual_key", skip(state, ctx, payload))]
 pub(crate) async fn create_virtual_key_deployment(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
@@ -35,7 +33,11 @@ pub(crate) async fn create_virtual_key_deployment(
 
     let virtual_key = state
         .data
-        .get_virtual_key(&payload.virtual_key_id, &state.application_secret, &state.metrics)
+        .get_virtual_key(
+            &payload.virtual_key_id,
+            &state.application_secret,
+            &state.metrics,
+        )
         .await?
         .ok_or(DataAccessError::ResourceNotFound)?;
 
@@ -45,13 +47,23 @@ pub(crate) async fn create_virtual_key_deployment(
         .await?
         .ok_or(DataAccessError::ResourceNotFound)?;
 
-    if !user_context.has_project_admin_access(state.clone(), &virtual_key.project_id).await? {
+    if !user_context
+        .has_project_admin_access(state.clone(), &virtual_key.project_id)
+        .await?
+    {
         return Err(AuthorizationError::AccessDenied)?;
     }
 
     let result = state
         .data
-        .create_virtual_key_deployment(&payload.virtual_key_id, &payload.deployment_id, &state.metrics)
+        .create_virtual_key_deployment(
+            &payload.virtual_key_id,
+            &payload.deployment_id,
+            &payload.budget_limits,
+            &payload.request_limits,
+            &payload.token_limits,
+            &state.metrics,
+        )
         .await?;
 
     Ok(Json(result.into()))
@@ -79,11 +91,18 @@ pub(crate) async fn get_virtual_key_deployment(
 
     let virtual_key = state
         .data
-        .get_virtual_key(&vkd.virtual_key_id, &state.application_secret, &state.metrics)
+        .get_virtual_key(
+            &vkd.virtual_key_id,
+            &state.application_secret,
+            &state.metrics,
+        )
         .await?
         .ok_or(DataAccessError::ResourceNotFound)?;
 
-    if !user_context.has_project_developer_access(state.clone(), &virtual_key.project_id).await? {
+    if !user_context
+        .has_project_developer_access(state.clone(), &virtual_key.project_id)
+        .await?
+    {
         return Err(AuthorizationError::AccessDenied)?;
     }
 
@@ -112,11 +131,18 @@ pub(crate) async fn delete_virtual_key_deployment(
 
     let virtual_key = state
         .data
-        .get_virtual_key(&vkd.virtual_key_id, &state.application_secret, &state.metrics)
+        .get_virtual_key(
+            &vkd.virtual_key_id,
+            &state.application_secret,
+            &state.metrics,
+        )
         .await?
         .ok_or(DataAccessError::ResourceNotFound)?;
 
-    if !user_context.has_project_admin_access(state.clone(), &virtual_key.project_id).await? {
+    if !user_context
+        .has_project_admin_access(state.clone(), &virtual_key.project_id)
+        .await?
+    {
         return Err(AuthorizationError::AccessDenied)?;
     }
 
@@ -131,11 +157,7 @@ pub(crate) async fn delete_virtual_key_deployment(
     }))
 }
 
-
-#[tracing::instrument(
-    name = "handler.search.virtual_key",
-    skip(state, ctx, params)
-)]
+#[tracing::instrument(name = "handler.search.virtual_key", skip(state, ctx, params))]
 pub(crate) async fn search_virtual_key_deployments(
     Extension(ctx): Extension<UserContextExtractionResult>,
     State(state): State<Arc<LLMurState>>,
@@ -155,7 +177,10 @@ pub(crate) async fn search_virtual_key_deployments(
             .await?
             .ok_or(DataAccessError::ResourceNotFound)?;
 
-        if !user_context.has_project_developer_access(state.clone(), &virtual_key.project_id).await? {
+        if !user_context
+            .has_project_developer_access(state.clone(), &virtual_key.project_id)
+            .await?
+        {
             return Err(AuthorizationError::AccessDenied)?;
         }
     } else if !user_context.has_admin_access() {
@@ -164,11 +189,8 @@ pub(crate) async fn search_virtual_key_deployments(
 
     let result = state
         .data
-        .search_virtual_key_deployments(
-            &virtual_key_id,
-            &deployment_id,
-            &state.metrics,
-        ).await?
+        .search_virtual_key_deployments(&virtual_key_id, &deployment_id, &state.metrics)
+        .await?
         .into_iter()
         .map(Into::<GetVirtualKeyDeploymentResult>::into)
         .collect::<Vec<GetVirtualKeyDeploymentResult>>()
@@ -177,7 +199,6 @@ pub(crate) async fn search_virtual_key_deployments(
     Ok(Json(result))
 }
 
-
 // endregion: --- Routes
 
 // region:    --- Data Models
@@ -185,12 +206,15 @@ pub(crate) async fn search_virtual_key_deployments(
 pub(crate) struct CreateVirtualKeyDeploymentPayload {
     pub(crate) virtual_key_id: VirtualKeyId,
     pub(crate) deployment_id: DeploymentId,
+    pub(crate) budget_limits: Option<BudgetLimits>,
+    pub(crate) request_limits: Option<RequestLimits>,
+    pub(crate) token_limits: Option<TokenLimits>,
 }
 
 #[derive(Deserialize)]
 pub(crate) struct SearchVirtualKeyDeploymentQueryParams {
     pub(crate) virtual_key_id: Option<VirtualKeyId>,
-    pub(crate) deployment_id: Option<DeploymentId>
+    pub(crate) deployment_id: Option<DeploymentId>,
 }
 
 #[derive(Serialize)]
@@ -198,6 +222,9 @@ pub(crate) struct GetVirtualKeyDeploymentResult {
     pub(crate) id: VirtualKeyDeploymentId,
     pub(crate) virtual_key_id: VirtualKeyId,
     pub(crate) deployment_id: DeploymentId,
+    pub(crate) budget_limits: BudgetLimits,
+    pub(crate) request_limits: RequestLimits,
+    pub(crate) token_limits: TokenLimits,
 }
 
 #[derive(Serialize)]
@@ -206,7 +233,11 @@ pub(crate) struct ListVirtualKeyDeploymentsResult {
     pub(crate) total: usize,
 }
 
-impl_from_vec_result!(GetVirtualKeyDeploymentResult, ListVirtualKeyDeploymentsResult, maps);
+impl_from_vec_result!(
+    GetVirtualKeyDeploymentResult,
+    ListVirtualKeyDeploymentsResult,
+    maps
+);
 
 impl From<VirtualKeyDeployment> for GetVirtualKeyDeploymentResult {
     fn from(value: VirtualKeyDeployment) -> Self {
@@ -214,6 +245,9 @@ impl From<VirtualKeyDeployment> for GetVirtualKeyDeploymentResult {
             id: value.id,
             virtual_key_id: value.virtual_key_id,
             deployment_id: value.deployment_id,
+            budget_limits: value.budget_limits,
+            request_limits: value.request_limits,
+            token_limits: value.token_limits,
         }
     }
 }

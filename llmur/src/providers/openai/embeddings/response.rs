@@ -1,12 +1,12 @@
-use serde::{Deserialize, Serialize};
 use crate::providers::ExposesUsage;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Response {
     pub object: ResponseObjectType,
     pub data: Vec<EmbeddingObject>,
     pub model: String,
-    pub usage: ResponseUsage
+    pub usage: ResponseUsage,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -45,13 +45,17 @@ impl ExposesUsage for Response {
 
 pub mod to_self {
     use crate::providers::openai::embeddings::response::Response;
-    use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
+    use crate::providers::{
+        Transformation, TransformationContext, TransformationLoss, Transformer,
+    };
 
     #[derive(Debug)]
     pub struct Loss {}
 
     #[derive(Debug)]
-    pub struct Context { pub model: Option<String> }
+    pub struct Context {
+        pub model: Option<String>,
+    }
 
     impl TransformationContext<Response, Response> for Context {}
     impl TransformationLoss<Response, Response> for Loss {}

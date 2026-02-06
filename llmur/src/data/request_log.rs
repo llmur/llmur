@@ -162,7 +162,11 @@ impl Database {
                         let sql = query.build();
                         let result = sql.execute(pool).await;
 
-                        metrics.register_database_request(operation, start.elapsed().as_millis() as u64, result.is_ok());
+                        metrics.register_database_request(
+                            operation,
+                            start.elapsed().as_millis() as u64,
+                            result.is_ok(),
+                        );
 
                         Ok(result.map(|qr| qr.rows_affected())?)
                     }

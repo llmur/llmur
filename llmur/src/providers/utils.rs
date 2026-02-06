@@ -1,13 +1,13 @@
 use crate::errors::{ProxyError, ProxyErrorMessage};
 use crate::providers::{TransformationContext, TransformationLoss, Transformer};
 use crate::routes::openai::response::ProviderResponse;
-use log::debug;
-use reqwest::header::HeaderMap;
-use reqwest::{Client};
-use serde_json::{from_value};
-use std::fmt::Debug;
-use futures::StreamExt;
 use axum::body::Body;
+use futures::StreamExt;
+use log::debug;
+use reqwest::Client;
+use reqwest::header::HeaderMap;
+use serde_json::from_value;
+use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 
 #[tracing::instrument(
@@ -72,16 +72,20 @@ pub(crate) async fn generic_post_proxy_request<
             std::any::type_name::<ResponseTransformed>()
         );
 
-        let json_value =  response.json::<serde_json::Value>().await?;
+        let json_value = response.json::<serde_json::Value>().await?;
 
         match from_value::<ResponseProvider>(json_value.clone()) {
             Ok(deserialized) => {
                 let data = deserialized.transform(response_context);
-                Ok(ProviderResponse::DecodedResponse { data: data.result, status_code: status })
+                Ok(ProviderResponse::DecodedResponse {
+                    data: data.result,
+                    status_code: status,
+                })
             }
-            Err(_) => {
-                Ok(ProviderResponse::JsonResponse { data: json_value, status_code: status })
-            }
+            Err(_) => Ok(ProviderResponse::JsonResponse {
+                data: json_value,
+                status_code: status,
+            }),
         }
     } else {
         debug!(
@@ -93,13 +97,17 @@ pub(crate) async fn generic_post_proxy_request<
 
         // Try to parse as JSON
         match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
-            Ok(value) => {
-                Err(ProxyError::ProxyReturnError(status, ProxyErrorMessage::Json(value)))?
-            }
+            Ok(value) => Err(ProxyError::ProxyReturnError(
+                status,
+                ProxyErrorMessage::Json(value),
+            ))?,
             Err(_) => {
                 // Fall back to text
                 let text = String::from_utf8_lossy(&body_bytes).to_string();
-                Err(ProxyError::ProxyReturnError(status, ProxyErrorMessage::Text(text)))?
+                Err(ProxyError::ProxyReturnError(
+                    status,
+                    ProxyErrorMessage::Text(text),
+                ))?
             }
         }
     }
@@ -162,9 +170,9 @@ pub(crate) async fn generic_post_proxy_request_stream<
             .and_then(|value| value.to_str().ok())
             .map(|value| value.to_string());
 
-        let stream = response.bytes_stream().map(|item| {
-            item.map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))
-        });
+        let stream = response
+            .bytes_stream()
+            .map(|item| item.map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err)));
         let body = Body::from_stream(stream);
 
         Ok(ProviderResponse::Stream {
@@ -180,12 +188,16 @@ pub(crate) async fn generic_post_proxy_request_stream<
         let body_bytes = response.bytes().await?;
 
         match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
-            Ok(value) => {
-                Err(ProxyError::ProxyReturnError(status, ProxyErrorMessage::Json(value)))?
-            }
+            Ok(value) => Err(ProxyError::ProxyReturnError(
+                status,
+                ProxyErrorMessage::Json(value),
+            ))?,
             Err(_) => {
                 let text = String::from_utf8_lossy(&body_bytes).to_string();
-                Err(ProxyError::ProxyReturnError(status, ProxyErrorMessage::Text(text)))?
+                Err(ProxyError::ProxyReturnError(
+                    status,
+                    ProxyErrorMessage::Text(text),
+                ))?
             }
         }
     }

@@ -1,16 +1,19 @@
-use std::sync::Arc;
-use crate::data::user::UserId;
-use crate::data::utils::{new_uuid_v5_from_string, parse_and_add_to_current_ts, ConvertInto};
-use crate::{default_access_fns, default_database_access_fns, impl_local_store_accessors, impl_locally_stored, impl_structured_id_utils, impl_with_id_parameter_for_struct};
-use chrono::{DateTime, Utc};
-use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
-use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, Postgres, QueryBuilder};
-use uuid::Uuid;
 use crate::data::DataAccess;
+use crate::data::user::UserId;
+use crate::data::utils::{ConvertInto, new_uuid_v5_from_string, parse_and_add_to_current_ts};
 use crate::errors::{DataAccessError, DbRecordConversionError, InvalidTimeFormatError};
 use crate::metrics::Metrics;
+use crate::{
+    default_access_fns, default_database_access_fns, impl_local_store_accessors,
+    impl_locally_stored, impl_structured_id_utils, impl_with_id_parameter_for_struct,
+};
+use chrono::{DateTime, Utc};
+use rand::distributions::Alphanumeric;
+use rand::{Rng, thread_rng};
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, Postgres, QueryBuilder};
+use std::sync::Arc;
+use uuid::Uuid;
 
 // region:    --- Main Model
 #[derive(
@@ -25,7 +28,7 @@ use crate::metrics::Metrics;
     sqlx::Type,
     Serialize,
     Deserialize,
-    FromRow
+    FromRow,
 )]
 #[sqlx(transparent)]
 pub struct SessionTokenId(pub Uuid);
@@ -41,15 +44,21 @@ pub struct SessionToken {
 }
 
 impl SessionToken {
-    pub(crate) fn new(id: SessionTokenId, user_id: UserId, created_at: i64, updated_at: i64, expires_at: i64, revoked: bool) -> Self {
-
+    pub(crate) fn new(
+        id: SessionTokenId,
+        user_id: UserId,
+        created_at: i64,
+        updated_at: i64,
+        expires_at: i64,
+        revoked: bool,
+    ) -> Self {
         SessionToken {
             id,
             user_id,
             created_at,
             updated_at,
             expires_at,
-            revoked
+            revoked,
         }
     }
 }
@@ -75,7 +84,6 @@ impl_locally_stored!(SessionToken, SessionTokenId, session_tokens);
 
 // region:    --- Data Access
 impl DataAccess {
-
     #[tracing::instrument(
         level="trace",
         name = "get.session_token",
@@ -84,10 +92,13 @@ impl DataAccess {
             id = %id.0
         )
     )]
-    pub async fn get_session_token(&self, id: &SessionTokenId, metrics: &Option<Arc<Metrics>>) -> Result<Option<SessionToken>, DataAccessError> {
+    pub async fn get_session_token(
+        &self,
+        id: &SessionTokenId,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<Option<SessionToken>, DataAccessError> {
         self.__get_session_token(id, &None, metrics).await // TODO : Parameterise
     }
-
 
     #[tracing::instrument(
         level="trace",
@@ -97,13 +108,19 @@ impl DataAccess {
             user_id = %user_id.0
         )
     )]
-    pub async fn create_session_token(&self, id: &SessionTokenId, user_id: &UserId, metrics: &Option<Arc<Metrics>>) -> Result<SessionToken, DataAccessError> {
+    pub async fn create_session_token(
+        &self,
+        id: &SessionTokenId,
+        user_id: &UserId,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<SessionToken, DataAccessError> {
         let seconds = parse_and_add_to_current_ts("30d")?; // Should never fail - Still better handle it
-        let expires_at = chrono::DateTime::from_timestamp(seconds, 0).ok_or(InvalidTimeFormatError::TimestampOutOfRange(seconds))?;
+        let expires_at = chrono::DateTime::from_timestamp(seconds, 0)
+            .ok_or(InvalidTimeFormatError::TimestampOutOfRange(seconds))?;
 
-        self.__create_session_token(id, user_id, &expires_at, &None, metrics).await
+        self.__create_session_token(id, user_id, &expires_at, &None, metrics)
+            .await
     }
-
 
     #[tracing::instrument(
         level="trace",
@@ -113,23 +130,27 @@ impl DataAccess {
             id = %id.0
         )
     )]
-    pub async fn delete_session_token(&self, id: &SessionTokenId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+    pub async fn delete_session_token(
+        &self,
+        id: &SessionTokenId,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<u64, DataAccessError> {
         self.__delete_session_token(id, metrics).await
     }
 }
 
 default_access_fns!(
-        SessionToken,
-        SessionTokenId,
-        session_token,
-        session_tokens,
-        create => {
-            id: &SessionTokenId,
-            user_id: &UserId,
-            expires_at: &DateTime<Utc>
-        },
-        search => {}
-    );
+    SessionToken,
+    SessionTokenId,
+    session_token,
+    session_tokens,
+    create => {
+        id: &SessionTokenId,
+        user_id: &UserId,
+        expires_at: &DateTime<Utc>
+    },
+    search => {}
+);
 // endregion: --- Data Access
 
 // region:    --- Database Access
@@ -152,11 +173,16 @@ pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
     unimplemented!()
 }
 
-pub(crate) fn pg_insert<'a>(id: &'a SessionTokenId, user_id: &'a UserId, expires_at: &'a DateTime<Utc>) -> QueryBuilder<'a, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+pub(crate) fn pg_insert<'a>(
+    id: &'a SessionTokenId,
+    user_id: &'a UserId,
+    expires_at: &'a DateTime<Utc>,
+) -> QueryBuilder<'a, Postgres> {
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         INSERT INTO session_tokens
             (id, user_id, expires_at)
-        VALUES ("
+        VALUES (",
     );
     // Push id
     query.push_bind(id);
@@ -172,10 +198,11 @@ pub(crate) fn pg_insert<'a>(id: &'a SessionTokenId, user_id: &'a UserId, expires
     query
 }
 pub(crate) fn pg_get(id: &'_ SessionTokenId) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         SELECT id, user_id, expires_at, revoked, created_at, updated_at
         FROM session_tokens
-        WHERE id="
+        WHERE id=",
     );
     // Push id
     query.push_bind(id);
@@ -190,9 +217,10 @@ pub(crate) fn pg_getm(ids: &'_ Vec<SessionTokenId>) -> QueryBuilder<'_, Postgres
 }
 
 pub(crate) fn pg_delete(id: &'_ SessionTokenId) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         DELETE FROM session_tokens
-        WHERE id="
+        WHERE id=",
     );
     // Push id
     query.push_bind(id);
@@ -218,7 +246,10 @@ pub struct DbSessionTokenRecord {
 }
 
 impl ConvertInto<SessionToken> for DbSessionTokenRecord {
-    fn convert(self, _application_secret: &Option<Uuid>) -> Result<SessionToken, DbRecordConversionError> {
+    fn convert(
+        self,
+        _application_secret: &Option<Uuid>,
+    ) -> Result<SessionToken, DbRecordConversionError> {
         Ok(SessionToken::new(
             self.id,
             self.user_id,

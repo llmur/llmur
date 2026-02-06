@@ -6,7 +6,10 @@ class TestVirtualKeyDeploymentMaps:
         """Test successful creation of association between key and a deployment"""
         payload = {
             'virtual_key_id': created_virtual_key,
-            'deployment_id': created_deployment
+            'deployment_id': created_deployment,
+            'budget_limits': {"cost_per_day": 2.25},
+            'request_limits': {"requests_per_day": 7},
+            'token_limits': {"tokens_per_day": 13},
         }
 
         response = api_client.create_virtual_key_deployment_map(payload)
@@ -16,6 +19,9 @@ class TestVirtualKeyDeploymentMaps:
         assert 'id' in data
         assert data['virtual_key_id'] == created_virtual_key
         assert data['deployment_id'] == created_deployment
+        assert data['budget_limits']['cost_per_day'] == pytest.approx(2.25)
+        assert data['request_limits']['requests_per_day'] == 7
+        assert data['token_limits']['tokens_per_day'] == 13
 
         # Cleanup
         api_client.delete_virtual_key_deployment_map(data['id'])
@@ -29,6 +35,9 @@ class TestVirtualKeyDeploymentMaps:
         assert data['id'] == created_virtual_key_deployment_map
         assert 'virtual_key_id' in data
         assert 'deployment_id' in data
+        assert 'budget_limits' in data
+        assert 'request_limits' in data
+        assert 'token_limits' in data
 
     def test_create_virtual_key_deployment_map_duplicate(self, api_client, created_virtual_key, created_deployment):
         """Test duplicate virtual key/deployment map returns conflict"""

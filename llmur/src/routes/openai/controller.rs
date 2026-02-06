@@ -1,20 +1,20 @@
 use crate::LLMurState;
-use crate::errors::{GraphError, LLMurError, MissingConnectionReason, ProxyError};
+use crate::errors::{GraphError, LLMurError, ProxyError};
 use crate::providers::{ExposesDeployment, ExposesUsage};
+use crate::routes::openai::logging::{RequestLogContext, RequestLogSenders, send_request_log};
 use crate::routes::openai::request::OpenAiRequestData;
 use crate::routes::openai::response::{ProviderResponse, ProxyResponse};
-use crate::routes::openai::logging::{RequestLogContext, RequestLogSenders, send_request_log};
 
 use crate::data::request_log::RequestLogId;
 use axum::extract::FromRequest;
 use axum::{extract::State, http::Request, middleware::Next};
 
 use crate::data::graph::{ConnectionNode, NodeLimitsChecker};
+use chrono::Utc;
 use log::debug;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
-use chrono::Utc;
 use tracing::Instrument;
 
 #[tracing::instrument(name = "controller", skip(state, request, next))]
@@ -30,18 +30,9 @@ where
     println!("Executing openai_route_controller_mw");
     let (request_id, request_data) = load_request_details::<I>(request, state.clone()).await?;
 
-    if request_data.graph.connections.is_empty() {
-        Err(GraphError::NoConnectionAvailable(
-            MissingConnectionReason::DeploymentConnectionsNotSetup,
-        ))?;
-    }
-
     validate_usage(Arc::clone(&request_data))?;
 
-    let connection = state.data.get_next_connection(&request_data.graph)?;
-    state
-        .data
-        .increment_opened_connection_count(&connection.data.id);
+    let connection = &request_data.graph.connection;
 
     // Create a child span for this attempt
     let primary_attempt_span = tracing::debug_span!(
@@ -80,8 +71,6 @@ where
         });
 
         let response = next.clone().run(attempt_req).await;
-        state.data.decrement_opened_connection_count(&connection.data.id);
-
         let result = response
             .extensions()
             .get::<Arc<ProxyResponse<O>>>()
@@ -210,6 +199,7 @@ where
     I: DeserializeOwned + ExposesDeployment + Send + Sync + 'static,
 {
     data.graph.virtual_key.validate_limits()?;
+    data.graph.virtual_key_deployment.validate_limits()?;
     data.graph.project.validate_limits()?;
     data.graph.deployment.validate_limits()?;
 

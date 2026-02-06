@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 // region: --- Response structs
-/// Azure OpenAI embeddings response payload.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Response {
     pub object: String,
@@ -10,7 +9,6 @@ pub struct Response {
     pub usage: ResponseUsage,
 }
 
-/// Embedding vector entry.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct EmbeddingObject {
     pub index: u64,
@@ -18,7 +16,6 @@ pub struct EmbeddingObject {
     pub embedding: Vec<f64>,
 }
 
-/// Token usage metadata for an embeddings response.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ResponseUsage {
     pub prompt_tokens: u64,
@@ -33,7 +30,9 @@ pub mod to_openai_transform {
         EmbeddingObject as OpenAiEmbeddingObject, EmbeddingObjectType, Response as OpenAiResponse,
         ResponseObjectType, ResponseUsage as OpenAiResponseUsage,
     };
-    use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
+    use crate::providers::{
+        Transformation, TransformationContext, TransformationLoss, Transformer,
+    };
 
     #[derive(Debug)]
     pub struct Loss {}
@@ -76,11 +75,11 @@ pub mod to_openai_transform {
 #[cfg(test)]
 mod tests {
     use super::to_openai_transform;
-    use crate::providers::azure::openai::v2024_10_21::embeddings::response::{
+    use crate::providers::Transformer;
+    use crate::providers::azure::openai::v1::embeddings::response::{
         EmbeddingObject, Response, ResponseUsage,
     };
     use crate::providers::openai::embeddings::response::{EmbeddingObjectType, ResponseObjectType};
-    use crate::providers::Transformer;
 
     #[test]
     fn transforms_azure_response_to_openai() {

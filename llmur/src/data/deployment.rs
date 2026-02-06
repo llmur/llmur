@@ -1,12 +1,12 @@
-use crate::data::connection_deployment::ConnectionDeploymentId;
-use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
-use crate::data::load_balancer::LoadBalancingStrategy;
-use crate::data::utils::ConvertInto;
 use crate::data::DataAccess;
+use crate::data::connection::ConnectionId;
+use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
+use crate::data::utils::ConvertInto;
 use crate::errors::{DataAccessError, DbRecordConversionError};
+use crate::metrics::Metrics;
 use crate::{
-    default_access_fns, default_database_access_fns
-    , impl_structured_id_utils, impl_with_id_parameter_for_struct,
+    default_access_fns, default_database_access_fns, impl_structured_id_utils,
+    impl_with_id_parameter_for_struct,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
@@ -14,7 +14,6 @@ use sqlx::{FromRow, Postgres, QueryBuilder};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use uuid::Uuid;
-use crate::metrics::Metrics;
 
 // region:    --- Main Model
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, PartialOrd, sqlx::Type)]
@@ -50,14 +49,11 @@ pub struct Deployment {
     pub id: DeploymentId,
     pub name: String,
     pub access: DeploymentAccess,
-    pub strategy: LoadBalancingStrategy,
+    pub connection_id: ConnectionId,
 
     pub budget_limits: BudgetLimits,
     pub request_limits: RequestLimits,
     pub token_limits: TokenLimits,
-
-    // Only track downstream dependencies
-    pub connections: BTreeSet<ConnectionDeploymentId>,
 }
 
 impl Deployment {
@@ -65,21 +61,19 @@ impl Deployment {
         id: DeploymentId,
         name: String,
         access: DeploymentAccess,
-        strategy: LoadBalancingStrategy,
+        connection_id: ConnectionId,
         budget_limits: BudgetLimits,
         request_limits: RequestLimits,
         token_limits: TokenLimits,
-        connections: BTreeSet<ConnectionDeploymentId>,
     ) -> Self {
         Deployment {
             id,
             name,
             access,
-            strategy,
+            connection_id,
             budget_limits,
             request_limits,
             token_limits,
-            connections,
         }
     }
 }
@@ -100,8 +94,8 @@ impl DataAccess {
     )]
     pub async fn get_deployment(
         &self,
-        id: &DeploymentId, 
-        metrics: &Option<Arc<Metrics>>
+        id: &DeploymentId,
+        metrics: &Option<Arc<Metrics>>,
     ) -> Result<Option<Deployment>, DataAccessError> {
         self.__get_deployment(id, &None, metrics).await
     }
@@ -117,7 +111,7 @@ impl DataAccess {
     pub async fn get_deployments(
         &self,
         ids: &BTreeSet<DeploymentId>,
-        metrics: &Option<Arc<Metrics>>
+        metrics: &Option<Arc<Metrics>>,
     ) -> Result<BTreeMap<DeploymentId, Option<Deployment>>, DataAccessError> {
         self.__get_deployments(ids, &None, metrics).await
     }
@@ -133,27 +127,33 @@ impl DataAccess {
     pub async fn search_deployments(
         &self,
         name: &Option<String>,
-        metrics: &Option<Arc<Metrics>>
+        metrics: &Option<Arc<Metrics>>,
     ) -> Result<Vec<Deployment>, DataAccessError> {
         self.__search_deployments(name, &None, metrics).await
     }
 
-    #[tracing::instrument(
-        level="trace",
-        name = "create.deployment",
-        skip(self, metrics)
-    )]
+    #[tracing::instrument(level = "trace", name = "create.deployment", skip(self, metrics))]
     pub async fn create_deployment(
         &self,
         name: &str,
         access: &DeploymentAccess,
-        strategy: &LoadBalancingStrategy,
+        connection_id: &ConnectionId,
         budget_limits: &Option<BudgetLimits>,
         request_limits: &Option<RequestLimits>,
         token_limits: &Option<TokenLimits>,
-        metrics: &Option<Arc<Metrics>>
+        metrics: &Option<Arc<Metrics>>,
     ) -> Result<Deployment, DataAccessError> {
-        self.__create_deployment(name, access, strategy, budget_limits, request_limits, token_limits, &None, metrics).await
+        self.__create_deployment(
+            name,
+            access,
+            connection_id,
+            budget_limits,
+            request_limits,
+            token_limits,
+            &None,
+            metrics,
+        )
+        .await
     }
 
     #[tracing::instrument(
@@ -164,7 +164,11 @@ impl DataAccess {
             id = %id.0
         )
     )]
-    pub async fn delete_deployment(&self, id: &DeploymentId, metrics: &Option<Arc<Metrics>>) -> Result<u64, DataAccessError> {
+    pub async fn delete_deployment(
+        &self,
+        id: &DeploymentId,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<u64, DataAccessError> {
         self.__delete_deployment(id, metrics).await
     }
 }
@@ -177,7 +181,7 @@ default_access_fns!(
     create => {
         name: &str,
         access: &DeploymentAccess,
-        strategy: &LoadBalancingStrategy,
+        connection_id: &ConnectionId,
         budget_limits: &Option<BudgetLimits>,
         request_limits: &Option<RequestLimits>,
         token_limits: &Option<TokenLimits>
@@ -197,7 +201,7 @@ default_database_access_fns!(
     insert => {
         name: &str,
         access: &DeploymentAccess,
-        strategy: &LoadBalancingStrategy,
+        connection_id: &ConnectionId,
         budget_limits: &Option<BudgetLimits>,
         request_limits: &Option<RequestLimits>,
         token_limits: &Option<TokenLimits>
@@ -208,20 +212,19 @@ default_database_access_fns!(
 );
 // region:      --- Postgres Queries
 pub(crate) fn pg_search(name: &'_ Option<String>) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         SELECT
             d.id,
             d.name,
             d.access,
-            d.strategy,
+            d.connection_id,
             d.budget_limits,
             d.request_limits,
-            d.token_limits,
-            COALESCE(array_agg(DISTINCT dc.id) FILTER (WHERE dc.id IS NOT NULL), '{}'::uuid[]) AS connections
+            d.token_limits
         FROM
             deployments d
-        LEFT JOIN deployments_connections_map dc ON dc.deployment_id = d.id
-        WHERE true=true"
+        WHERE true=true",
     );
     // If name is passed as a search parameter
     if let Some(name) = name {
@@ -229,52 +232,47 @@ pub(crate) fn pg_search(name: &'_ Option<String>) -> QueryBuilder<'_, Postgres> 
         query.push_bind(name);
     }
 
-    query.push(" GROUP BY d.id, d.name, d.access");
     // Build query
     query
 }
 
 pub(crate) fn pg_get(id: &'_ DeploymentId) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         SELECT
             d.id,
             d.name,
             d.access,
-            d.strategy,
+            d.connection_id,
             d.budget_limits,
             d.request_limits,
-            d.token_limits,
-            COALESCE(array_agg(DISTINCT dc.id) FILTER (WHERE dc.id IS NOT NULL), '{}'::uuid[]) AS connections
+            d.token_limits
         FROM
             deployments d
-        LEFT JOIN deployments_connections_map dc ON dc.deployment_id = d.id
         WHERE
-            d.id ="
+            d.id =",
     );
     // Push id
     query.push_bind(id);
-    // Group results
-    query.push(" GROUP BY d.id, d.name, d.access");
     // Build query
     query
 }
 
 pub(crate) fn pg_getm(ids: &'_ Vec<DeploymentId>) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         SELECT
             d.id,
             d.name,
             d.access,
-            d.strategy,
+            d.connection_id,
             d.budget_limits,
             d.request_limits,
-            d.token_limits,
-            COALESCE(array_agg(DISTINCT dc.id) FILTER (WHERE dc.id IS NOT NULL), '{}'::uuid[]) AS connections
+            d.token_limits
         FROM
             deployments d
-        LEFT JOIN deployments_connections_map dc ON dc.deployment_id = d.id
         WHERE
-            d.id IN ( "
+            d.id IN ( ",
     );
     // Push ids
     let mut separated = query.separated(", ");
@@ -282,8 +280,6 @@ pub(crate) fn pg_getm(ids: &'_ Vec<DeploymentId>) -> QueryBuilder<'_, Postgres> 
         separated.push_bind(id);
     }
     separated.push_unseparated(") ");
-
-    query.push(" GROUP BY d.id, d.name, d.access");
 
     query
 }
@@ -303,7 +299,7 @@ pub(crate) fn pg_delete(id: &'_ DeploymentId) -> QueryBuilder<'_, Postgres> {
 pub(crate) fn pg_insert<'a>(
     name: &'a str,
     access: &'a DeploymentAccess,
-    strategy: &'a LoadBalancingStrategy,
+    connection_id: &'a ConnectionId,
     budget_limits: &'a Option<BudgetLimits>,
     request_limits: &'a Option<RequestLimits>,
     token_limits: &'a Option<TokenLimits>,
@@ -311,7 +307,7 @@ pub(crate) fn pg_insert<'a>(
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
         "
         INSERT INTO deployments
-            (id, name, access, strategy",
+            (id, name, access, connection_id",
     );
 
     if budget_limits.is_some() {
@@ -334,8 +330,8 @@ pub(crate) fn pg_insert<'a>(
     // Push access
     query.push_bind(access);
     query.push(", ");
-    // Push strategy
-    query.push_bind(strategy);
+    // Push connection id
+    query.push_bind(connection_id);
 
     if let Some(limits) = budget_limits {
         query.push(", ");
@@ -366,13 +362,11 @@ pub(crate) struct DbDeploymentRecord {
     pub(crate) id: DeploymentId,
     pub(crate) name: String,
     pub(crate) access: DeploymentAccess,
-    pub(crate) strategy: LoadBalancingStrategy,
+    pub(crate) connection_id: ConnectionId,
 
     pub(crate) budget_limits: Option<sqlx::types::Json<BudgetLimits>>,
     pub(crate) request_limits: Option<sqlx::types::Json<RequestLimits>>,
     pub(crate) token_limits: Option<sqlx::types::Json<TokenLimits>>,
-
-    pub(crate) connections: Vec<ConnectionDeploymentId>,
 }
 
 impl ConvertInto<Deployment> for DbDeploymentRecord {
@@ -384,11 +378,10 @@ impl ConvertInto<Deployment> for DbDeploymentRecord {
             self.id,
             self.name,
             self.access,
-            self.strategy,
+            self.connection_id,
             self.budget_limits.map(|l| l.0).unwrap_or_default(),
             self.request_limits.map(|l| l.0).unwrap_or_default(),
             self.token_limits.map(|l| l.0).unwrap_or_default(),
-            self.connections.into_iter().collect(),
         ))
     }
 }

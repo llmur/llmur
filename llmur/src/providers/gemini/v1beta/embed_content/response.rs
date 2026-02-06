@@ -56,7 +56,9 @@ pub mod to_openai_transform {
         EmbeddingObject, EmbeddingObjectType, Response as OpenAiResponse, ResponseObjectType,
         ResponseUsage as OpenAiResponseUsage,
     };
-    use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
+    use crate::providers::{
+        Transformation, TransformationContext, TransformationLoss, Transformer,
+    };
 
     #[derive(Debug)]
     pub struct Loss {}
@@ -103,11 +105,13 @@ pub mod to_openai_transform {
         }
 
         embedding
-            .map(|item| vec![EmbeddingObject {
-                embedding: item.values,
-                index: 0,
-                object: EmbeddingObjectType::Embedding,
-            }])
+            .map(|item| {
+                vec![EmbeddingObject {
+                    embedding: item.values,
+                    index: 0,
+                    object: EmbeddingObjectType::Embedding,
+                }]
+            })
             .unwrap_or_default()
     }
 
@@ -132,11 +136,11 @@ pub mod to_openai_transform {
 #[cfg(test)]
 mod tests {
     use super::to_openai_transform;
+    use crate::providers::Transformer;
     use crate::providers::gemini::v1beta::embed_content::response::{
         Embedding, Response, UsageMetadata,
     };
     use crate::providers::openai::embeddings::response::{EmbeddingObjectType, ResponseObjectType};
-    use crate::providers::Transformer;
 
     #[test]
     fn transforms_gemini_response_to_openai() {

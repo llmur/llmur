@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
 use crate::providers::ExposesUsage;
 use crate::providers::openai::chat_completions::request::ServiceTier;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Response {
@@ -67,7 +67,10 @@ pub struct ResponseMessageAudio {
 #[serde(tag = "type")]
 pub enum ResponseChoiceToolCall {
     #[serde(rename = "function", alias = "function")]
-    Function { id: String, function: ResponseChoiceFunctionToolCall },
+    Function {
+        id: String,
+        function: ResponseChoiceFunctionToolCall,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -78,7 +81,7 @@ pub struct ResponseUsage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub completion_tokens_details: Option<CompletionTokensDetails>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub prompt_tokens_details: Option<PromptTokensDetails>
+    pub prompt_tokens_details: Option<PromptTokensDetails>,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -143,13 +146,17 @@ impl ExposesUsage for Response {
 
 pub mod to_self {
     use crate::providers::openai::chat_completions::response::Response;
-    use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
+    use crate::providers::{
+        Transformation, TransformationContext, TransformationLoss, Transformer,
+    };
 
     #[derive(Debug)]
     pub struct Loss {}
 
     #[derive(Debug)]
-    pub struct Context { pub model: Option<String> }
+    pub struct Context {
+        pub model: Option<String>,
+    }
 
     impl TransformationContext<Response, Response> for Context {}
     impl TransformationLoss<Response, Response> for Loss {}

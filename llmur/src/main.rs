@@ -8,12 +8,12 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 
-use tracing::info;
 use llmur::LLMurState;
+use tracing::info;
 
 mod configuration;
-mod utils;
 mod otel;
+mod utils;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -30,9 +30,7 @@ async fn main() -> Result<(), Error> {
     let configuration: Configuration = Configuration::from_yaml_file(&args.configuration);
     let state: LLMurState = configuration.clone().into_async().await;
 
-    let router: Router = llmur::router(
-        Arc::new(state),
-    );
+    let router: Router = llmur::router(Arc::new(state));
     let router: Router = router.layer(TraceLayer::new_for_http());
 
     let listener: TcpListener = TcpListener::bind(format!(
