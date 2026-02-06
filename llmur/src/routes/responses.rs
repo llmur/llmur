@@ -159,12 +159,7 @@ mod azure_openai_request {
         } else {
             format!("{}/openai/v1", api_base)
         };
-        let generate_url_fn = |_| {
-            format!(
-                "{}/responses",
-                api_base
-            )
-        };
+        let generate_url_fn = |_| format!("{}/responses", api_base);
 
         let start_ts = Utc::now();
         if stream {
@@ -845,9 +840,16 @@ mod gemini_v1beta_request {
             };
             self.enqueue_event(event);
             self.completed_sent = true;
-            self.finish_log(self.error.as_ref().map(|err| {
-                format!("{:?}: {}", err.code, err.message)
-            }).or_else(|| self.incomplete_reason.as_ref().map(|reason| format!("incomplete: {:?}", reason))));
+            self.finish_log(
+                self.error
+                    .as_ref()
+                    .map(|err| format!("{:?}: {}", err.code, err.message))
+                    .or_else(|| {
+                        self.incomplete_reason
+                            .as_ref()
+                            .map(|reason| format!("incomplete: {:?}", reason))
+                    }),
+            );
         }
 
         fn finish_log(&mut self, error: Option<String>) {
@@ -891,8 +893,9 @@ mod gemini_v1beta_request {
             let usage = self.usage.as_ref().map(|usage| {
                 let input_tokens = usage.prompt_token_count.unwrap_or(0);
                 let output_tokens = usage.candidates_token_count.unwrap_or(0);
-                let total_tokens =
-                    usage.total_token_count.unwrap_or(input_tokens + output_tokens);
+                let total_tokens = usage
+                    .total_token_count
+                    .unwrap_or(input_tokens + output_tokens);
                 let cached_tokens = usage.cached_content_token_count.unwrap_or(0);
                 let reasoning_tokens = usage.thoughts_token_count.unwrap_or(0);
                 ResponseUsage {
@@ -910,10 +913,12 @@ mod gemini_v1beta_request {
                 .tool_choice
                 .clone()
                 .unwrap_or_else(|| default_tool_choice(&tools));
-            let incomplete_details = self
-                .incomplete_reason
-                .as_ref()
-                .map(|reason| ResponseIncompleteDetails { reason: reason.clone() });
+            let incomplete_details =
+                self.incomplete_reason
+                    .as_ref()
+                    .map(|reason| ResponseIncompleteDetails {
+                        reason: reason.clone(),
+                    });
 
             OpenAiResponse {
                 id: self.response_id.clone(),
@@ -962,7 +967,9 @@ mod gemini_v1beta_request {
         }
     }
 
-    fn default_tool_choice(tools: &[crate::providers::openai::responses::types::Tool]) -> ToolChoice {
+    fn default_tool_choice(
+        tools: &[crate::providers::openai::responses::types::Tool],
+    ) -> ToolChoice {
         if tools.is_empty() {
             ToolChoice::Mode(ToolChoiceMode::None)
         } else {

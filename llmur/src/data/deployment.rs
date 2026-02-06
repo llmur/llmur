@@ -212,7 +212,8 @@ default_database_access_fns!(
 );
 // region:      --- Postgres Queries
 pub(crate) fn pg_search(name: &'_ Option<String>) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         SELECT
             d.id,
             d.name,
@@ -223,7 +224,7 @@ pub(crate) fn pg_search(name: &'_ Option<String>) -> QueryBuilder<'_, Postgres> 
             d.token_limits
         FROM
             deployments d
-        WHERE true=true"
+        WHERE true=true",
     );
     // If name is passed as a search parameter
     if let Some(name) = name {
@@ -236,7 +237,8 @@ pub(crate) fn pg_search(name: &'_ Option<String>) -> QueryBuilder<'_, Postgres> 
 }
 
 pub(crate) fn pg_get(id: &'_ DeploymentId) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         SELECT
             d.id,
             d.name,
@@ -248,7 +250,7 @@ pub(crate) fn pg_get(id: &'_ DeploymentId) -> QueryBuilder<'_, Postgres> {
         FROM
             deployments d
         WHERE
-            d.id ="
+            d.id =",
     );
     // Push id
     query.push_bind(id);
@@ -257,7 +259,8 @@ pub(crate) fn pg_get(id: &'_ DeploymentId) -> QueryBuilder<'_, Postgres> {
 }
 
 pub(crate) fn pg_getm(ids: &'_ Vec<DeploymentId>) -> QueryBuilder<'_, Postgres> {
-    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        "
         SELECT
             d.id,
             d.name,
@@ -269,7 +272,7 @@ pub(crate) fn pg_getm(ids: &'_ Vec<DeploymentId>) -> QueryBuilder<'_, Postgres> 
         FROM
             deployments d
         WHERE
-            d.id IN ( "
+            d.id IN ( ",
     );
     // Push ids
     let mut separated = query.separated(", ");

@@ -682,15 +682,17 @@ pub mod to_openai_responses_transform {
     use super::*;
     use crate::providers::openai::responses::response::{
         Response as OpenAiResponse, ResponseError, ResponseErrorCode, ResponseIncompleteDetails,
-        ResponseIncompleteReason, ResponseInputTokensDetails, ResponseObject, ResponseOutputTokensDetails,
-        ResponseStatus, ResponseUsage,
+        ResponseIncompleteReason, ResponseInputTokensDetails, ResponseObject,
+        ResponseOutputTokensDetails, ResponseStatus, ResponseUsage,
     };
     use crate::providers::openai::responses::types::{
-        FunctionToolCall, FunctionToolCallType, ItemStatus, OutputContent, OutputItem, OutputMessage,
-        OutputMessageRole, Tool, ToolChoice, ToolChoiceMode, Truncation, Reasoning, TextConfig,
-        ServiceTier,
+        FunctionToolCall, FunctionToolCallType, ItemStatus, OutputContent, OutputItem,
+        OutputMessage, OutputMessageRole, Reasoning, ServiceTier, TextConfig, Tool, ToolChoice,
+        ToolChoiceMode, Truncation,
     };
-    use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
+    use crate::providers::{
+        Transformation, TransformationContext, TransformationLoss, Transformer,
+    };
     use std::collections::HashMap;
 
     #[derive(Debug)]
@@ -801,10 +803,10 @@ pub mod to_openai_responses_transform {
         }
     }
 
-    fn transform_prompt_feedback_error(
-        feedback: &Option<PromptFeedback>,
-    ) -> Option<ResponseError> {
-        let reason = feedback.as_ref().and_then(|value| value.block_reason.as_ref())?;
+    fn transform_prompt_feedback_error(feedback: &Option<PromptFeedback>) -> Option<ResponseError> {
+        let reason = feedback
+            .as_ref()
+            .and_then(|value| value.block_reason.as_ref())?;
         Some(ResponseError {
             code: ResponseErrorCode::InvalidPrompt,
             message: format!("Prompt blocked: {}", reason),
@@ -813,7 +815,11 @@ pub mod to_openai_responses_transform {
 
     fn transform_candidates(
         candidates: Vec<Candidate>,
-    ) -> (Vec<OutputItem>, Option<String>, Option<ResponseIncompleteDetails>) {
+    ) -> (
+        Vec<OutputItem>,
+        Option<String>,
+        Option<ResponseIncompleteDetails>,
+    ) {
         let mut output_items = Vec::new();
         let mut output_text = None;
         let mut incomplete_reason = None;
@@ -854,7 +860,8 @@ pub mod to_openai_responses_transform {
             }
         }
 
-        let incomplete_details = incomplete_reason.map(|reason| ResponseIncompleteDetails { reason });
+        let incomplete_details =
+            incomplete_reason.map(|reason| ResponseIncompleteDetails { reason });
 
         (output_items, output_text, incomplete_details)
     }

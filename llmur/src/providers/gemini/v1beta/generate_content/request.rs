@@ -1011,7 +1011,9 @@ pub mod from_openai_responses_transform {
     use super::*;
     use crate::providers::openai::responses::request as openai;
     use crate::providers::openai::responses::types as openai_types;
-    use crate::providers::{Transformation, TransformationContext, TransformationLoss, Transformer};
+    use crate::providers::{
+        Transformation, TransformationContext, TransformationLoss, Transformer,
+    };
     use serde_json::Value;
 
     #[derive(Debug)]
@@ -1101,9 +1103,7 @@ pub mod from_openai_responses_transform {
         (system_instruction, contents)
     }
 
-    fn transform_easy_message_content(
-        content: openai_types::EasyInputMessageContent,
-    ) -> Vec<Part> {
+    fn transform_easy_message_content(content: openai_types::EasyInputMessageContent) -> Vec<Part> {
         match content {
             openai_types::EasyInputMessageContent::Text(text) => vec![text_part(text)],
             openai_types::EasyInputMessageContent::ContentList(parts) => parts
@@ -1135,10 +1135,7 @@ pub mod from_openai_responses_transform {
         }
     }
 
-    fn transform_output_message(
-        message: openai_types::OutputMessage,
-        contents: &mut Vec<Content>,
-    ) {
+    fn transform_output_message(message: openai_types::OutputMessage, contents: &mut Vec<Content>) {
         let mut text_parts: Vec<String> = Vec::new();
         for part in message.content {
             if let openai_types::OutputContent::OutputText { text, .. } = part {
@@ -1337,9 +1334,7 @@ pub mod from_openai_responses_transform {
         }
     }
 
-    fn transform_generation_config(
-        request: &openai::Request,
-    ) -> Option<GenerationConfig> {
+    fn transform_generation_config(request: &openai::Request) -> Option<GenerationConfig> {
         let response_config = request.text.clone().and_then(transform_text_config);
         let max_output_tokens = request.max_output_tokens;
 
@@ -1351,8 +1346,7 @@ pub mod from_openai_responses_transform {
             return None;
         }
 
-        let (response_mime_type, response_schema) =
-            response_config.unwrap_or((None, None));
+        let (response_mime_type, response_schema) = response_config.unwrap_or((None, None));
 
         Some(GenerationConfig {
             stop_sequences: None,
@@ -1388,10 +1382,9 @@ pub mod from_openai_responses_transform {
             openai_types::TextResponseFormatConfiguration::JsonObject => {
                 Some((Some("application/json".to_string()), None))
             }
-            openai_types::TextResponseFormatConfiguration::JsonSchema { schema, .. } => Some((
-                Some("application/json".to_string()),
-                Some(schema),
-            )),
+            openai_types::TextResponseFormatConfiguration::JsonSchema { schema, .. } => {
+                Some((Some("application/json".to_string()), Some(schema)))
+            }
         }
     }
 

@@ -108,7 +108,7 @@ impl DataAccess {
         name = "create.virtual_key_deployments",
         skip(self, metrics),
         fields(
-            virtual_key_id = %virtual_key_id.0, 
+            virtual_key_id = %virtual_key_id.0,
             deployment_id = %deployment_id.0
         )
     )]
@@ -131,7 +131,7 @@ impl DataAccess {
             &None,
             metrics,
         )
-            .await
+        .await
     }
 
     #[tracing::instrument(

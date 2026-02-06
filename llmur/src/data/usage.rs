@@ -95,8 +95,11 @@ impl DataAccess {
             )
             .await?;
 
-        let stats =
-            VirtualKeyDeploymentUsageStats::from_db_record(&virtual_key_deployment.id, now_utc, record);
+        let stats = VirtualKeyDeploymentUsageStats::from_db_record(
+            &virtual_key_deployment.id,
+            now_utc,
+            record,
+        );
         match self.cache.set_usage_stats(&stats.0).await {
             Ok(_) => {
                 println!(
@@ -480,11 +483,13 @@ fn convert_records_to_cache_maps(
                     &record.request_ts,
                     requests,
                 ))
-                .chain(VirtualKeyDeploymentUsageStats::generate_request_keys_with_values(
-                    &record.graph.virtual_key_deployment.data.id,
-                    &record.request_ts,
-                    requests,
-                ))
+                .chain(
+                    VirtualKeyDeploymentUsageStats::generate_request_keys_with_values(
+                        &record.graph.virtual_key_deployment.data.id,
+                        &record.request_ts,
+                        requests,
+                    ),
+                )
                 .chain(DeploymentUsageStats::generate_request_keys_with_values(
                     &record.graph.deployment.data.id,
                     &record.request_ts,
@@ -510,11 +515,13 @@ fn convert_records_to_cache_maps(
                     &record.request_ts,
                     cost,
                 ))
-                .chain(VirtualKeyDeploymentUsageStats::generate_budget_keys_with_values(
-                    &record.graph.virtual_key_deployment.data.id,
-                    &record.request_ts,
-                    cost,
-                ))
+                .chain(
+                    VirtualKeyDeploymentUsageStats::generate_budget_keys_with_values(
+                        &record.graph.virtual_key_deployment.data.id,
+                        &record.request_ts,
+                        cost,
+                    ),
+                )
                 .chain(DeploymentUsageStats::generate_budget_keys_with_values(
                     &record.graph.deployment.data.id,
                     &record.request_ts,
@@ -540,11 +547,13 @@ fn convert_records_to_cache_maps(
                     &record.request_ts,
                     tokens,
                 ))
-                .chain(VirtualKeyDeploymentUsageStats::generate_token_keys_with_values(
-                    &record.graph.virtual_key_deployment.data.id,
-                    &record.request_ts,
-                    tokens,
-                ))
+                .chain(
+                    VirtualKeyDeploymentUsageStats::generate_token_keys_with_values(
+                        &record.graph.virtual_key_deployment.data.id,
+                        &record.request_ts,
+                        tokens,
+                    ),
+                )
                 .chain(DeploymentUsageStats::generate_token_keys_with_values(
                     &record.graph.deployment.data.id,
                     &record.request_ts,
