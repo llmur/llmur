@@ -4,9 +4,10 @@ use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
 use crate::routes::StatusResponse;
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
+use crate::routes::utils::{NullableField, normalize_limits};
 use crate::{LLMurState, impl_from_vec_result};
 use axum::extract::{Path, State};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -16,6 +17,7 @@ pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
     Router::new()
         .route("/", post(create_deployment))
         .route("/{id}", get(get_deployment))
+        .route("/{id}", patch(update_deployment))
         .route("/{id}", delete(delete_deployment))
         .with_state(state.clone())
 }
@@ -51,6 +53,65 @@ pub(crate) async fn create_deployment(
             &payload.budget_limits,
             &payload.request_limits,
             &payload.token_limits,
+            &state.metrics,
+        )
+        .await?;
+
+    Ok(Json(result.into()))
+}
+
+#[tracing::instrument(
+    name = "handler.update.deployment",
+    skip(state, ctx, id, payload),
+    fields(id = %id.0)
+)]
+pub(crate) async fn update_deployment(
+    Extension(ctx): Extension<UserContextExtractionResult>,
+    State(state): State<Arc<LLMurState>>,
+    Path(id): Path<DeploymentId>,
+    Json(payload): Json<UpdateDeploymentPayload>,
+) -> Result<Json<GetDeploymentResult>, LLMurError> {
+    let user_context = ctx.require_authenticated_user()?;
+
+    if !user_context.has_admin_access() {
+        return Err(AuthorizationError::AccessDenied)?;
+    }
+
+    let _deployment = state
+        .data
+        .get_deployment(&id, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    if let Some(connection_id) = &payload.connection_id {
+        let _connection = state
+            .data
+            .get_connection(connection_id, &state.application_secret, &state.metrics)
+            .await?
+            .ok_or(DataAccessError::ResourceNotFound)?;
+    }
+
+    let UpdateDeploymentPayload {
+        access,
+        connection_id,
+        budget_limits,
+        request_limits,
+        token_limits,
+    } = payload;
+
+    let budget_limits = normalize_limits(budget_limits);
+    let request_limits = normalize_limits(request_limits);
+    let token_limits = normalize_limits(token_limits);
+
+    let result = state
+        .data
+        .update_deployment(
+            &id,
+            &access,
+            &connection_id,
+            &budget_limits,
+            &request_limits,
+            &token_limits,
             &state.metrics,
         )
         .await?;
@@ -127,6 +188,19 @@ pub(crate) struct CreateDeploymentPayload {
     pub(crate) budget_limits: Option<BudgetLimits>,
     pub(crate) request_limits: Option<RequestLimits>,
     pub(crate) token_limits: Option<TokenLimits>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct UpdateDeploymentPayload {
+    pub(crate) access: Option<DeploymentAccess>,
+    pub(crate) connection_id: Option<ConnectionId>,
+
+    #[serde(default)]
+    pub(crate) budget_limits: NullableField<BudgetLimits>,
+    #[serde(default)]
+    pub(crate) request_limits: NullableField<RequestLimits>,
+    #[serde(default)]
+    pub(crate) token_limits: NullableField<TokenLimits>,
 }
 
 #[derive(Serialize)]

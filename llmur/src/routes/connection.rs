@@ -5,9 +5,10 @@ use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
 use crate::routes::StatusResponse;
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
+use crate::routes::utils::{NullableField, normalize_limits};
 use crate::{LLMurState, impl_from_vec_result};
 use axum::extract::{Path, State};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -18,6 +19,7 @@ pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .route("/", post(create_connection))
         .route("/", get(list_connections))
         .route("/{id}", get(get_connection))
+        .route("/{id}", patch(update_connection))
         .route("/{id}", delete(delete_connection))
         .with_state(state.clone())
 }
@@ -100,6 +102,134 @@ pub(crate) async fn create_connection(
                     budget_limits,
                     request_limits,
                     token_limits,
+                    &state.application_secret,
+                    &state.metrics,
+                )
+                .await?
+        }
+    };
+
+    Ok(Json(result.into()))
+}
+
+#[tracing::instrument(
+    name = "handler.update.connection",
+    skip(state, ctx, id, payload),
+    fields(id = %id.0)
+)]
+pub(crate) async fn update_connection(
+    Extension(ctx): Extension<UserContextExtractionResult>,
+    State(state): State<Arc<LLMurState>>,
+    Path(id): Path<ConnectionId>,
+    Json(payload): Json<UpdateConnectionPayload>,
+) -> Result<Json<GetConnectionResult>, LLMurError> {
+    let user_context = ctx.require_authenticated_user()?;
+
+    if !user_context.has_admin_access() {
+        return Err(AuthorizationError::AccessDenied)?;
+    }
+
+    let connection = state
+        .data
+        .get_connection(&id, &state.application_secret, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    let current_provider = connection.connection_info.get_provider_friendly_name();
+    let payload_provider = match &payload {
+        UpdateConnectionPayload::AzureOpenAi { .. } => "azure/openai",
+        UpdateConnectionPayload::OpenAi { .. } => "openai/v1",
+        UpdateConnectionPayload::Gemini { .. } => "gemini",
+    };
+
+    if current_provider != payload_provider {
+        return Err(LLMurError::BadRequest(format!(
+            "provider mismatch: expected {}, got {}",
+            current_provider, payload_provider
+        )));
+    }
+
+    let result = match payload {
+        UpdateConnectionPayload::AzureOpenAi {
+            deployment_name,
+            api_endpoint,
+            api_key,
+            api_version,
+            budget_limits,
+            request_limits,
+            token_limits,
+        } => {
+            let budget_limits = normalize_limits(budget_limits);
+            let request_limits = normalize_limits(request_limits);
+            let token_limits = normalize_limits(token_limits);
+
+            state
+                .data
+                .update_azure_openai_connection(
+                    &id,
+                    &deployment_name,
+                    &api_endpoint,
+                    &api_key,
+                    &api_version,
+                    &budget_limits,
+                    &request_limits,
+                    &token_limits,
+                    &state.application_secret,
+                    &state.metrics,
+                )
+                .await?
+        }
+        UpdateConnectionPayload::OpenAi {
+            model,
+            api_endpoint,
+            api_key,
+            budget_limits,
+            request_limits,
+            token_limits,
+        } => {
+            let budget_limits = normalize_limits(budget_limits);
+            let request_limits = normalize_limits(request_limits);
+            let token_limits = normalize_limits(token_limits);
+
+            state
+                .data
+                .update_openai_v1_connection(
+                    &id,
+                    &model,
+                    &api_endpoint,
+                    &api_key,
+                    &budget_limits,
+                    &request_limits,
+                    &token_limits,
+                    &state.application_secret,
+                    &state.metrics,
+                )
+                .await?
+        }
+        UpdateConnectionPayload::Gemini {
+            model,
+            api_endpoint,
+            api_key,
+            api_version,
+            budget_limits,
+            request_limits,
+            token_limits,
+        } => {
+            let budget_limits = normalize_limits(budget_limits);
+            let request_limits = normalize_limits(request_limits);
+            let token_limits = normalize_limits(token_limits);
+
+            state
+                .data
+                .update_gemini_v1beta_connection(
+                    &id,
+                    &model,
+                    &api_endpoint,
+                    &api_key,
+                    &api_version,
+                    &budget_limits,
+                    &request_limits,
+                    &token_limits,
                     &state.application_secret,
                     &state.metrics,
                 )
@@ -232,6 +362,53 @@ pub(crate) enum CreateConnectionPayload {
         budget_limits: Option<BudgetLimits>,
         request_limits: Option<RequestLimits>,
         token_limits: Option<TokenLimits>,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "provider")]
+pub(crate) enum UpdateConnectionPayload {
+    #[serde(rename = "azure/openai", alias = "azure/openai")]
+    AzureOpenAi {
+        deployment_name: Option<String>,
+        api_endpoint: Option<String>,
+        api_key: Option<String>,
+        api_version: Option<AzureOpenAiApiVersion>,
+
+        #[serde(default)]
+        budget_limits: NullableField<BudgetLimits>,
+        #[serde(default)]
+        request_limits: NullableField<RequestLimits>,
+        #[serde(default)]
+        token_limits: NullableField<TokenLimits>,
+    },
+    #[serde(rename = "openai/v1", alias = "openai/v1")]
+    OpenAi {
+        model: Option<String>,
+        api_endpoint: Option<String>,
+        api_key: Option<String>,
+
+        #[serde(default)]
+        budget_limits: NullableField<BudgetLimits>,
+        #[serde(default)]
+        request_limits: NullableField<RequestLimits>,
+        #[serde(default)]
+        token_limits: NullableField<TokenLimits>,
+    },
+
+    #[serde(rename = "gemini", alias = "gemini")]
+    Gemini {
+        model: Option<String>,
+        api_endpoint: Option<String>,
+        api_key: Option<String>,
+        api_version: Option<GeminiApiVersion>,
+
+        #[serde(default)]
+        budget_limits: NullableField<BudgetLimits>,
+        #[serde(default)]
+        request_limits: NullableField<RequestLimits>,
+        #[serde(default)]
+        token_limits: NullableField<TokenLimits>,
     },
 }
 

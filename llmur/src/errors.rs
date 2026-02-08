@@ -23,6 +23,8 @@ pub enum LLMurError {
     GraphError(#[from] GraphError),
     #[error(transparent)]
     ProxyError(#[from] ProxyError),
+    #[error("Bad request: {0}")]
+    BadRequest(String),
     #[error("Service unhealthy")]
     UnhealthyState(UnhealthyStateReason),
 }
@@ -326,6 +328,9 @@ impl IntoResponse for LLMurError {
                     .into_response(),
             },
             LLMurError::ProxyError(e) => e.into_response(),
+            LLMurError::BadRequest(message) => {
+                (axum::http::StatusCode::BAD_REQUEST, message).into_response()
+            }
             LLMurError::UnhealthyState(e) => (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Service unhealthy. Reason: {:?}", e),

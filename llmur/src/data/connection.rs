@@ -1,6 +1,6 @@
-use crate::data::DataAccess;
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::utils::{ConvertInto, decrypt, encrypt};
+use crate::data::{DataAccess, Database};
 use crate::errors::{DataAccessError, DbRecordConversionError};
 use crate::metrics::Metrics;
 use crate::{
@@ -289,6 +289,301 @@ impl DataAccess {
     }
 
     #[tracing::instrument(
+        level = "trace",
+        name = "update.connection",
+        skip(
+            self,
+            id,
+            deployment_name,
+            api_endpoint,
+            api_key,
+            api_version,
+            budget_limits,
+            request_limits,
+            token_limits,
+            application_secret,
+            metrics
+        ),
+        fields(provider = "azure/openai", id = %id.0)
+    )]
+    pub async fn update_azure_openai_connection(
+        &self,
+        id: &ConnectionId,
+        deployment_name: &Option<String>,
+        api_endpoint: &Option<String>,
+        api_key: &Option<String>,
+        api_version: &Option<AzureOpenAiApiVersion>,
+        budget_limits: &Option<Option<BudgetLimits>>,
+        request_limits: &Option<Option<RequestLimits>>,
+        token_limits: &Option<Option<TokenLimits>>,
+        application_secret: &Uuid,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<Connection, DataAccessError> {
+        let has_info_updates = deployment_name.is_some()
+            || api_endpoint.is_some()
+            || api_key.is_some()
+            || api_version.is_some();
+        let has_limit_updates =
+            budget_limits.is_some() || request_limits.is_some() || token_limits.is_some();
+
+        if !has_info_updates && !has_limit_updates {
+            return self
+                .get_connection(id, application_secret, metrics)
+                .await?
+                .ok_or(DataAccessError::ResourceNotFound);
+        }
+
+        let connection = self
+            .get_connection(id, application_secret, metrics)
+            .await?
+            .ok_or(DataAccessError::ResourceNotFound)?;
+
+        let connection_info = if has_info_updates {
+            let ConnectionInfo::AzureOpenAiApiKey {
+                api_key: current_api_key,
+                api_endpoint: current_endpoint,
+                api_version: current_version,
+                deployment_name: current_deployment_name,
+            } = connection.connection_info
+            else {
+                return Err(DataAccessError::ResourceNotFound);
+            };
+
+            let new_api_key = api_key.as_deref().unwrap_or(&current_api_key);
+            let new_endpoint = api_endpoint.as_deref().unwrap_or(&current_endpoint);
+            let new_version = api_version.clone().unwrap_or(current_version);
+            let new_deployment_name = deployment_name
+                .as_deref()
+                .unwrap_or(&current_deployment_name);
+
+            let salt = Uuid::now_v7();
+            let encrypted_api_key = encrypt(new_api_key, &salt, application_secret)?;
+
+            Some(DbConnectionInfoColumn::AzureOpenAiApiKey {
+                encrypted_api_key,
+                api_endpoint: new_endpoint.to_string(),
+                api_version: new_version,
+                deployment_name: new_deployment_name.to_string(),
+                salt,
+            })
+        } else {
+            None
+        };
+
+        let updated = self
+            .database
+            .update_connection(
+                id,
+                &connection_info,
+                budget_limits,
+                request_limits,
+                token_limits,
+                metrics,
+            )
+            .await?;
+
+        if updated == 0 {
+            return Err(DataAccessError::ResourceNotFound);
+        }
+
+        self.get_connection(id, application_secret, metrics)
+            .await?
+            .ok_or(DataAccessError::ResourceNotFound)
+    }
+
+    #[tracing::instrument(
+        level = "trace",
+        name = "update.connection",
+        skip(
+            self,
+            id,
+            model,
+            api_endpoint,
+            api_key,
+            budget_limits,
+            request_limits,
+            token_limits,
+            application_secret,
+            metrics
+        ),
+        fields(provider = "openai/v1", id = %id.0)
+    )]
+    pub async fn update_openai_v1_connection(
+        &self,
+        id: &ConnectionId,
+        model: &Option<String>,
+        api_endpoint: &Option<String>,
+        api_key: &Option<String>,
+        budget_limits: &Option<Option<BudgetLimits>>,
+        request_limits: &Option<Option<RequestLimits>>,
+        token_limits: &Option<Option<TokenLimits>>,
+        application_secret: &Uuid,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<Connection, DataAccessError> {
+        let has_info_updates = model.is_some() || api_endpoint.is_some() || api_key.is_some();
+        let has_limit_updates =
+            budget_limits.is_some() || request_limits.is_some() || token_limits.is_some();
+
+        if !has_info_updates && !has_limit_updates {
+            return self
+                .get_connection(id, application_secret, metrics)
+                .await?
+                .ok_or(DataAccessError::ResourceNotFound);
+        }
+
+        let connection = self
+            .get_connection(id, application_secret, metrics)
+            .await?
+            .ok_or(DataAccessError::ResourceNotFound)?;
+
+        let connection_info = if has_info_updates {
+            let ConnectionInfo::OpenAiApiKey {
+                api_key: current_api_key,
+                api_endpoint: current_endpoint,
+                model: current_model,
+            } = connection.connection_info
+            else {
+                return Err(DataAccessError::ResourceNotFound);
+            };
+
+            let new_api_key = api_key.as_deref().unwrap_or(&current_api_key);
+            let new_endpoint = api_endpoint.as_deref().unwrap_or(&current_endpoint);
+            let new_model = model.as_deref().unwrap_or(&current_model);
+
+            let salt = Uuid::now_v7();
+            let encrypted_api_key = encrypt(new_api_key, &salt, application_secret)?;
+
+            Some(DbConnectionInfoColumn::OpenAiApiKey {
+                encrypted_api_key,
+                api_endpoint: new_endpoint.to_string(),
+                model: new_model.to_string(),
+                salt,
+            })
+        } else {
+            None
+        };
+
+        let updated = self
+            .database
+            .update_connection(
+                id,
+                &connection_info,
+                budget_limits,
+                request_limits,
+                token_limits,
+                metrics,
+            )
+            .await?;
+
+        if updated == 0 {
+            return Err(DataAccessError::ResourceNotFound);
+        }
+
+        self.get_connection(id, application_secret, metrics)
+            .await?
+            .ok_or(DataAccessError::ResourceNotFound)
+    }
+
+    #[tracing::instrument(
+        level = "trace",
+        name = "update.connection",
+        skip(
+            self,
+            id,
+            model,
+            api_endpoint,
+            api_key,
+            api_version,
+            budget_limits,
+            request_limits,
+            token_limits,
+            application_secret,
+            metrics
+        ),
+        fields(provider = "gemini", id = %id.0)
+    )]
+    pub async fn update_gemini_v1beta_connection(
+        &self,
+        id: &ConnectionId,
+        model: &Option<String>,
+        api_endpoint: &Option<String>,
+        api_key: &Option<String>,
+        api_version: &Option<GeminiApiVersion>,
+        budget_limits: &Option<Option<BudgetLimits>>,
+        request_limits: &Option<Option<RequestLimits>>,
+        token_limits: &Option<Option<TokenLimits>>,
+        application_secret: &Uuid,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<Connection, DataAccessError> {
+        let has_info_updates =
+            model.is_some() || api_endpoint.is_some() || api_key.is_some() || api_version.is_some();
+        let has_limit_updates =
+            budget_limits.is_some() || request_limits.is_some() || token_limits.is_some();
+
+        if !has_info_updates && !has_limit_updates {
+            return self
+                .get_connection(id, application_secret, metrics)
+                .await?
+                .ok_or(DataAccessError::ResourceNotFound);
+        }
+
+        let connection = self
+            .get_connection(id, application_secret, metrics)
+            .await?
+            .ok_or(DataAccessError::ResourceNotFound)?;
+
+        let connection_info = if has_info_updates {
+            let ConnectionInfo::GeminiApiKey {
+                api_key: current_api_key,
+                api_endpoint: current_endpoint,
+                api_version: current_version,
+                model: current_model,
+            } = connection.connection_info
+            else {
+                return Err(DataAccessError::ResourceNotFound);
+            };
+
+            let new_api_key = api_key.as_deref().unwrap_or(&current_api_key);
+            let new_endpoint = api_endpoint.as_deref().unwrap_or(&current_endpoint);
+            let new_version = api_version.clone().unwrap_or(current_version);
+            let new_model = model.as_deref().unwrap_or(&current_model);
+
+            let salt = Uuid::now_v7();
+            let encrypted_api_key = encrypt(new_api_key, &salt, application_secret)?;
+
+            Some(DbConnectionInfoColumn::GeminiApiKey {
+                encrypted_api_key,
+                api_endpoint: new_endpoint.to_string(),
+                api_version: new_version,
+                model: new_model.to_string(),
+                salt,
+            })
+        } else {
+            None
+        };
+
+        let updated = self
+            .database
+            .update_connection(
+                id,
+                &connection_info,
+                budget_limits,
+                request_limits,
+                token_limits,
+                metrics,
+            )
+            .await?;
+
+        if updated == 0 {
+            return Err(DataAccessError::ResourceNotFound);
+        }
+
+        self.get_connection(id, application_secret, metrics)
+            .await?
+            .ok_or(DataAccessError::ResourceNotFound)
+    }
+
+    #[tracing::instrument(
         level="trace",
         name = "delete.connection",
         skip(self, id, metrics),
@@ -334,6 +629,67 @@ default_database_access_fns!(
     },
     search => { }
 );
+impl Database {
+    #[tracing::instrument(
+        level = "trace",
+        name = "db.update.connection",
+        skip(
+            self,
+            id,
+            connection_info,
+            budget_limits,
+            request_limits,
+            token_limits,
+            metrics
+        ),
+        fields(id = %id.0)
+    )]
+    pub(crate) async fn update_connection(
+        &self,
+        id: &ConnectionId,
+        connection_info: &Option<DbConnectionInfoColumn>,
+        budget_limits: &Option<Option<BudgetLimits>>,
+        request_limits: &Option<Option<RequestLimits>>,
+        token_limits: &Option<Option<TokenLimits>>,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<u64, DataAccessError> {
+        use crate::metrics::RegisterDatabaseRequest;
+
+        let operation = "db.update.connection";
+        let span = tracing::trace_span!("database_operation", operation= %operation);
+
+        tracing::Instrument::instrument(
+            async move {
+                match self {
+                    Database::Postgres { pool } => {
+                        let start = std::time::Instant::now();
+                        let Some(mut query) = pg_update(
+                            id,
+                            connection_info,
+                            budget_limits,
+                            request_limits,
+                            token_limits,
+                        ) else {
+                            return Ok(0);
+                        };
+                        let sql = query.build_query_as::<(ConnectionId,)>();
+                        let result = sql.fetch_optional(pool).await;
+
+                        metrics.register_database_request(
+                            operation,
+                            start.elapsed().as_millis() as u64,
+                            result.is_ok(),
+                        );
+
+                        Ok(result?.map(|_| 1).unwrap_or(0))
+                    }
+                }
+            },
+            span,
+        )
+        .await
+    }
+}
 // region:      --- Postgres Queries
 #[allow(unused)]
 pub(crate) fn pg_search() -> QueryBuilder<'static, Postgres> {
@@ -438,6 +794,84 @@ pub(crate) fn pg_delete(id: &'_ ConnectionId) -> QueryBuilder<'_, Postgres> {
     query.push_bind(id);
     // Return query
     query
+}
+
+pub(crate) fn pg_update<'a>(
+    id: &'a ConnectionId,
+    connection_info: &'a Option<DbConnectionInfoColumn>,
+    budget_limits: &'a Option<Option<BudgetLimits>>,
+    request_limits: &'a Option<Option<RequestLimits>>,
+    token_limits: &'a Option<Option<TokenLimits>>,
+) -> Option<QueryBuilder<'a, Postgres>> {
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("UPDATE connections SET ");
+    let mut has_updates = false;
+
+    if let Some(value) = connection_info {
+        if has_updates {
+            query.push(", ");
+        }
+        has_updates = true;
+        query.push("connection_info = ");
+        query.push_bind(Json::from(value));
+    }
+
+    if let Some(value) = budget_limits {
+        if has_updates {
+            query.push(", ");
+        }
+        has_updates = true;
+        match value {
+            Some(value) => {
+                query.push("budget_limits = ");
+                query.push_bind(Json::from(value));
+            }
+            None => {
+                query.push("budget_limits = NULL");
+            }
+        }
+    }
+
+    if let Some(value) = request_limits {
+        if has_updates {
+            query.push(", ");
+        }
+        has_updates = true;
+        match value {
+            Some(value) => {
+                query.push("request_limits = ");
+                query.push_bind(Json::from(value));
+            }
+            None => {
+                query.push("request_limits = NULL");
+            }
+        }
+    }
+
+    if let Some(value) = token_limits {
+        if has_updates {
+            query.push(", ");
+        }
+        has_updates = true;
+        match value {
+            Some(value) => {
+                query.push("token_limits = ");
+                query.push_bind(Json::from(value));
+            }
+            None => {
+                query.push("token_limits = NULL");
+            }
+        }
+    }
+
+    if !has_updates {
+        return None;
+    }
+
+    query.push(" WHERE id = ");
+    query.push_bind(id);
+    query.push(" RETURNING id");
+
+    Some(query)
 }
 // endregion:   --- Postgres Queries
 // endregion: --- Database Access

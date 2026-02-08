@@ -3,9 +3,10 @@ use crate::data::project::{Project, ProjectId};
 use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
 use crate::routes::StatusResponse;
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
+use crate::routes::utils::{NullableField, normalize_limits};
 use crate::{LLMurState, impl_from_vec_result};
 use axum::extract::{Path, State};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -16,6 +17,7 @@ pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         // Project routes
         .route("/", post(create_project))
         .route("/{id}", get(get_project))
+        .route("/{id}", patch(update_project))
         .route("/{id}", delete(delete_project))
         .with_state(state.clone())
 }
@@ -45,6 +47,58 @@ pub(crate) async fn create_project(
         .await?;
 
     Ok(Json(project.into()))
+}
+
+#[tracing::instrument(
+    name = "handler.update.project",
+    skip(state, ctx, id, payload),
+    fields(id = %id.0)
+)]
+pub(crate) async fn update_project(
+    Extension(ctx): Extension<UserContextExtractionResult>,
+    State(state): State<Arc<LLMurState>>,
+    Path(id): Path<ProjectId>,
+    Json(payload): Json<UpdateProjectPayload>,
+) -> Result<Json<GetProjectResult>, LLMurError> {
+    let user_context = ctx.require_authenticated_user()?;
+
+    let _project = state
+        .data
+        .get_project(&id, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    if !user_context
+        .has_project_admin_access(state.clone(), &id)
+        .await?
+    {
+        return Err(AuthorizationError::AccessDenied)?;
+    }
+
+    let UpdateProjectPayload {
+        name,
+        budget_limits,
+        request_limits,
+        token_limits,
+    } = payload;
+
+    let budget_limits = normalize_limits(budget_limits);
+    let request_limits = normalize_limits(request_limits);
+    let token_limits = normalize_limits(token_limits);
+
+    let result = state
+        .data
+        .update_project(
+            &id,
+            &name,
+            &budget_limits,
+            &request_limits,
+            &token_limits,
+            &state.metrics,
+        )
+        .await?;
+
+    Ok(Json(result.into()))
 }
 
 #[tracing::instrument(
@@ -124,6 +178,18 @@ pub(crate) struct CreateProjectPayload {
     pub(crate) budget_limits: Option<BudgetLimits>,
     pub(crate) request_limits: Option<RequestLimits>,
     pub(crate) token_limits: Option<TokenLimits>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct UpdateProjectPayload {
+    pub(crate) name: Option<String>,
+
+    #[serde(default)]
+    pub(crate) budget_limits: NullableField<BudgetLimits>,
+    #[serde(default)]
+    pub(crate) request_limits: NullableField<RequestLimits>,
+    #[serde(default)]
+    pub(crate) token_limits: NullableField<TokenLimits>,
 }
 
 #[derive(Serialize)]

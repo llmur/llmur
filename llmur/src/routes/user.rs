@@ -6,7 +6,7 @@ use crate::routes::middleware::user_context::{
 };
 use crate::{LLMurState, impl_from_vec_result};
 use axum::extract::{Path, State};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -17,6 +17,7 @@ pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .route("/me", get(get_current_user))
         .route("/", post(create_user))
         .route("/{id}", get(get_user))
+        .route("/{id}", patch(update_user))
         .route("/{id}", delete(delete_user))
         //.route("/", get(list_users))
         //.route("/:id/memberships", get(get_user_memberships))
@@ -51,6 +52,48 @@ pub(crate) async fn create_user(
         .await?;
 
     Ok(Json(user.into()))
+}
+
+#[tracing::instrument(
+    name = "handler.update.user",
+    skip(state, ctx, id, payload),
+    fields(id = %id.0)
+)]
+pub(crate) async fn update_user(
+    Extension(ctx): Extension<UserContextExtractionResult>,
+    State(state): State<Arc<LLMurState>>,
+    Path(id): Path<UserId>,
+    Json(payload): Json<UpdateUserPayload>,
+) -> Result<Json<GetUserResult>, LLMurError> {
+    let user_context = ctx.require_authenticated_user()?;
+
+    let _user = state
+        .data
+        .get_user(&id, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    match &user_context {
+        UserContext::MasterUser => {}
+        UserContext::WebAppUser { user, .. } => {
+            if user.id != id || payload.role.is_some() {
+                return Err(AuthorizationError::AccessDenied)?;
+            }
+        }
+    }
+
+    let result = state
+        .data
+        .update_user(
+            &id,
+            &payload.name,
+            &payload.email,
+            &payload.role,
+            &state.metrics,
+        )
+        .await?;
+
+    Ok(Json(result.into()))
 }
 
 #[tracing::instrument(
@@ -143,6 +186,13 @@ pub(crate) struct CreateUserPayload {
     pub(crate) name: Option<String>,
     pub(crate) blocked: Option<bool>,
     pub(crate) email_verified: Option<bool>,
+    pub(crate) role: Option<ApplicationRole>,
+}
+
+#[derive(Deserialize, Debug)]
+pub(crate) struct UpdateUserPayload {
+    pub(crate) name: Option<String>,
+    pub(crate) email: Option<String>,
     pub(crate) role: Option<ApplicationRole>,
 }
 

@@ -5,9 +5,10 @@ use crate::data::virtual_key_deployment::{VirtualKeyDeployment, VirtualKeyDeploy
 use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
 use crate::routes::StatusResponse;
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
+use crate::routes::utils::{NullableField, normalize_limits};
 use crate::{LLMurState, impl_from_vec_result};
 use axum::extract::{Path, Query, State};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -19,6 +20,7 @@ pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .route("/", post(create_virtual_key_deployment))
         .route("/", get(search_virtual_key_deployments))
         .route("/{id}", get(get_virtual_key_deployment))
+        .route("/{id}", patch(update_virtual_key_deployment))
         .route("/{id}", delete(delete_virtual_key_deployment))
         .with_state(state.clone())
 }
@@ -62,6 +64,66 @@ pub(crate) async fn create_virtual_key_deployment(
             &payload.budget_limits,
             &payload.request_limits,
             &payload.token_limits,
+            &state.metrics,
+        )
+        .await?;
+
+    Ok(Json(result.into()))
+}
+
+#[tracing::instrument(
+    name = "handler.update.virtual_key_deployment",
+    skip(state, ctx, id, payload),
+    fields(id = %id.0)
+)]
+pub(crate) async fn update_virtual_key_deployment(
+    Extension(ctx): Extension<UserContextExtractionResult>,
+    State(state): State<Arc<LLMurState>>,
+    Path(id): Path<VirtualKeyDeploymentId>,
+    Json(payload): Json<UpdateVirtualKeyDeploymentPayload>,
+) -> Result<Json<GetVirtualKeyDeploymentResult>, LLMurError> {
+    let user_context = ctx.require_authenticated_user()?;
+
+    let vkd = state
+        .data
+        .get_virtual_key_deployment(&id, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    let virtual_key = state
+        .data
+        .get_virtual_key(
+            &vkd.virtual_key_id,
+            &state.application_secret,
+            &state.metrics,
+        )
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    if !user_context
+        .has_project_admin_access(state.clone(), &virtual_key.project_id)
+        .await?
+    {
+        return Err(AuthorizationError::AccessDenied)?;
+    }
+
+    let UpdateVirtualKeyDeploymentPayload {
+        budget_limits,
+        request_limits,
+        token_limits,
+    } = payload;
+
+    let budget_limits = normalize_limits(budget_limits);
+    let request_limits = normalize_limits(request_limits);
+    let token_limits = normalize_limits(token_limits);
+
+    let result = state
+        .data
+        .update_virtual_key_deployment(
+            &id,
+            &budget_limits,
+            &request_limits,
+            &token_limits,
             &state.metrics,
         )
         .await?;
@@ -209,6 +271,16 @@ pub(crate) struct CreateVirtualKeyDeploymentPayload {
     pub(crate) budget_limits: Option<BudgetLimits>,
     pub(crate) request_limits: Option<RequestLimits>,
     pub(crate) token_limits: Option<TokenLimits>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct UpdateVirtualKeyDeploymentPayload {
+    #[serde(default)]
+    pub(crate) budget_limits: NullableField<BudgetLimits>,
+    #[serde(default)]
+    pub(crate) request_limits: NullableField<RequestLimits>,
+    #[serde(default)]
+    pub(crate) token_limits: NullableField<TokenLimits>,
 }
 
 #[derive(Deserialize)]

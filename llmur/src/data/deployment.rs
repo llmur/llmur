@@ -1,7 +1,7 @@
-use crate::data::DataAccess;
 use crate::data::connection::ConnectionId;
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
 use crate::data::utils::ConvertInto;
+use crate::data::{DataAccess, Database};
 use crate::errors::{DataAccessError, DbRecordConversionError};
 use crate::metrics::Metrics;
 use crate::{
@@ -158,6 +158,65 @@ impl DataAccess {
 
     #[tracing::instrument(
         level="trace",
+        name = "update.deployment",
+        skip(
+            self,
+            id,
+            access,
+            connection_id,
+            budget_limits,
+            request_limits,
+            token_limits,
+            metrics
+        ),
+        fields(id = %id.0)
+    )]
+    pub async fn update_deployment(
+        &self,
+        id: &DeploymentId,
+        access: &Option<DeploymentAccess>,
+        connection_id: &Option<ConnectionId>,
+        budget_limits: &Option<Option<BudgetLimits>>,
+        request_limits: &Option<Option<RequestLimits>>,
+        token_limits: &Option<Option<TokenLimits>>,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<Deployment, DataAccessError> {
+        if access.is_none()
+            && connection_id.is_none()
+            && budget_limits.is_none()
+            && request_limits.is_none()
+            && token_limits.is_none()
+        {
+            return self
+                .get_deployment(id, metrics)
+                .await?
+                .ok_or(DataAccessError::ResourceNotFound);
+        }
+
+        let updated = self
+            .database
+            .update_deployment(
+                id,
+                access,
+                connection_id,
+                budget_limits,
+                request_limits,
+                token_limits,
+                metrics,
+            )
+            .await?;
+
+        if updated == 0 {
+            return Err(DataAccessError::ResourceNotFound);
+        }
+
+        self.get_deployment(id, metrics)
+            .await?
+            .ok_or(DataAccessError::ResourceNotFound)
+    }
+
+    #[tracing::instrument(
+        level="trace",
         name = "delete.deployment",
         skip(self, id, metrics),
         fields(
@@ -210,6 +269,70 @@ default_database_access_fns!(
         name: &Option<String>
     }
 );
+impl Database {
+    #[tracing::instrument(
+        level = "trace",
+        name = "db.update.deployment",
+        skip(
+            self,
+            id,
+            access,
+            connection_id,
+            budget_limits,
+            request_limits,
+            token_limits,
+            metrics
+        ),
+        fields(id = %id.0)
+    )]
+    pub(crate) async fn update_deployment(
+        &self,
+        id: &DeploymentId,
+        access: &Option<DeploymentAccess>,
+        connection_id: &Option<ConnectionId>,
+        budget_limits: &Option<Option<BudgetLimits>>,
+        request_limits: &Option<Option<RequestLimits>>,
+        token_limits: &Option<Option<TokenLimits>>,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<u64, DataAccessError> {
+        use crate::metrics::RegisterDatabaseRequest;
+
+        let operation = "db.update.deployment";
+        let span = tracing::trace_span!("database_operation", operation= %operation);
+
+        tracing::Instrument::instrument(
+            async move {
+                match self {
+                    Database::Postgres { pool } => {
+                        let start = std::time::Instant::now();
+                        let Some(mut query) = pg_update(
+                            id,
+                            access,
+                            connection_id,
+                            budget_limits,
+                            request_limits,
+                            token_limits,
+                        ) else {
+                            return Ok(0);
+                        };
+                        let sql = query.build_query_as::<(DeploymentId,)>();
+                        let result = sql.fetch_optional(pool).await;
+
+                        metrics.register_database_request(
+                            operation,
+                            start.elapsed().as_millis() as u64,
+                            result.is_ok(),
+                        );
+
+                        Ok(result?.map(|_| 1).unwrap_or(0))
+                    }
+                }
+            },
+            span,
+        )
+        .await
+    }
+}
 // region:      --- Postgres Queries
 pub(crate) fn pg_search(name: &'_ Option<String>) -> QueryBuilder<'_, Postgres> {
     let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new(
@@ -294,6 +417,94 @@ pub(crate) fn pg_delete(id: &'_ DeploymentId) -> QueryBuilder<'_, Postgres> {
     query.push_bind(id);
     // Return query
     query
+}
+
+pub(crate) fn pg_update<'a>(
+    id: &'a DeploymentId,
+    access: &'a Option<DeploymentAccess>,
+    connection_id: &'a Option<ConnectionId>,
+    budget_limits: &'a Option<Option<BudgetLimits>>,
+    request_limits: &'a Option<Option<RequestLimits>>,
+    token_limits: &'a Option<Option<TokenLimits>>,
+) -> Option<QueryBuilder<'a, Postgres>> {
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("UPDATE deployments SET ");
+    let mut has_updates = false;
+
+    if let Some(value) = access {
+        if has_updates {
+            query.push(", ");
+        }
+        has_updates = true;
+        query.push("access = ");
+        query.push_bind(value);
+    }
+
+    if let Some(value) = connection_id {
+        if has_updates {
+            query.push(", ");
+        }
+        has_updates = true;
+        query.push("connection_id = ");
+        query.push_bind(value);
+    }
+
+    if let Some(value) = budget_limits {
+        if has_updates {
+            query.push(", ");
+        }
+        has_updates = true;
+        match value {
+            Some(value) => {
+                query.push("budget_limits = ");
+                query.push_bind(Json::from(value));
+            }
+            None => {
+                query.push("budget_limits = NULL");
+            }
+        }
+    }
+
+    if let Some(value) = request_limits {
+        if has_updates {
+            query.push(", ");
+        }
+        has_updates = true;
+        match value {
+            Some(value) => {
+                query.push("request_limits = ");
+                query.push_bind(Json::from(value));
+            }
+            None => {
+                query.push("request_limits = NULL");
+            }
+        }
+    }
+
+    if let Some(value) = token_limits {
+        if has_updates {
+            query.push(", ");
+        }
+        has_updates = true;
+        match value {
+            Some(value) => {
+                query.push("token_limits = ");
+                query.push_bind(Json::from(value));
+            }
+            None => {
+                query.push("token_limits = NULL");
+            }
+        }
+    }
+
+    if !has_updates {
+        return None;
+    }
+
+    query.push(" WHERE id = ");
+    query.push_bind(id);
+    query.push(" RETURNING id");
+
+    Some(query)
 }
 
 pub(crate) fn pg_insert<'a>(

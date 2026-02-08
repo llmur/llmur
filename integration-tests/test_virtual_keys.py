@@ -38,6 +38,28 @@ class TestVirtualKeys:
 
         assert response.status_code == 404
 
+    def test_update_virtual_key_success(self, api_client, created_virtual_key):
+        """Test updating virtual_key fields"""
+        update_payload = {
+            "alias": "updated-key",
+            "description": "Updated description",
+            "blocked": True,
+        }
+
+        response = api_client.update_virtual_key(created_virtual_key, update_payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["alias"] == "updated-key"
+        assert data["description"] == "Updated description"
+        assert data["blocked"] is True
+
+        clear_response = api_client.update_virtual_key(created_virtual_key, {
+            "description": None,
+        })
+        assert clear_response.status_code == 200
+        cleared = clear_response.json()
+        assert cleared["description"] is None
+
     def test_delete_virtual_key_success(self, api_client, created_project):
         """Test successful virtual_key deletion"""
         virtual_key_data = {

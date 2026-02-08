@@ -55,6 +55,26 @@ class TestConnections:
 
         assert response.status_code == 404
 
+    def test_update_azure_openai_connection_success(self, api_client, sample_azure_openai_connection_data):
+        """Test updating Azure OpenAI connection fields"""
+        create_response = api_client.create_connection(sample_azure_openai_connection_data)
+        assert create_response.status_code == 200
+        connection_id = create_response.json()["id"]
+
+        try:
+            update_response = api_client.update_connection(connection_id, {
+                "provider": "azure/openai",
+                "deployment_name": "updated-deployment",
+                "request_limits": {"requests_per_day": 5},
+            })
+            assert update_response.status_code == 200
+            data = update_response.json()
+            assert data["id"] == connection_id
+            assert data["provider"] == "azure/openai"
+            assert data["deployment_name"] == "updated-deployment"
+        finally:
+            api_client.delete_connection(connection_id)
+
     def test_delete_connection_success(self, api_client, sample_azure_openai_connection_data):
         """Test successful connection deletion"""
         # Create connection first
