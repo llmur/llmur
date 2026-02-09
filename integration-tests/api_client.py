@@ -117,6 +117,9 @@ class APIClient:
     def delete_connection(self, connection_id: int) -> requests.Response:
         return self._make_request('DELETE', f'/admin/connection/{connection_id}')
 
+    def update_connection(self, connection_id: int, payload: Dict[str, Any]) -> requests.Response:
+        return self._make_request('PATCH', f'/admin/connection/{connection_id}', payload)
+
     def list_connections(self) -> requests.Response:
         return self._make_request('GET', '/admin/connection')
 
@@ -134,6 +137,9 @@ class APIClient:
     def delete_deployment(self, deployment_id: int) -> requests.Response:
         return self._make_request('DELETE', f'/admin/deployment/{deployment_id}')
 
+    def update_deployment(self, deployment_id: int, payload: Dict[str, Any]) -> requests.Response:
+        return self._make_request('PATCH', f'/admin/deployment/{deployment_id}', payload)
+
     # Virtual keys endpoints
     def get_virtual_key(self, virtual_key_id: int) -> requests.Response:
         return self._make_request('GET', f'/admin/virtual-key/{virtual_key_id}')
@@ -143,6 +149,9 @@ class APIClient:
 
     def delete_virtual_key(self, virtual_key_id: int) -> requests.Response:
         return self._make_request('DELETE', f'/admin/virtual-key/{virtual_key_id}')
+
+    def update_virtual_key(self, virtual_key_id: int, payload: Dict[str, Any]) -> requests.Response:
+        return self._make_request('PATCH', f'/admin/virtual-key/{virtual_key_id}', payload)
 
     def search_virtual_keys(self, project_id: Optional[str] = None) -> requests.Response:
         params = {"project_id": project_id} if project_id else None
@@ -157,6 +166,13 @@ class APIClient:
 
     def delete_virtual_key_deployment_map(self, map_id: int) -> requests.Response:
         return self._make_request('DELETE', f'/admin/virtual-key-deployment/{map_id}')
+
+    def update_virtual_key_deployment_map(
+        self,
+        map_id: int,
+        payload: Dict[str, Any],
+    ) -> requests.Response:
+        return self._make_request('PATCH', f'/admin/virtual-key-deployment/{map_id}', payload)
 
     def search_virtual_key_deployment_maps(
         self,
@@ -173,6 +189,12 @@ class APIClient:
     # Graph - Debug only
     def get_graph(self, key: str, deployment: str) -> requests.Response:
         return self._make_request('GET', f'/admin/graph/{key}/{deployment}')
+
+    def update_project(self, project_id: int, payload: Dict[str, Any]) -> requests.Response:
+        return self._make_request('PATCH', f'/admin/project/{project_id}', payload)
+
+    def update_user(self, user_id: int, payload: Dict[str, Any]) -> requests.Response:
+        return self._make_request('PATCH', f'/admin/user/{user_id}', payload)
 
     # OpenAI-compatible endpoints
     def create_chat_completion(self, payload: Dict[str, Any], bearer_token: str) -> requests.Response:

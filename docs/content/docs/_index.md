@@ -73,7 +73,10 @@ LLMUR is built with:
 - `/admin/connection` - Provider connection management
 - `/admin/deployment` - Deployment configuration
 - `/admin/virtual-key` - API key management
+- `/admin/virtual-key-deployment` - Virtual key to deployment association management
 - `/admin/graph/{key}/{deployment}` - Usage graph visualization
+  - PATCH supports partial updates on the core admin resources.
+  - For limits fields, omit to keep current values; send `null` or `{}` to clear limits (no limits).
 
 ### System Endpoints
 - `GET /health` - Health check endpoint

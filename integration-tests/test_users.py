@@ -72,6 +72,18 @@ class TestUsers:
 
         assert response.status_code == 404
 
+    def test_update_user_success(self, api_client, created_user):
+        """Test updating user fields"""
+        update_response = api_client.update_user(created_user, {
+            "name": "Updated User",
+            "role": "admin",
+        })
+        assert update_response.status_code == 200
+        data = update_response.json()
+        assert data["id"] == created_user
+        assert data["name"] == "Updated User"
+        assert data["role"] == "admin"
+
     def test_delete_user_success(self, api_client, sample_user_data):
         """Test successful user deletion"""
         # Create user first

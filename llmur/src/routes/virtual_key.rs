@@ -4,9 +4,10 @@ use crate::data::virtual_key::{VirtualKey, VirtualKeyId};
 use crate::errors::{AuthorizationError, DataAccessError, LLMurError};
 use crate::routes::StatusResponse;
 use crate::routes::middleware::user_context::{AuthorizationManager, UserContextExtractionResult};
+use crate::routes::utils::{NullableField, normalize_limits, normalize_nullable};
 use crate::{LLMurState, impl_from_vec_result};
 use axum::extract::{Path, Query, State};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -17,6 +18,7 @@ pub(crate) fn routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
         .route("/", post(create_key))
         .route("/", get(search_keys))
         .route("/{id}", get(get_key))
+        .route("/{id}", patch(update_key))
         .route("/{id}", delete(delete_key))
         .with_state(state.clone())
 }
@@ -53,6 +55,64 @@ pub(crate) async fn create_key(
         .await?;
 
     Ok(Json(key.into()))
+}
+
+#[tracing::instrument(
+    name = "handler.update.virtual_key",
+    skip(state, ctx, id, payload),
+    fields(id = %id.0)
+)]
+pub(crate) async fn update_key(
+    Extension(ctx): Extension<UserContextExtractionResult>,
+    State(state): State<Arc<LLMurState>>,
+    Path(id): Path<VirtualKeyId>,
+    Json(payload): Json<UpdateVirtualKeyPayload>,
+) -> Result<Json<GetVirtualKeyResult>, LLMurError> {
+    let user_context = ctx.require_authenticated_user()?;
+
+    let key = state
+        .data
+        .get_virtual_key(&id, &state.application_secret, &state.metrics)
+        .await?
+        .ok_or(DataAccessError::ResourceNotFound)?;
+
+    if !user_context
+        .has_project_admin_access(state.clone(), &key.project_id)
+        .await?
+    {
+        return Err(AuthorizationError::AccessDenied)?;
+    }
+
+    let UpdateVirtualKeyPayload {
+        alias,
+        description,
+        blocked,
+        budget_limits,
+        request_limits,
+        token_limits,
+    } = payload;
+
+    let description = normalize_nullable(description);
+    let budget_limits = normalize_limits(budget_limits);
+    let request_limits = normalize_limits(request_limits);
+    let token_limits = normalize_limits(token_limits);
+
+    let result = state
+        .data
+        .update_virtual_key(
+            &id,
+            &alias,
+            &description,
+            &blocked,
+            &budget_limits,
+            &request_limits,
+            &token_limits,
+            &state.application_secret,
+            &state.metrics,
+        )
+        .await?;
+
+    Ok(Json(result.into()))
 }
 
 #[tracing::instrument(
@@ -168,6 +228,21 @@ pub(crate) struct CreateVirtualKeyPayload {
     pub(crate) budget_limits: Option<BudgetLimits>,
     pub(crate) request_limits: Option<RequestLimits>,
     pub(crate) token_limits: Option<TokenLimits>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct UpdateVirtualKeyPayload {
+    pub(crate) alias: Option<String>,
+    #[serde(default)]
+    pub(crate) description: NullableField<String>,
+    pub(crate) blocked: Option<bool>,
+
+    #[serde(default)]
+    pub(crate) budget_limits: NullableField<BudgetLimits>,
+    #[serde(default)]
+    pub(crate) request_limits: NullableField<RequestLimits>,
+    #[serde(default)]
+    pub(crate) token_limits: NullableField<TokenLimits>,
 }
 
 #[derive(Deserialize)]

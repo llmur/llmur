@@ -9,6 +9,16 @@ pub struct RequestLimits {
     pub requests_per_month: Option<i64>,
 }
 
+impl RequestLimits {
+    pub fn is_empty(&self) -> bool {
+        self.requests_per_minute.is_none()
+            && self.requests_per_hour.is_none()
+            && self.requests_per_day.is_none()
+            && self.requests_per_week.is_none()
+            && self.requests_per_month.is_none()
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, Default)]
 pub struct BudgetLimits {
     pub cost_per_minute: Option<f64>,
@@ -18,6 +28,16 @@ pub struct BudgetLimits {
     pub cost_per_month: Option<f64>,
 }
 
+impl BudgetLimits {
+    pub fn is_empty(&self) -> bool {
+        self.cost_per_minute.is_none()
+            && self.cost_per_hour.is_none()
+            && self.cost_per_day.is_none()
+            && self.cost_per_week.is_none()
+            && self.cost_per_month.is_none()
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, Default)]
 pub struct TokenLimits {
     pub tokens_per_minute: Option<i64>,
@@ -25,4 +45,14 @@ pub struct TokenLimits {
     pub tokens_per_day: Option<i64>,
     pub tokens_per_week: Option<i64>,
     pub tokens_per_month: Option<i64>,
+}
+
+impl TokenLimits {
+    pub fn is_empty(&self) -> bool {
+        self.tokens_per_minute.is_none()
+            && self.tokens_per_hour.is_none()
+            && self.tokens_per_day.is_none()
+            && self.tokens_per_week.is_none()
+            && self.tokens_per_month.is_none()
+    }
 }

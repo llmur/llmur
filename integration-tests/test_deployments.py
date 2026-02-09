@@ -49,6 +49,30 @@ class TestDeployments:
 
         assert response.status_code == 404
 
+    def test_update_deployment_success(
+        self,
+        api_client,
+        created_deployment,
+        sample_openai_connection_data,
+    ):
+        """Test updating deployment access and connection"""
+        connection_resp = api_client.create_connection(sample_openai_connection_data)
+        assert connection_resp.status_code == 200
+        connection_id = connection_resp.json()["id"]
+
+        try:
+            update_response = api_client.update_deployment(created_deployment, {
+                "access": "public",
+                "connection_id": connection_id,
+            })
+            assert update_response.status_code == 200
+            data = update_response.json()
+            assert data["id"] == created_deployment
+            assert data["access"] == "public"
+            assert data["connection_id"] == connection_id
+        finally:
+            api_client.delete_connection(connection_id)
+
     def test_delete_deployment_success(self, api_client, sample_deployment_data, created_azure_openai_connection):
         """Test successful deployment deletion"""
         # Create deployment first

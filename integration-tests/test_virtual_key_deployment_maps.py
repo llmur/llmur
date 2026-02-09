@@ -126,3 +126,38 @@ class TestVirtualKeyDeploymentMaps:
 
         get_response = api_client.get_virtual_key_deployment_map(map_id)
         assert get_response.status_code == 404
+
+    def test_update_virtual_key_deployment_map_limits(
+        self,
+        api_client,
+        created_virtual_key,
+        created_deployment,
+    ):
+        """Test updating virtual key deployment map limits and clearing them"""
+        payload = {
+            'virtual_key_id': created_virtual_key,
+            'deployment_id': created_deployment,
+            'budget_limits': {"cost_per_day": 1.0},
+        }
+
+        create_response = api_client.create_virtual_key_deployment_map(payload)
+        assert create_response.status_code == 200
+        map_id = create_response.json()['id']
+
+        update_response = api_client.update_virtual_key_deployment_map(map_id, {
+            "budget_limits": {"cost_per_day": 2.5},
+            "request_limits": {"requests_per_day": 3},
+        })
+        assert update_response.status_code == 200
+        data = update_response.json()
+        assert data['budget_limits']['cost_per_day'] == pytest.approx(2.5)
+        assert data['request_limits']['requests_per_day'] == 3
+
+        clear_response = api_client.update_virtual_key_deployment_map(map_id, {
+            "budget_limits": {},
+        })
+        assert clear_response.status_code == 200
+        cleared = clear_response.json()
+        assert cleared['budget_limits']['cost_per_day'] is None
+
+        api_client.delete_virtual_key_deployment_map(map_id)

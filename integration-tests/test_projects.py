@@ -55,6 +55,17 @@ class TestProjects:
 
         assert response.status_code == 404
 
+    def test_update_project_success(self, api_client, created_project):
+        """Test updating project name"""
+        update_response = api_client.update_project(created_project, {
+            "name": "updated-project",
+            "budget_limits": {"cost_per_day": 1.0},
+        })
+        assert update_response.status_code == 200
+        data = update_response.json()
+        assert data["id"] == created_project
+        assert data["name"] == "updated-project"
+
     def test_delete_project_success(self, api_client, sample_project_data):
         """Test successful project deletion"""
         # Create project first

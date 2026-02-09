@@ -178,6 +178,41 @@ impl DataAccess {
     }
 
     #[tracing::instrument(
+        level = "trace",
+        name = "update.user",
+        skip(self, id, name, email, role, metrics),
+        fields(id = %id.0)
+    )]
+    pub async fn update_user(
+        &self,
+        id: &UserId,
+        name: &Option<String>,
+        email: &Option<String>,
+        role: &Option<ApplicationRole>,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<User, DataAccessError> {
+        if name.is_none() && email.is_none() && role.is_none() {
+            return self
+                .get_user(id, metrics)
+                .await?
+                .ok_or(DataAccessError::ResourceNotFound);
+        }
+
+        let updated = self
+            .database
+            .update_user(id, name, email, role, metrics)
+            .await?;
+
+        if updated == 0 {
+            return Err(DataAccessError::ResourceNotFound);
+        }
+
+        self.get_user(id, metrics)
+            .await?
+            .ok_or(DataAccessError::ResourceNotFound)
+    }
+
+    #[tracing::instrument(
         level="trace",
         name = "delete.user",
         skip(self, id, metrics),
@@ -267,6 +302,52 @@ default_database_access_fns!(
     },
     search => { }
 );
+impl Database {
+    #[tracing::instrument(
+        level = "trace",
+        name = "db.update.user",
+        skip(self, id, name, email, role, metrics),
+        fields(id = %id.0)
+    )]
+    pub(crate) async fn update_user(
+        &self,
+        id: &UserId,
+        name: &Option<String>,
+        email: &Option<String>,
+        role: &Option<ApplicationRole>,
+        metrics: &Option<Arc<Metrics>>,
+    ) -> Result<u64, DataAccessError> {
+        use crate::metrics::RegisterDatabaseRequest;
+
+        let operation = "db.update.user";
+        let span = tracing::trace_span!("database_operation", operation= %operation);
+
+        tracing::Instrument::instrument(
+            async move {
+                match self {
+                    Database::Postgres { pool } => {
+                        let start = std::time::Instant::now();
+                        let Some(mut query) = pg_update(id, name, email, role) else {
+                            return Ok(0);
+                        };
+                        let sql = query.build_query_as::<(UserId,)>();
+                        let result = sql.fetch_optional(pool).await;
+
+                        metrics.register_database_request(
+                            operation,
+                            start.elapsed().as_millis() as u64,
+                            result.is_ok(),
+                        );
+
+                        Ok(result?.map(|_| 1).unwrap_or(0))
+                    }
+                }
+            },
+            span,
+        )
+        .await
+    }
+}
 
 // region:      --- Postgres Queries
 #[allow(unused)]
@@ -315,6 +396,53 @@ pub(crate) fn pg_delete(id: &'_ UserId) -> QueryBuilder<'_, Postgres> {
     query.push_bind(id);
     // Build query
     query
+}
+
+pub(crate) fn pg_update<'a>(
+    id: &'a UserId,
+    name: &'a Option<String>,
+    email: &'a Option<String>,
+    role: &'a Option<ApplicationRole>,
+) -> Option<QueryBuilder<'a, Postgres>> {
+    let mut query: QueryBuilder<'_, Postgres> = QueryBuilder::new("UPDATE users SET ");
+    let mut has_updates = false;
+
+    if let Some(value) = name {
+        if has_updates {
+            query.push(", ");
+        }
+        has_updates = true;
+        query.push("name = ");
+        query.push_bind(value);
+    }
+
+    if let Some(value) = email {
+        if has_updates {
+            query.push(", ");
+        }
+        has_updates = true;
+        query.push("email = ");
+        query.push_bind(value);
+    }
+
+    if let Some(value) = role {
+        if has_updates {
+            query.push(", ");
+        }
+        has_updates = true;
+        query.push("role = ");
+        query.push_bind(value);
+    }
+
+    if !has_updates {
+        return None;
+    }
+
+    query.push(" WHERE id = ");
+    query.push_bind(id);
+    query.push(" RETURNING id");
+
+    Some(query)
 }
 
 pub(crate) fn pg_insert<'a>(
