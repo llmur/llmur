@@ -17,7 +17,7 @@ use uuid::Uuid;
     skip(state, req, next),
     fields(
         method = ?req.method().to_string(),
-        path = ?req.uri().path().clone()
+        path = ?req.uri().path()
     )
 )]
 pub(crate) async fn common_tracing_mw(

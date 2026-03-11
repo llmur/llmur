@@ -8,7 +8,7 @@ use crate::routes::openai::request::OpenAiRequestData;
 use crate::routes::openai::response::ProxyResponse;
 use axum::Extension;
 use axum::extract::State;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use futures::StreamExt;
 use std::sync::Arc;
 use std::time::Instant;
@@ -246,7 +246,6 @@ mod azure_openai_request {
             context: request_log_context,
             senders,
             status_code: status,
-            request_ts,
         };
         let stream = super::responses_filter_stream(response, log_handler);
         let body = axum::body::Body::from_stream(stream);
@@ -387,7 +386,6 @@ mod openai_v1_request {
             context: request_log_context,
             senders,
             status_code: status,
-            request_ts,
         };
         let stream = super::responses_filter_stream(response, log_handler);
         let body = axum::body::Body::from_stream(stream);
@@ -573,7 +571,6 @@ mod gemini_v1beta_request {
             context: request_log_context,
             senders,
             status_code: status,
-            request_ts,
         };
         let stream = gemini_to_openai_stream(response, response_context, log_handler);
         let body = axum::body::Body::from_stream(stream);
@@ -1163,7 +1160,6 @@ struct StreamLogHandler {
     context: Arc<RequestLogContext>,
     senders: RequestLogSenders,
     status_code: reqwest::StatusCode,
-    request_ts: DateTime<Utc>,
 }
 
 impl StreamLogHandler {

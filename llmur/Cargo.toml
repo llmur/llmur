@@ -17,14 +17,14 @@ path = "src/main.rs"
 
 [dependencies]
 # Library dependencies
-axum = { version = "0.8.4", features = ["macros"] }
+axum = { version = "0.8.4", features = ["macros", "multipart"] }
 sqlx = { version = "0.8.2", features = ["runtime-tokio", "tls-native-tls", "postgres", "mysql", "chrono", "uuid", "migrate", "runtime-async-std", "chrono"] }
 serde = { version = "1.0.215", features = ["derive"] }
 uuid = { version = "1.14.0", features = ["v5", "v7", "serde", "macro-diagnostics"] }
 thiserror = "2.0.2"
 redis = { version = "0.29.0", features = ["uuid", "aio", "async-std-comp"] }
 tracing = "0.1.43"
-reqwest = { version = "0.12.9", features = ["json", "stream"] }
+reqwest = { version = "0.12.9", features = ["json", "stream", "multipart"] }
 bytes = "1.6.0"
 serde_json = "1.0.132"
 email_address = "0.2.9"

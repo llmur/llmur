@@ -1,0 +1,11 @@
+{
+  "id": "batch_fixture_az_2",
+  "object": "batch",
+  "endpoint": "/v1/embeddings",
+  "input_file_id": "file_fixture_az_input_2",
+  "completion_window": "24h",
+  "status": "completed",
+  "output_file_id": "file_fixture_az_output_2",
+  "created_at": 1734000123,
+  "unknown_field": "ignored"
+}

@@ -66,7 +66,7 @@ where
             selected_connection_node: connection.clone(),
             method: request_data.method.clone(),
             path: request_data.path.clone(),
-            attempt_number: 0,
+            subrequest_index: 0,
             request_ts: Utc::now(),
         });
 
@@ -185,7 +185,7 @@ where
 {
     RequestLogContext {
         request_id: *request_id,
-        attempt_number: 0,
+        subrequest_index: 0,
         graph: request_data_arc.graph.clone(),
         selected_connection_node: selected_connection_node.clone(),
         method: request_data_arc.method.clone(),

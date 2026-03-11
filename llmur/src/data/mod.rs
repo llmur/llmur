@@ -29,10 +29,13 @@ pub mod limits;
 pub mod membership;
 pub mod project;
 pub mod project_invite_code;
+pub mod provider_batch;
 pub mod request_log;
 pub mod session_token;
 pub mod usage;
 pub mod user;
+pub mod virtual_batch;
+pub mod virtual_file;
 pub mod virtual_key;
 pub mod virtual_key_deployment;
 
@@ -266,6 +269,8 @@ impl Cache {
         Some(cached)
     }
 
+    // Retained for generated per-entity cache accessors that support bulk reads.
+    #[allow(dead_code)]
     pub(crate) fn get_local_records<R, K>(
         &self,
         ids: &BTreeSet<K>,
@@ -301,6 +306,8 @@ impl Cache {
         }
     }
 
+    // Retained for generated per-entity cache accessors that support bulk writes.
+    #[allow(dead_code)]
     pub(crate) fn set_local_records<R, K>(&self, records: Vec<R>) -> ()
     where
         R: LocallyStored<K>,
@@ -315,6 +322,8 @@ impl Cache {
         }
     }
 
+    // Retained for generated per-entity cache accessors that support explicit invalidation.
+    #[allow(dead_code)]
     pub(crate) fn delete_local_record<R, K>(&self, id: &K) -> ()
     where
         R: LocallyStored<K>,
@@ -325,6 +334,8 @@ impl Cache {
         }
     }
 
+    // Retained for generated per-entity cache accessors that support bulk invalidation.
+    #[allow(dead_code)]
     pub(crate) fn delete_local_records<R, K>(&self, ids: &BTreeSet<K>) -> ()
     where
         R: LocallyStored<K>,

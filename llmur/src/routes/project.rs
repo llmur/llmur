@@ -199,6 +199,8 @@ pub(crate) struct GetProjectResult {
 }
 
 #[derive(Serialize)]
+// Kept for list endpoint parity across route modules.
+#[allow(dead_code)]
 pub(crate) struct ListProjectsResult {
     pub(crate) projects: Vec<GetProjectResult>,
     pub(crate) total: usize,

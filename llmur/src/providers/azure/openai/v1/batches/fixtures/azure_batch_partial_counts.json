@@ -1,0 +1,22 @@
+{
+  "id": "batch_fixture_az_1",
+  "object": "batch",
+  "endpoint": "",
+  "input_file_id": "file_fixture_az_input_1",
+  "completion_window": "",
+  "status": "in_progress",
+  "output_file_id": "",
+  "error_file_id": "",
+  "created_at": 1734000000,
+  "request_counts": {
+    "total": 3,
+    "completed": 1,
+    "failed": 0
+  },
+  "metadata": {
+    "source": "fixture"
+  },
+  "extra_provider_field": {
+    "ignored": true
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "operations/fixture-op-2",
+  "done": true,
+  "response": {
+    "name": "batches/fixture-op-2",
+    "metadata": {
+      "state": {
+        "value": "JOB_STATE_SUCCEEDED"
+      }
+    },
+    "result": {
+      "payload": {
+        "artifact": "https://generativelanguage.googleapis.com/download/v1beta/files/output_fixture_nested_2:download?alt=media"
+      }
+    }
+  }
+}

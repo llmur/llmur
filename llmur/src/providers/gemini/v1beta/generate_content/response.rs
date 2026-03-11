@@ -567,22 +567,16 @@ pub mod to_openai_transform {
             let total_tokens = usage
                 .total_token_count
                 .unwrap_or(prompt_tokens + completion_tokens);
-            let completion_tokens_details =
-                usage
-                    .thoughts_token_count
-                    .map(|value| OpenAiCompletionTokensDetails {
-                        accepted_prediction_tokens: None,
-                        audio_tokens: None,
-                        reasoning_tokens: Some(value),
-                        rejected_prediction_tokens: None,
-                    });
-            let prompt_tokens_details =
-                usage
-                    .cached_content_token_count
-                    .map(|value| OpenAiPromptTokensDetails {
-                        audio_tokens: None,
-                        cached_tokens: Some(value),
-                    });
+            let completion_tokens_details = Some(OpenAiCompletionTokensDetails {
+                accepted_prediction_tokens: Some(0),
+                audio_tokens: Some(0),
+                reasoning_tokens: Some(usage.thoughts_token_count.unwrap_or(0)),
+                rejected_prediction_tokens: Some(0),
+            });
+            let prompt_tokens_details = Some(OpenAiPromptTokensDetails {
+                audio_tokens: Some(0),
+                cached_tokens: Some(usage.cached_content_token_count.unwrap_or(0)),
+            });
 
             OpenAiResponseUsage {
                 completion_tokens,
@@ -596,8 +590,16 @@ pub mod to_openai_transform {
                 completion_tokens: 0,
                 prompt_tokens: 0,
                 total_tokens: 0,
-                completion_tokens_details: None,
-                prompt_tokens_details: None,
+                completion_tokens_details: Some(OpenAiCompletionTokensDetails {
+                    accepted_prediction_tokens: Some(0),
+                    audio_tokens: Some(0),
+                    reasoning_tokens: Some(0),
+                    rejected_prediction_tokens: Some(0),
+                }),
+                prompt_tokens_details: Some(OpenAiPromptTokensDetails {
+                    audio_tokens: Some(0),
+                    cached_tokens: Some(0),
+                }),
             }
         }
     }
@@ -615,7 +617,7 @@ pub mod to_openai_transform {
                 role: "assistant".to_string(),
                 tool_calls,
                 refusal: None,
-                annotations: None,
+                annotations: Some(Vec::new()),
                 audio: None,
                 function_call: None,
             },
@@ -1068,6 +1070,64 @@ mod tests {
                 .as_ref()
                 .and_then(|details| details.reasoning_tokens),
             Some(1)
+        );
+        assert_eq!(
+            openai_response
+                .usage
+                .completion_tokens_details
+                .as_ref()
+                .and_then(|details| details.accepted_prediction_tokens),
+            Some(0)
+        );
+        assert_eq!(
+            openai_response
+                .usage
+                .completion_tokens_details
+                .as_ref()
+                .and_then(|details| details.audio_tokens),
+            Some(0)
+        );
+        assert_eq!(
+            openai_response
+                .usage
+                .completion_tokens_details
+                .as_ref()
+                .and_then(|details| details.rejected_prediction_tokens),
+            Some(0)
+        );
+        assert_eq!(
+            openai_response
+                .usage
+                .prompt_tokens_details
+                .as_ref()
+                .and_then(|details| details.audio_tokens),
+            Some(0)
+        );
+
+        let serialized = serde_json::to_value(&openai_response).expect("serialize openai response");
+        assert_eq!(
+            serialized["usage"]["completion_tokens_details"]["accepted_prediction_tokens"],
+            0
+        );
+        assert_eq!(
+            serialized["usage"]["completion_tokens_details"]["audio_tokens"],
+            0
+        );
+        assert_eq!(
+            serialized["usage"]["completion_tokens_details"]["reasoning_tokens"],
+            1
+        );
+        assert_eq!(
+            serialized["usage"]["completion_tokens_details"]["rejected_prediction_tokens"],
+            0
+        );
+        assert_eq!(
+            serialized["usage"]["prompt_tokens_details"]["audio_tokens"],
+            0
+        );
+        assert_eq!(
+            serialized["usage"]["prompt_tokens_details"]["cached_tokens"],
+            1
         );
     }
 
