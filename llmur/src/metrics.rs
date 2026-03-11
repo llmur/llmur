@@ -19,6 +19,11 @@ pub struct Metrics {
     // Metrics associated with database requests
     pub(crate) db_request_counter: Counter<u64>,
     pub(crate) db_request_duration: Histogram<u64>,
+
+    // Metrics associated with OpenAI batch surface normalization
+    pub(crate) batch_surface_status_coercions_counter: Counter<u64>,
+    pub(crate) batch_surface_file_id_suppressions_counter: Counter<u64>,
+    pub(crate) batch_surface_error_file_suppressions_counter: Counter<u64>,
 }
 
 impl Metrics {
@@ -84,6 +89,23 @@ impl Metrics {
                     0.0, 5.0, 10.0, 25.0, 50.0, 75.0, 100.0, 250.0, 500.0, 750.0, 1000.0, 2500.0,
                     5000.0, 7500.0, 10000.0, 25000.0,
                 ])
+                .build(),
+
+            batch_surface_status_coercions_counter: meter
+                .u64_counter("batch_surface_status_coercions_total")
+                .with_description("Number of OpenAI batch status coercions at response surface")
+                .build(),
+            batch_surface_file_id_suppressions_counter: meter
+                .u64_counter("batch_surface_file_id_suppressions_total")
+                .with_description(
+                    "Number of OpenAI batch output/error file id suppressions at response surface",
+                )
+                .build(),
+            batch_surface_error_file_suppressions_counter: meter
+                .u64_counter("batch_surface_error_file_suppressions_total")
+                .with_description(
+                    "Number of OpenAI batch error file suppressions for terminal zero-failure states",
+                )
                 .build(),
         }
     }
@@ -230,3 +252,112 @@ impl RegisterDatabaseRequest for Option<Arc<Metrics>> {
     }
 }
 // endregion: --- RegisterDatabaseRequest
+
+// region:    --- RegisterBatchNormalization
+
+pub(crate) trait RegisterBatchNormalization {
+    fn register_batch_surface_status_coercion(
+        &self,
+        endpoint: &str,
+        from_status: &str,
+        to_status: &str,
+    );
+
+    fn register_batch_surface_file_id_suppression(
+        &self,
+        endpoint: &str,
+        status: &str,
+        reason: &str,
+    );
+
+    fn register_batch_surface_error_file_suppression(
+        &self,
+        endpoint: &str,
+        status: &str,
+        reason: &str,
+    );
+}
+
+impl RegisterBatchNormalization for Metrics {
+    fn register_batch_surface_status_coercion(
+        &self,
+        endpoint: &str,
+        from_status: &str,
+        to_status: &str,
+    ) {
+        let attributes = vec![
+            KeyValue::new("endpoint", endpoint.to_string()),
+            KeyValue::new("from_status", from_status.to_string()),
+            KeyValue::new("to_status", to_status.to_string()),
+        ];
+        self.batch_surface_status_coercions_counter
+            .add(1, &attributes);
+    }
+
+    fn register_batch_surface_file_id_suppression(
+        &self,
+        endpoint: &str,
+        status: &str,
+        reason: &str,
+    ) {
+        let attributes = vec![
+            KeyValue::new("endpoint", endpoint.to_string()),
+            KeyValue::new("status", status.to_string()),
+            KeyValue::new("reason", reason.to_string()),
+        ];
+        self.batch_surface_file_id_suppressions_counter
+            .add(1, &attributes);
+    }
+
+    fn register_batch_surface_error_file_suppression(
+        &self,
+        endpoint: &str,
+        status: &str,
+        reason: &str,
+    ) {
+        let attributes = vec![
+            KeyValue::new("endpoint", endpoint.to_string()),
+            KeyValue::new("status", status.to_string()),
+            KeyValue::new("reason", reason.to_string()),
+        ];
+        self.batch_surface_error_file_suppressions_counter
+            .add(1, &attributes);
+    }
+}
+
+impl RegisterBatchNormalization for Option<Arc<Metrics>> {
+    fn register_batch_surface_status_coercion(
+        &self,
+        endpoint: &str,
+        from_status: &str,
+        to_status: &str,
+    ) {
+        if let Some(metrics) = self {
+            metrics.register_batch_surface_status_coercion(endpoint, from_status, to_status);
+        }
+    }
+
+    fn register_batch_surface_file_id_suppression(
+        &self,
+        endpoint: &str,
+        status: &str,
+        reason: &str,
+    ) {
+        if let Some(metrics) = self {
+            metrics.register_batch_surface_file_id_suppression(endpoint, status, reason);
+        }
+    }
+
+    fn register_batch_surface_error_file_suppression(
+        &self,
+        endpoint: &str,
+        status: &str,
+        reason: &str,
+    ) {
+        if let Some(metrics) = self {
+            metrics.register_batch_surface_error_file_suppression(endpoint, status, reason);
+        }
+    }
+}
+
+// endregion: --- RegisterBatchNormalization

@@ -15,10 +15,12 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+mod batches;
 mod chat_completions;
 mod connection;
 mod deployment;
 mod embeddings;
+mod files;
 mod membership;
 mod project;
 mod project_invite_code;
@@ -58,6 +60,18 @@ pub(crate) fn admin_routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
 
 pub(crate) fn openai_v1_routes(state: Arc<LLMurState>) -> Router<Arc<LLMurState>> {
     Router::new()
+        .route("/files", post(files::create_file).get(files::list_files))
+        .route(
+            "/files/{file_id}",
+            get(files::get_file).delete(files::delete_file),
+        )
+        .route("/files/{file_id}/content", get(files::get_file_content))
+        .route(
+            "/batches",
+            post(batches::create_batch).get(batches::list_batches),
+        )
+        .route("/batches/{batch_id}", get(batches::get_batch))
+        .route("/batches/{batch_id}/cancel", post(batches::cancel_batch))
         .route(
             "/embeddings",
             post(embeddings_route).route_layer(from_fn_with_state(

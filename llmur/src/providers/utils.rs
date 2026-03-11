@@ -118,6 +118,8 @@ pub(crate) async fn generic_post_proxy_request<
     level = "debug",
     skip(client, generate_url_fn, request_headers)
 )]
+// Kept as a generic streaming helper for provider integrations that may adopt it.
+#[allow(dead_code)]
 pub(crate) async fn generic_post_proxy_request_stream<
     RequestOriginal: Transformer<RequestTransformed, RequestTransformationContext, RequestTransformationLoss>
         + Debug,

@@ -12,7 +12,7 @@ pub(crate) struct RequestLogContext {
     pub(crate) selected_connection_node: ConnectionNode,
     pub(crate) method: String,
     pub(crate) path: String,
-    pub(crate) attempt_number: i16,
+    pub(crate) subrequest_index: i16,
     pub(crate) request_ts: DateTime<Utc>,
 }
 
@@ -33,7 +33,7 @@ pub(crate) fn send_request_log(
 ) {
     let data = RequestLogData {
         id: context.request_id,
-        attempt_number: context.attempt_number,
+        subrequest_index: context.subrequest_index,
         graph: context.graph.clone(),
         selected_connection_node: context.selected_connection_node.clone(),
         input_tokens,

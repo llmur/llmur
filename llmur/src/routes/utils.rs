@@ -1,4 +1,8 @@
 use crate::data::limits::{BudgetLimits, RequestLimits, TokenLimits};
+use crate::data::virtual_batch::VirtualBatchId;
+use crate::data::virtual_file::VirtualFileId;
+use crate::errors::LLMurError;
+use crate::routes::middleware::auth::{AuthorizationHeader, AuthorizationHeaderExtractionResult};
 use serde::Deserialize;
 use serde::de::Deserializer;
 
@@ -78,4 +82,30 @@ pub(crate) fn normalize_limits<T: LimitsEmpty>(value: NullableField<T>) -> Optio
         }
         NullableField::Null => Some(None),
     }
+}
+
+pub(crate) fn parse_virtual_batch_id(value: &str) -> Result<VirtualBatchId, LLMurError> {
+    parse_bad_request(value, "Invalid batch id value.")
+}
+
+pub(crate) fn parse_virtual_file_id(value: &str) -> Result<VirtualFileId, LLMurError> {
+    parse_bad_request(value, "Invalid file id value.")
+}
+
+pub(crate) fn extract_api_key(
+    auth: AuthorizationHeaderExtractionResult,
+) -> Result<String, LLMurError> {
+    let auth_header = auth?;
+    match auth_header {
+        AuthorizationHeader::Bearer(api_key) => Ok(api_key),
+    }
+}
+
+fn parse_bad_request<T: std::str::FromStr>(
+    value: &str,
+    invalid_value_message: &'static str,
+) -> Result<T, LLMurError> {
+    value
+        .parse::<T>()
+        .map_err(|_| LLMurError::BadRequest(invalid_value_message.to_string()))
 }

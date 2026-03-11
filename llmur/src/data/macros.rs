@@ -517,26 +517,31 @@ macro_rules! impl_local_store_accessors {
     ($type:ty, $id_type:ty, $singular:ident, $plural:ident) => {
         paste::paste! {
             impl crate::data::Cache {
+                #[allow(dead_code)]
                 pub(crate) fn [<get_local_ $singular>](&self, id: &$id_type) -> Option<crate::data::LocallyStoredValue<$type>> {
                     let _span = tracing::trace_span!(concat!("local.get.", stringify!($singular))).entered();
                     self.get_local_record::<$type, $id_type>(id)
                 }
 
+                #[allow(dead_code)]
                 pub(crate) fn [<get_local_ $plural>](&self, ids: &std::collections::BTreeSet<$id_type>) -> std::collections::BTreeMap<$id_type, Option<crate::data::LocallyStoredValue<$type>>> {
                     let _span = tracing::trace_span!(concat!("local.get.", stringify!($plural))).entered();
                     self.get_local_records::<$type, $id_type>(ids)
                 }
 
+                #[allow(dead_code)]
                 pub(crate) fn [<set_local_ $singular>](&self, value: $type) -> () {
                     let _span = tracing::trace_span!(concat!("local.set.", stringify!($singular))).entered();
                     self.set_local_record::<$type, $id_type>(value)
                 }
 
+                #[allow(dead_code)]
                 pub(crate) fn [<set_local_ $plural>](&self, values: Vec<$type>) -> () {
                     let _span = tracing::trace_span!(concat!("local.set.", stringify!($plural))).entered();
                     self.set_local_records::<$type, $id_type>(values)
                 }
 
+                #[allow(dead_code)]
                 pub(crate) fn [<delete_local_ $singular>](&self, id: &$id_type) -> () {
                     let _span = tracing::trace_span!(concat!("local.delete.", stringify!($singular))).entered();
                     self.delete_local_record::<$type, $id_type>(id)

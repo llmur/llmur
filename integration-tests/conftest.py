@@ -265,6 +265,39 @@ def _cleanup_provider_setup(api_client, setup):
     api_client.delete_deployment(setup["deployment_id"])
     api_client.delete_connection(setup["connection_id"])
 
+def _create_provider_deployment_for_key(
+    api_client,
+    project_id,
+    deployment_name,
+    connection_payload,
+    virtual_key_id,
+):
+    connection_resp = api_client.create_connection(connection_payload)
+    assert connection_resp.status_code == 200
+    connection_id = connection_resp.json()['id']
+
+    deployment_resp = api_client.create_deployment({
+        "name": deployment_name,
+        "access": "public",
+        "connection_id": connection_id,
+    })
+    assert deployment_resp.status_code == 200
+    deployment_id = deployment_resp.json()['id']
+
+    vkd_resp = api_client.create_virtual_key_deployment_map({
+        "virtual_key_id": virtual_key_id,
+        "deployment_id": deployment_id,
+    })
+    assert vkd_resp.status_code == 200
+    virtual_key_deployment_id = vkd_resp.json()['id']
+
+    return {
+        "deployment_id": deployment_id,
+        "deployment_name": deployment_name,
+        "connection_id": connection_id,
+        "virtual_key_deployment_id": virtual_key_deployment_id,
+    }
+
 
 @pytest.fixture
 def openai_chat_provider_setup(api_client, created_project):
@@ -326,6 +359,29 @@ def azure_chat_provider_setup(api_client, created_project):
 
 
 @pytest.fixture
+def azure_chat_batch_provider_setup(api_client, created_project):
+    if not _provider_ready([
+        Config.AZURE_OPENAI_API_KEY,
+        Config.AZURE_OPENAI_ENDPOINT,
+        Config.AZURE_OPENAI_CHAT_COMPLETIONS_BATCH_DEPLOYMENT,
+    ]):
+        pytest.skip("Azure OpenAI chat batch config not fully set")
+
+    deployment_name = f"azure-chat-batch-{uuid.uuid4().hex[:8]}"
+    setup = _create_provider_setup(api_client, created_project, deployment_name, {
+        "provider": "azure/openai",
+        "deployment_name": Config.AZURE_OPENAI_CHAT_COMPLETIONS_BATCH_DEPLOYMENT,
+        "api_endpoint": Config.AZURE_OPENAI_ENDPOINT,
+        "api_key": Config.AZURE_OPENAI_API_KEY,
+        "api_version": Config.AZURE_OPENAI_API_VERSION,
+    })
+
+    yield setup
+
+    _cleanup_provider_setup(api_client, setup)
+
+
+@pytest.fixture
 def azure_embeddings_provider_setup(api_client, created_project):
     if not _provider_ready([
         Config.AZURE_OPENAI_API_KEY,
@@ -338,6 +394,29 @@ def azure_embeddings_provider_setup(api_client, created_project):
     setup = _create_provider_setup(api_client, created_project, deployment_name, {
         "provider": "azure/openai",
         "deployment_name": Config.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT,
+        "api_endpoint": Config.AZURE_OPENAI_ENDPOINT,
+        "api_key": Config.AZURE_OPENAI_API_KEY,
+        "api_version": Config.AZURE_OPENAI_API_VERSION,
+    })
+
+    yield setup
+
+    _cleanup_provider_setup(api_client, setup)
+
+
+@pytest.fixture
+def azure_embeddings_batch_provider_setup(api_client, created_project):
+    if not _provider_ready([
+        Config.AZURE_OPENAI_API_KEY,
+        Config.AZURE_OPENAI_ENDPOINT,
+        Config.AZURE_OPENAI_EMBEDDINGS_BATCH_DEPLOYMENT,
+    ]):
+        pytest.skip("Azure OpenAI embeddings batch config not fully set")
+
+    deployment_name = f"azure-emb-batch-{uuid.uuid4().hex[:8]}"
+    setup = _create_provider_setup(api_client, created_project, deployment_name, {
+        "provider": "azure/openai",
+        "deployment_name": Config.AZURE_OPENAI_EMBEDDINGS_BATCH_DEPLOYMENT,
         "api_endpoint": Config.AZURE_OPENAI_ENDPOINT,
         "api_key": Config.AZURE_OPENAI_API_KEY,
         "api_version": Config.AZURE_OPENAI_API_VERSION,
@@ -390,6 +469,92 @@ def gemini_embeddings_provider_setup(api_client, created_project):
     yield setup
 
     _cleanup_provider_setup(api_client, setup)
+
+@pytest.fixture
+def multi_provider_chat_batch_setup(api_client, created_project):
+    providers = []
+    if _provider_ready([Config.OPENAI_API_KEY, Config.OPENAI_CHAT_COMPLETIONS_MODEL]):
+        providers.append({
+            "label": "openai",
+            "deployment_name": f"batch-openai-{uuid.uuid4().hex[:8]}",
+            "connection_payload": {
+                "provider": "openai/v1",
+                "model": Config.OPENAI_CHAT_COMPLETIONS_MODEL,
+                "api_endpoint": Config.OPENAI_BASE_URL,
+                "api_key": Config.OPENAI_API_KEY,
+            },
+        })
+
+    if _provider_ready([
+        Config.AZURE_OPENAI_API_KEY,
+        Config.AZURE_OPENAI_ENDPOINT,
+        Config.AZURE_OPENAI_CHAT_COMPLETIONS_BATCH_DEPLOYMENT,
+    ]):
+        providers.append({
+            "label": "azure",
+            "deployment_name": f"batch-azure-{uuid.uuid4().hex[:8]}",
+            "connection_payload": {
+                "provider": "azure/openai",
+                "deployment_name": Config.AZURE_OPENAI_CHAT_COMPLETIONS_BATCH_DEPLOYMENT,
+                "api_endpoint": Config.AZURE_OPENAI_ENDPOINT,
+                "api_key": Config.AZURE_OPENAI_API_KEY,
+                "api_version": Config.AZURE_OPENAI_API_VERSION,
+            },
+        })
+
+    if _provider_ready([Config.GEMINI_API_KEY, Config.GEMINI_CHAT_COMPLETIONS_MODEL]):
+        providers.append({
+            "label": "gemini",
+            "deployment_name": f"batch-gemini-{uuid.uuid4().hex[:8]}",
+            "connection_payload": {
+                "provider": "gemini",
+                "model": Config.GEMINI_CHAT_COMPLETIONS_MODEL,
+                "api_endpoint": Config.GEMINI_BASE_URL,
+                "api_key": Config.GEMINI_API_KEY,
+                "api_version": Config.GEMINI_API_VERSION,
+            },
+        })
+
+    if len(providers) < 2:
+        pytest.skip("At least two provider chat configs must be set for batch tests")
+
+    key_resp = api_client.create_virtual_key({
+        "project_id": created_project,
+    })
+    assert key_resp.status_code == 200
+    key_payload = key_resp.json()
+    virtual_key_id = key_payload['id']
+    virtual_key = key_payload['key']
+
+    setups = []
+    provider_setups = []
+    for provider in providers:
+        deployment_name = provider["deployment_name"]
+        setup = _create_provider_deployment_for_key(
+            api_client,
+            created_project,
+            deployment_name,
+            provider["connection_payload"],
+            virtual_key_id,
+        )
+        setups.append(setup)
+        provider_setups.append({
+            "label": provider["label"],
+            "deployment_name": deployment_name,
+        })
+
+    yield {
+        "virtual_key": virtual_key,
+        "virtual_key_id": virtual_key_id,
+        "providers": provider_setups,
+        "setups": setups,
+    }
+
+    for setup in setups:
+        api_client.delete_virtual_key_deployment_map(setup["virtual_key_deployment_id"])
+        api_client.delete_deployment(setup["deployment_id"])
+        api_client.delete_connection(setup["connection_id"])
+    api_client.delete_virtual_key(virtual_key_id)
 
 
 @pytest.fixture

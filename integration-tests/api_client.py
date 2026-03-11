@@ -208,3 +208,43 @@ class APIClient:
     def create_responses(self, payload: Dict[str, Any], bearer_token: str) -> requests.Response:
         headers = {"Authorization": f"Bearer {bearer_token}"}
         return self._make_request('POST', '/v1/responses', payload, headers=headers)
+
+    def create_file(self, bearer_token: str, filename: str, content: str, purpose: str = "batch") -> requests.Response:
+        url = f"{self.base_url}/v1/files"
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        files = {"file": (filename, content)}
+        data = {"purpose": purpose}
+        return requests.post(url, headers=headers, files=files, data=data, timeout=self.timeout)
+
+    def list_files(self, bearer_token: str, params: Optional[Dict[str, Any]] = None) -> requests.Response:
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        return self._make_request('GET', '/v1/files', headers=headers, params=params)
+
+    def get_file(self, file_id: str, bearer_token: str) -> requests.Response:
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        return self._make_request('GET', f'/v1/files/{file_id}', headers=headers)
+
+    def delete_file(self, file_id: str, bearer_token: str) -> requests.Response:
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        return self._make_request('DELETE', f'/v1/files/{file_id}', headers=headers)
+
+    def get_file_content(self, file_id: str, bearer_token: str) -> requests.Response:
+        url = f"{self.base_url}/v1/files/{file_id}/content"
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        return requests.get(url, headers=headers, timeout=self.timeout)
+
+    def create_batch(self, payload: Dict[str, Any], bearer_token: str) -> requests.Response:
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        return self._make_request('POST', '/v1/batches', payload, headers=headers)
+
+    def list_batches(self, bearer_token: str, params: Optional[Dict[str, Any]] = None) -> requests.Response:
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        return self._make_request('GET', '/v1/batches', headers=headers, params=params)
+
+    def get_batch(self, batch_id: str, bearer_token: str) -> requests.Response:
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        return self._make_request('GET', f'/v1/batches/{batch_id}', headers=headers)
+
+    def cancel_batch(self, batch_id: str, bearer_token: str) -> requests.Response:
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        return self._make_request('POST', f'/v1/batches/{batch_id}/cancel', headers=headers)

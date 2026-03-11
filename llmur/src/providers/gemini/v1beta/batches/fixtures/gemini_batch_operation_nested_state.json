@@ -1,0 +1,20 @@
+{
+  "name": "operations/fixture-op-1",
+  "response": {
+    "name": "batches/fixture-op-1",
+    "metadata": {
+      "state": {
+        "name": "JOB_STATE_RUNNING"
+      }
+    },
+    "responsesFile": "https://generativelanguage.googleapis.com/v1beta/files/output_fixture_op_1?alt=media",
+    "errorsFile": "files/error_fixture_op_1"
+  },
+  "batchStats": {
+    "totalRequestCount": "6",
+    "completedRequestCount": "2",
+    "failedRequestCount": "1"
+  },
+  "createTime": "2025-01-10T10:00:00Z",
+  "updateTime": "2025-01-10T10:05:00Z"
+}
